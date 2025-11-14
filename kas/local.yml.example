@@ -1,0 +1,10 @@
+header:
+  version: 18
+  includes:
+    - "kas/rauc.yml"
+
+local_conf_header:
+  wifi: |
+    # Inject Wi‑Fi profiles (static IPv4) — create 'kas/local.yml' from this file and edit.
+    # Multiple lines separated by \n; format: ssid|psk|iface|method|priority|ipv4addr/prefix|gateway|dns1;dns2
+    IOTGW_WIFI_NETWORKS = "HomeWiFi|Secret|wlan0|manual|100|192.168.0.222/24|192.168.0.1|1.1.1.1;8.8.8.8\nESP|Secret2|wlan0|manual|100|192.168.28.50/24|192.168.28.1|1.1.1.1;8.8.8.8"

@@ -1,0 +1,14 @@
+# fstab for RAUC A/B system on Raspberry Pi 5
+# This overrides the incorrect fstab from meta-rauc-raspberrypi
+# Our WKS layout has only 4 partitions: boot (p1), rootA (p2), rootB (p3), data (p4)
+#
+# Root is read-only for atomic updates
+# Writable directories (/etc, /var, /home, /root) use overlayfs mounted by overlayfs-setup.service
+
+/dev/root            /                    auto       ro                    1  1
+/dev/mmcblk0p1       /boot                vfat       defaults              0  0
+/dev/mmcblk0p4       /data                ext4       defaults              0  0
+proc                 /proc                proc       defaults              0  0
+devpts               /dev/pts             devpts     mode=0620,ptmxmode=0666,gid=5      0  0
+tmpfs                /run                 tmpfs      mode=0755,nodev,nosuid,strictatime 0  0
+tmpfs                /var/volatile        tmpfs      defaults              0  0

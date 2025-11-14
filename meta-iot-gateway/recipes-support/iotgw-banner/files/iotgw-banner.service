@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT Gateway Dynamic Banner Generator
+# Ensure RAUC info and overlayfs are ready, then update banner before getty shows /etc/issue
+After=rauc.service overlayfs-setup.service
+Before=getty.target
+Wants=getty.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/iotgw-banner.sh all
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

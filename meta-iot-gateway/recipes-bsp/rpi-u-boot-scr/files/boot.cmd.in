@@ -1,0 +1,88 @@
+# IoT Gateway customized bootscript for Raspberry Pi (U-Boot)
+# Based on meta-raspberrypi default; adds banner and optional splash
+
+setenv iotgw_banner "IoT Gateway — Secure Boot"
+echo ""
+echo "===================================================="
+echo "  ${iotgw_banner}"
+echo "----------------------------------------------------"
+echo "  Platform : Raspberry Pi 5"
+echo "  Boot     : U-Boot (script)"
+echo "===================================================="
+echo "Boot media: @@BOOT_MEDIA@@  | Image: @@KERNEL_IMAGETYPE@@"
+
+# Optional splash: only when iotgw_splash=1 and splash.bmp exists on boot
+if test "${iotgw_splash}" = "1"; then
+    if fatload @@BOOT_MEDIA@@ 0:1 ${loadaddr} splash.bmp; then
+        echo "Displaying splash..."
+        bmp display ${loadaddr} m m
+    fi
+fi
+
+# Determine slot to boot (RAUC integration)
+# Upstream RAUC pattern: respect BOOT_ORDER and per-slot remaining tries.
+# Defaults for first boot if env not initialized
+test -n "${BOOT_ORDER}" || setenv BOOT_ORDER "A B"
+test -n "${BOOT_A_LEFT}" || setenv BOOT_A_LEFT 3
+test -n "${BOOT_B_LEFT}" || setenv BOOT_B_LEFT 3
+
+echo "[RAUC] Bootchooser init (env):"
+env print BOOT_ORDER BOOT_A_LEFT BOOT_B_LEFT
+
+setenv bootpart
+setenv rauc_slot
+
+for BOOT_SLOT in ${BOOT_ORDER}; do
+    if test "x${bootpart}" != "x"; then
+        # already selected a slot; skip others
+    elif test "x${BOOT_SLOT}" = "xA"; then
+        if itest ${BOOT_A_LEFT} -gt 0; then
+            echo "[RAUC] Considering slot A; tries left before dec=${BOOT_A_LEFT}"
+            setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1
+            echo "[RAUC] Selected slot A; tries left now=${BOOT_A_LEFT}"
+            setenv bootpart "/dev/mmcblk0p2"
+            setenv rauc_slot "A"
+        else
+            echo "[RAUC] Skipping slot A; no tries left"
+        fi
+    elif test "x${BOOT_SLOT}" = "xB"; then
+        if itest ${BOOT_B_LEFT} -gt 0; then
+            echo "[RAUC] Considering slot B; tries left before dec=${BOOT_B_LEFT}"
+            setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1
+            echo "[RAUC] Selected slot B; tries left now=${BOOT_B_LEFT}"
+            setenv bootpart "/dev/mmcblk0p3"
+            setenv rauc_slot "B"
+        else
+            echo "[RAUC] Skipping slot B; no tries left"
+        fi
+    fi
+done
+
+# Build kernel cmdline: start from firmware-provided args, then append root per slot
+fdt addr ${fdt_addr} && fdt get value bootargs /chosen bootargs
+if test -n "${bootpart}"; then
+    setenv bootargs "${bootargs} root=${bootpart} rauc.slot=${rauc_slot}"
+    # Optional extra kernel args from environment for runtime tuning (e.g., cma=256M)
+    if test -n "${EXTRA_KERNEL_ARGS}"; then
+        echo "[RAUC] Appending EXTRA_KERNEL_ARGS='${EXTRA_KERNEL_ARGS}'"
+        setenv bootargs "${bootargs} ${EXTRA_KERNEL_ARGS}"
+    fi
+    saveenv
+    echo "[RAUC] Bootargs appended; root=${bootpart} rauc.slot=${rauc_slot}"
+else
+    echo "No valid RAUC slot found. Resetting tries to 3"
+    setenv BOOT_A_LEFT 3
+    setenv BOOT_B_LEFT 3
+    saveenv
+    reset
+fi
+
+# Build kernel cmdline: start from firmware-provided args, then append root per slot
+echo "[bootscript] Selected RAUC slot ${rauc_slot} (root=${bootpart})"
+
+echo "[RAUC] Loading kernel from boot partition; slot=${rauc_slot} root=${bootpart}"
+
+# Load kernel and boot
+fatload @@BOOT_MEDIA@@ 0:1 ${kernel_addr_r} @@KERNEL_IMAGETYPE@@
+if test ! -e @@BOOT_MEDIA@@ 0:1 uboot.env; then saveenv; fi;
+@@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}

@@ -1,0 +1,13 @@
+header:
+  version: 18
+  includes:
+    - "rpi5.yml"
+
+# CVE check overlay: enables cve-check class and configures reports
+local_conf_header:
+  cve_check: |
+    INHERIT += "cve-check"
+    CVE_CHECK_FORMATS ?= "text json"
+    CVE_CHECK_REPORT_DIR ?= "${TMPDIR}/deploy/cve"
+    # Fail build on CVEs above a threshold (optional):
+    # CVE_ERROR_PHRASES += "; CVSSv3/BaseScore=([7-9]|10)"

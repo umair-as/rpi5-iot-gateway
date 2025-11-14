@@ -1,0 +1,16 @@
+header:
+  version: 18
+  includes:
+    - "rpi5.yml"
+
+# SPDX overlay: enables SPDX generation class and configures output
+local_conf_header:
+  spdx: |
+    INHERIT += "create-spdx"
+    SPDX_VERSION ?= "SPDX-2.3"
+    SPDX_LICENSE_MANIFEST ?= "1"
+    # Write SPDX docs to deploy/spdx
+    SPDX_DEPLOY_DIR ?= "${TMPDIR}/deploy/spdx"
+    # Optional knobs (uncomment as needed):
+    # SPDX_INCLUDE_SOURCES = "0"   # include source archives (large)
+    # SPDX_ARCHIVE_PACKED  = "0"   # pack archives (tar.gz)

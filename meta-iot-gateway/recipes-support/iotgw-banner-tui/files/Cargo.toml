@@ -1,0 +1,21 @@
+[package]
+name = "iotgw-banner-tui"
+version = "1.0.0"
+edition = "2021"
+authors = ["IoT Gateway Team"]
+description = "Modern TUI banner generator for IoT Gateway OS"
+license = "MIT"
+
+[dependencies]
+ratatui = "0.26"
+crossterm = "0.27"
+sysinfo = "0.30"
+chrono = "0.4"
+anyhow = "1.0"
+
+[profile.release]
+opt-level = "z"     # Optimize for size
+lto = true          # Link-time optimization
+codegen-units = 1   # Better optimization
+strip = true        # Strip symbols
+panic = "abort"     # Smaller binary

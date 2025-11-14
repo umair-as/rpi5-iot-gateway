@@ -1,0 +1,106 @@
+header:
+  version: 18
+
+distro: iotgw
+
+machine: raspberrypi5
+
+target:
+  - iot-gw-image
+
+repos:
+
+  poky:
+    path: /home/umair/yocto_resource/layers/poky
+    layers:
+      meta:
+      meta-poky:
+
+  meta-openembedded:
+    path: /home/umair/yocto_resource/layers/meta-openembedded
+    layers:
+      meta-oe:
+      meta-python:
+      meta-networking:
+      meta-filesystems:
+
+  meta-raspberrypi:
+    path: /home/umair/yocto_resource/layers/meta-raspberrypi
+
+  meta-virtualization:
+    path: /home/umair/yocto_resource/layers/meta-virtualization
+
+  meta-iot-gateway:
+    path: meta-iot-gateway
+
+bblayers_conf_header:
+  standard: |
+    POKY_BBLAYERS_CONF_VERSION = "2"
+    BBPATH = "${TOPDIR}"
+    BBFILES ?= ""
+
+local_conf_header:
+  standard: |
+    CONF_VERSION = "2"
+
+  diskmon: |
+    BB_DISKMON_DIRS = "\
+    STOPTASKS,${TMPDIR},1G,100K \
+    STOPTASKS,${DL_DIR},1G,100K \
+    STOPTASKS,${SSTATE_DIR},1G,100K \
+    STOPTASKS,/tmp,100M,100K \
+    HALT,${TMPDIR},100M,1K \
+    HALT,${DL_DIR},100M,1K \
+    HALT,${SSTATE_DIR},100M,1K \
+    HALT,/tmp,10M,1K"
+
+  buildinfo: |
+    INHERIT += "buildhistory"
+    BUILDHISTORY_COMMIT = "1"
+  spdx_disable: |
+    # Disable SPDX doc generation to avoid rm_work conflict and save disk
+    INHERIT:remove = "create-spdx"
+
+  optimize: |
+    USER_CLASSES = "buildstats"
+
+  debug: |
+    EXTRA_IMAGE_FEATURES = "debug-tweaks"
+
+  parallel: |
+    BB_NUMBER_THREADS = "10"
+    PARALLEL_MAKE = "-j12"
+  rm_work: |
+    # Reduce disk usage by discarding intermediate workdirs
+    INHERIT += "rm_work"
+
+  rpi_hardware: |
+    ENABLE_SPI_BUS = "1"
+    ENABLE_I2C = "1"
+    ENABLE_UART = "1"
+
+  rpi_display: |
+    DISABLE_OVERSCAN = "1"
+
+  rpi_extras: |
+    # Accept the Synaptics WiFi/BT firmware license flag required on RPi
+    LICENSE_FLAGS_ACCEPTED = "synaptics-killswitch"
+
+  image_hw_modules: |
+    KERNEL_MODULE_AUTOLOAD:append = " i2c-dev"
+
+  shared_paths: |
+    DL_DIR = "/home/umair/yocto_resource/DL_SHARED"
+    SSTATE_DIR = "/home/umair/yocto_resource/SSTATE"
+    TMPDIR = "${TOPDIR}/tmp"
+
+  prefer_bin_node: |
+    # Use prebuilt Node.js binary to avoid long V8 builds
+    PREFERRED_PROVIDER_nodejs = "nodejs-bin"
+
+  sanity_check: |
+    # Add Ubuntu 24.04 to tested distributions to avoid warnings
+    SANITY_TESTED_DISTROS:append = " ubuntu-24.04"
+  hashserve: |
+    # Enable hash equivalence for better sstate reuse
+    BB_HASHSERVE = "auto"

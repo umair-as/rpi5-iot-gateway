@@ -1,0 +1,3 @@
+# Allow devel user to run all commands without password
+# This is needed for IoT gateway development and security tools
+devel ALL=(ALL) NOPASSWD: ALL

@@ -1,0 +1,36 @@
+# Build output directory
+build/
+
+# KAS cache
+.kas/
+
+# Python virtual environment
+.venv/
+venv/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+
+# Local KAS overlays
+kas/local.yml
+kas/*-local.yml
+*.secrets.yml
+.kas_shell_history
+
+# RAUC signing keys (NEVER commit private keys!)
+**/*-key.pem
+**/dev-key.pem
+meta-iot-gateway/recipes-ota/rauc/files/dev-key.pem
+meta-iot-gateway/recipes-ota/bundles/files/dev-key.pem

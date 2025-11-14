@@ -1,0 +1,13 @@
+[Unit]
+Description=IoT Gateway First-Boot Provisioning
+After=local-fs.target
+ConditionPathExists=!/var/lib/iotgw-provision.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/iotgw-provision.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

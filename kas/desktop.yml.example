@@ -1,0 +1,9 @@
+header:
+  version: 18
+  includes:
+    - "kas/rauc.yml"
+
+local_conf_header:
+  desktop: |
+    # Enable desktop profile (Wayland/Weston) for the image build
+    IOTGW_PROFILE = "desktop"

@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: IoT Gateway <dev@igw.local>
+Date: Wed, 12 Nov 2025 20:00:00 +0000
+Subject: [PATCH] init: print IGW hello line at late init
+
+Add a minimal late_initcall that prints a single informative line
+to the kernel log so we can verify kernel patching via Yocto.
+
+Signed-off-by: IoT Gateway <dev@igw.local>
+---
+ init/main.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/init/main.c b/init/main.c
+index 1111111111..2222222222 100644
+--- a/init/main.c
++++ b/init/main.c
+@@ -100,6 +100,15 @@
+ #include <linux/init_syscalls.h>
+ #include <linux/stackprotector.h>
+ 
++/*
++ * IGW learning patch: print a friendly line once during late init.
++ */
++static int igw_hello_init(void)
++{
++    pr_info("IGW: hello from kernel patch (late_initcall)\n");
++    return 0;
++}
++late_initcall(igw_hello_init);
+ 
+ /*
+  * Debug helper: via the boot commandline "debug_boot_weak_hash"
+  * use a faster hashing function when calculating the boot cache hashes.
+-- 
+2.45.0
+

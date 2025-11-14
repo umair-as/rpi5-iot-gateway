@@ -1,0 +1,16 @@
+[Unit]
+Description=Setup overlayfs for read-only rootfs
+DefaultDependencies=no
+After=data.mount
+Before=sysinit.target
+Wants=data.mount
+RequiresMountsFor=/data
+ConditionPathIsMountPoint=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/overlayfs-setup.sh
+
+[Install]
+WantedBy=sysinit.target

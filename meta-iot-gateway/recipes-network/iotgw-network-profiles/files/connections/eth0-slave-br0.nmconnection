@@ -1,0 +1,17 @@
+[connection]
+id=eth0 (bridge slave)
+type=ethernet
+interface-name=eth0
+master=br0
+slave-type=bridge
+autoconnect=true
+
+[ethernet]
+mac-address-blacklist=
+
+[ipv4]
+method=disabled
+
+[ipv6]
+method=ignore
+

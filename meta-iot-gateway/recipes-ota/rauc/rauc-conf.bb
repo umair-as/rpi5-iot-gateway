@@ -1,0 +1,30 @@
+SUMMARY = "RAUC system configuration for A/B updates"
+DESCRIPTION = "Installs RAUC system.conf and keyring for the device. Compatible string and keyring are parameterized."
+
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+
+inherit allarch
+
+PN = "rauc-conf-iotgw"
+
+# Provide the virtual config RAUC expects
+RPROVIDES:${PN} += "virtual-rauc-conf"
+INHIBIT_DEFAULT_DEPS = "1"
+
+SRC_URI += " \
+    file://system.conf \
+    file://ca.cert.pem \
+"
+
+S = "${WORKDIR}"
+
+do_install() {
+    install -d ${D}${sysconfdir}/rauc
+    # Render system.conf from template using bundle-compatible
+    sed "s|@COMPATIBLE@|${RAUC_BUNDLE_COMPATIBLE}|g" \
+        ${WORKDIR}/system.conf > ${D}${sysconfdir}/rauc/system.conf
+    install -m 0644 ${WORKDIR}/ca.cert.pem ${D}${sysconfdir}/rauc/ca.cert.pem
+}
+
+FILES:${PN} = "${sysconfdir}/rauc/system.conf ${sysconfdir}/rauc/ca.cert.pem"

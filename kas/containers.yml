@@ -1,0 +1,12 @@
+header:
+  version: 18
+  includes:
+    - "rpi5.yml"
+
+local_conf_header:
+  containers: |
+    # Podman + netavark + crun stack
+    VIRTUAL-RUNTIME_container_engine = "podman"
+    VIRTUAL-RUNTIME_container_runtime = "crun"
+    VIRTUAL-RUNTIME_container_networking = "netavark"
+    VIRTUAL-RUNTIME_container_dns = "aardvark-dns"

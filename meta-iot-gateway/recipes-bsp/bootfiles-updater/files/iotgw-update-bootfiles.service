@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT GW Bootfiles Updater
+DefaultDependencies=no
+After=local-fs.target
+Wants=local-fs.target
+ConditionPathExists=/usr/share/iotgw/bootfiles
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/iotgw-update-bootfiles.sh
+
+[Install]
+WantedBy=multi-user.target
+
