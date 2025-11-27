@@ -1,0 +1,37 @@
+header:
+  version: 18
+  includes:
+    - "rpi5.yml"
+
+# Note: No default target here to avoid surprises.
+# Build explicitly, e.g.:
+#   - Host (with Web UI):   bitbake otbr-rpi5
+#   - Container image:      bitbake otbr-rpi5-container
+
+local_conf_header:
+  otbr_support: |
+    # Allow toggling fast mode from environment (to avoid kernel churn)
+    BB_ENV_PASSTHROUGH_ADDITIONS .= " OTBR_FAST"
+    OTBR_FAST ?= "0"
+
+    # When OTBR_FAST=1, add an override and use it to trim work
+    OVERRIDES .= "${@':otbrfast' if d.getVar('OTBR_FAST') == '1' else ''}"
+
+  otbr_fast: |
+    # Speed-ups for :otbrfast builds (no kernel/modules/firmware)
+    NO_RECOMMENDATIONS:otbrfast = "1"
+    MACHINE_ESSENTIAL_EXTRA_RDEPENDS:otbrfast = ""
+    MACHINE_ESSENTIAL_EXTRA_RRECOMMENDS:otbrfast = ""
+    MACHINE_EXTRA_RRECOMMENDS:otbrfast = ""
+    KERNEL_MODULE_AUTOLOAD:otbrfast = ""
+    PACKAGE_EXCLUDE:append:otbrfast = " kernel-module-* kernel-modules linux-firmware *-firmware"
+    BAD_RECOMMENDATIONS:append:otbrfast = " kernel-module-* kernel-modules linux-firmware *-firmware"
+
+    # Mask linux-raspberrypi recipes to avoid scheduling kernel tasks
+    BBMASK:append:otbrfast = " \
+      |.*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi.*\\.(bb|bbappend) \
+      |.*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi-v7.*\\.(bb|bbappend) \
+    "
+
+    # Trim unrelated features for faster, more cacheable builds
+    DISTRO_FEATURES:remove:otbrfast = " rauc x11 wayland vulkan opengl pulseaudio"

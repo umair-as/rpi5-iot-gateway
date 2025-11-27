@@ -1,0 +1,37 @@
+[Unit]
+Description=OpenThread Border Router Agent
+ConditionPathExists=/usr/sbin/otbr-agent
+Requires=dbus.socket avahi-daemon.service
+After=dbus.socket avahi-daemon.service
+
+[Service]
+EnvironmentFile=-/etc/default/otbr-agent
+ExecStartPre=/usr/libexec/otbr/otbr-ipset-init
+ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
+KillMode=mixed
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=SIGKILL
+
+# Capabilities and hardening
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=false
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=false
+ProtectControlGroups=true
+ProtectClock=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=false
+LockPersonality=true
+MemoryDenyWriteExecute=false
+
+# Persistent state for OpenThread settings
+StateDirectory=thread
+ReadWritePaths=/var/lib/thread
+
+[Install]
+WantedBy=multi-user.target
+Alias=otbr-agent.service
