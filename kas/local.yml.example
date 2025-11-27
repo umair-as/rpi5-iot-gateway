@@ -3,8 +3,22 @@ header:
   includes:
     - "kas/rauc.yml"
 
+env:
+  # Directory holding your RAUC signing keys. Prefer absolute path here.
+  # Using $HOME is convenient, but expansion may depend on how kas is invoked.
+  # If in doubt, replace with an absolute path (e.g., /home/you/rauc-keys).
+  IOTGW_RAUC_KEY_DIR: "$HOME/rauc-keys"
+
 local_conf_header:
   wifi: |
     # Inject Wi‑Fi profiles (static IPv4) — create 'kas/local.yml' from this file and edit.
     # Multiple lines separated by \n; format: ssid|psk|iface|method|priority|ipv4addr/prefix|gateway|dns1;dns2
     IOTGW_WIFI_NETWORKS = "HomeWiFi|Secret|wlan0|manual|100|192.168.0.222/24|192.168.0.1|1.1.1.1;8.8.8.8\nESP|Secret2|wlan0|manual|100|192.168.28.50/24|192.168.28.1|1.1.1.1;8.8.8.8"
+
+  rauc_keys: |
+    # RAUC signing keys (required for bundle builds)
+    # Store private keys outside the repo; adjust paths to your environment.
+    # Prefer using IOTGW_RAUC_KEY_DIR defined in the 'env:' block above to avoid
+    # relying on $HOME expansion in local_conf.
+    RAUC_KEY_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-key.pem"
+    RAUC_CERT_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-cert.pem"

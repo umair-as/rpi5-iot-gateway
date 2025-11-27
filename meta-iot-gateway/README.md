@@ -42,8 +42,8 @@ This layer depends on the following OpenEmbedded layers:
 
 ### Image Recipes
 
-- **`iot-gw-image`** — Base headless gateway
-- **`iot-gw-image-dev`** — Development variant with tools
+- **`iot-gw-image-base`** — Standard gateway with package management
+- **`iot-gw-image-dev`** — Development variant with debug tools
 - **`iot-gw-image-prod`** — Production-hardened variant
 
 ### Package Groups

@@ -19,9 +19,37 @@ This project delivers a **hardened, embedded Linux distribution** tailored for I
 
 - 🎯 **Custom `iotgw` Distribution** — Optimized for IoT workloads with minimal attack surface
 - 🔄 **A/B OTA Updates** — Atomic updates with automatic rollback via RAUC
+- 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags (PIE, RELRO, FORTIFY), runtime hardening
 - 📦 **Container Runtime** — Podman, Buildah, and Skopeo for containerized workloads
 - 🛠️ **Developer-Friendly** — Comprehensive tooling for debugging and development
 - ⚡ **Fast Builds** — Shared download and sstate caches for reproducible builds
+
+### Security Features
+
+**Kernel Hardening** (Production image with `igw_security_prod`):
+- Memory protection: FORTIFY_SOURCE, heap/stack zeroing, SLAB hardening, PAGE_POISONING
+- Stack canaries, VMAP_STACK, per-syscall stack randomization
+- GCC security plugins: STACKLEAK, STRUCTLEAK, LATENT_ENTROPY
+- AppArmor LSM, Seccomp filtering, Kernel Audit framework
+- Disabled attack surfaces: /dev/mem, /proc/kcore, coredumps, KGDB, staging drivers
+
+**Compiler Hardening** (inherited from Poky):
+- Position Independent Executables (PIE/fPIE)
+- Stack Protector Strong (`-fstack-protector-strong`)
+- FORTIFY_SOURCE=2 for buffer overflow detection
+- Full RELRO + BIND_NOW (`-Wl,-z,relro,-z,now`)
+- Format string protection (`-Wformat-security -Werror=format-security`)
+
+**Runtime Hardening**:
+- AppArmor profiles for system services
+- Audit rules for security-relevant events
+- System call filtering via seccomp
+- Restricted umask (027), kernel dmesg restrictions
+- Network protocol blacklisting (SCTP, DCCP, RDS, TIPC)
+
+**Validation Tools**:
+- `kernel-hardening-checker` integration for KSPP compliance validation
+- Lynis security auditing from meta-security layer
 
 ---
 
@@ -80,16 +108,18 @@ kas shell -c 'bitbake iot-gw-bundle' \
 # Show all targets
 make help
 
-# Build images
+# Build images (RAUC-enabled by default)
+make dev
+make prod
 make base
-make dev-rauc
-make prod-rauc
-make desktop-dev-rauc
 
-# Build bundles
-make bundle
-make bundle-dev
-make bundle-prod
+# Build full bundles (rootfs + kernel/DTBs)
+make bundle-dev-full
+make bundle-prod-full
+
+# Security validation
+make kernel-hardening-check      # Check kernel config
+make khc-target HOST=root@192.168.1.100  # Check on device
 ```
 
 </td>
@@ -291,10 +321,14 @@ header:
   includes:
     - "kas/rauc.yml"
 
+env:
+  # Prefer absolute path; using $HOME depends on how kas is invoked
+  IOTGW_RAUC_KEY_DIR: "$HOME/rauc-keys"
+
 local_conf_header:
   rauc_keys: |
-    RAUC_KEY_FILE = "${HOME}/rauc-keys/dev-key.pem"
-    RAUC_CERT_FILE = "${HOME}/rauc-keys/dev-cert.pem"
+    RAUC_KEY_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-key.pem"
+    RAUC_CERT_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-cert.pem"
 ```
 
 #### Build Signed Bundles
@@ -303,11 +337,54 @@ local_conf_header:
 # Build bundle with your keys
 kas build kas/local.yml --target iot-gw-bundle
 
-# Or build image + bundle
+# Or build image + bundle (RAUC-enabled)
 kas build kas/local.yml --target iot-gw-image-prod
+
+Note: Use the same KAS config for image and bundle steps. Mixing `rpi5.yml` (no RAUC) for the image and `kas/local.yml` (RAUC) for the bundle changes task hashes and forces unnecessary rebuilds (e.g., kernel). Prefer the RAUC flow end-to-end, or use the Makefile one-shot targets like `make dev-bundle-full`. If environment expansion for `$HOME` is unreliable in your setup, use absolute paths in `kas/local.yml`.
 ```
 
 > 📖 See `meta-iot-gateway/recipes-ota/rauc/files/README-KEYS.md` for detailed key management instructions.
+
+#### Security Auditing & Validation
+
+##### Lynis Security Audit
+
+Installed from the `meta-security` layer as part of the base image.
+
+```bash
+# Quick audit on-device
+lynis audit system --quick
+
+# Full audit (more thorough, takes longer)
+lynis audit system
+```
+
+Reports and logs:
+- Log: `/var/log/lynis.log`
+- Report (key=value): `/var/log/lynis-report.dat`
+
+Tip: capture a baseline after first boot, then compare over time to track hardening progress.
+
+##### Kernel Hardening Validation
+
+Validate kernel security configuration against KSPP recommendations:
+
+```bash
+# During build (checks built kernel config)
+make kernel-hardening-check
+
+# On running device (requires /proc/config.gz)
+make khc-target HOST=root@192.168.1.100
+```
+
+The checker validates:
+- Memory protection (FORTIFY_SOURCE, INIT_ON_ALLOC/FREE, SLAB hardening)
+- Stack protection (stack canaries, VMAP_STACK, randomization)
+- Access restrictions (SECURITY_DMESG_RESTRICT, DEVMEM, PROC_KCORE)
+- Attack surface reduction (disabled legacy features, TRIM_UNUSED_KSYMS)
+- GCC security plugins (STACKLEAK, STRUCTLEAK, LATENT_ENTROPY)
+
+Results are saved to `build/reports/kernel-hardening-YYYYMMDD-HHMMSS.txt`
 
 ---
 
@@ -361,7 +438,14 @@ Place files on `/boot` (FAT) before first boot:
   - `igw_containers`: namespaces + cgroups (MEMCG, CGROUP_BPF, etc.).
   - `igw_networking_iot`: WireGuard, SocketCAN(+MCP251x), VLAN 802.1Q.
   - `igw_observability_dev`: BPF/JIT, kprobes, ftrace, kallsyms (dev only).
-  - `igw_security_prod`: module signing and AppArmor defaults (prod).
+  - `igw_security_prod`: comprehensive hardening based on KSPP recommendations.
+    - Module signing (SHA256), AppArmor LSM, Seccomp filtering, Kernel Audit
+    - Memory hardening: FORTIFY_SOURCE, INIT_ON_ALLOC/FREE, PAGE_POISONING, SLAB hardening
+    - Stack protection: STACKPROTECTOR_STRONG, VMAP_STACK, RANDOMIZE_KSTACK_OFFSET
+    - GCC security plugins: STACKLEAK, STRUCTLEAK, LATENT_ENTROPY, ARM_SSP_PER_TASK
+    - Access restrictions: SECURITY_DMESG_RESTRICT, disabled DEVMEM/PROC_KCORE/COREDUMP
+    - ASLR: RANDOMIZE_BASE with increased entropy (ARCH_MMAP_RND_BITS=30)
+    - Attack surface reduction: disabled BINFMT_MISC, KGDB, STAGING, uncommon protocols
 
 Enable via KAS overlay (example):
 ```yaml
@@ -424,8 +508,8 @@ hashserve: |
 
 | Image | Target Audience | Includes | Size |
 |-------|----------------|----------|------|
-| **`iot-gw-image`** | Base | Core gateway functionality | Small |
-| **`iot-gw-image-dev`** | Development | +Tools, compilers, podman/buildah | Medium |
+| **`iot-gw-image-base`** | Standard | Package management, basic tools | Small |
+| **`iot-gw-image-dev`** | Development | +Debug tools, compilers, buildessential | Medium |
 | **`iot-gw-image-prod`** | Production | Lean runtime, hardened | Minimal |
 
 > 💡 **Enable RAUC**: Use `kas/rauc.yml` overlay with `--target <image-name>`

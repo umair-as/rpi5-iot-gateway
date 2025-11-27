@@ -6,7 +6,7 @@ distro: iotgw
 machine: raspberrypi5
 
 target:
-  - iot-gw-image
+  - iot-gw-image-base
 
 repos:
 
@@ -29,6 +29,9 @@ repos:
 
   meta-virtualization:
     path: /home/umair/yocto_resource/layers/meta-virtualization
+
+  meta-security:
+    path: /home/umair/yocto_resource/layers/meta-security
 
   meta-iot-gateway:
     path: meta-iot-gateway
@@ -63,9 +66,6 @@ local_conf_header:
 
   optimize: |
     USER_CLASSES = "buildstats"
-
-  debug: |
-    EXTRA_IMAGE_FEATURES = "debug-tweaks"
 
   parallel: |
     BB_NUMBER_THREADS = "10"

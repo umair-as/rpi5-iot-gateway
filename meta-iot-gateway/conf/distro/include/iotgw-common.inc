@@ -21,16 +21,17 @@ PREFERRED_RPROVIDER_virtual-rauc-conf ?= "rauc-conf-iotgw"
 # Avoid parsing meta-rauc's reference rauc-conf which expects certs not present here
 SKIP_RECIPE[rauc-conf] = "replaced with rauc-conf-iotgw"
 
-# RAUC keyring/cert defaults (can be overridden per product)
+# RAUC keyring default for device verification (bundle signing keys are set in bundle recipes or kas/local.yml)
 RAUC_KEYRING_FILE ?= "dev-cert.pem"
-RAUC_CERT_FILE ?= "dev-cert.pem"
-RAUC_KEY_FILE ?= "dev-key.pem"
 
 # SDK branding
 SDK_VENDOR ?= "-${VENDOR_SHORT_NAME}sdk"
 SDK_VERSION := "${DISTRO_VERSION}"
 SDK_NAME ?= "${VENDOR_SHORT_NAME}-${DISTRO}-${TCLIBC}-${SDK_ARCH}-${IMAGE_BASENAME}-${TUNE_PKGARCH}"
 SDKPATH ?= "/opt/${VENDOR_SHORT_NAME}-${DISTRO}/${SDK_VERSION}"
+
+# Prefer Lynis 3.1.5 from our overlay
+PREFERRED_VERSION_lynis ?= "3.1.5"
 
 # Policy and QA
 INHERIT += "sanity"
@@ -42,7 +43,7 @@ ERROR_TO_WARN_QA ?= "version-going-backwards"
 # Init system and features (single source of truth)
 INIT_MANAGER ?= "systemd"
 VIRTUAL-RUNTIME_init_manager ?= "systemd"
-DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge"
+DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
 # Enable RAUC feature only when explicitly requested
 DISTRO_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_RAUC','1',' rauc','',d)}"
 
@@ -81,7 +82,10 @@ DISTRO_FEATURES:append:desktop = " wayland opengl vulkan pulseaudio"
 IOTGW_DESKTOP_PACKAGES ?= "weston weston-init wayland-utils mesa libdrm"
 
 # Optional kernel feature sets (enable fragments via OVERRIDES)
-# Example (dev):   IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw_observability_dev"
-# Example (prod):  IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw_security_prod"
-IOTGW_KERNEL_FEATURES ?= ""
+# Globally enabled: networking (WireGuard/CAN/VLAN) + security (AppArmor/Seccomp/no-SCTP)
+# Per-image additions via IOTGW_KERNEL_FEATURES:
+#   igw_containers         - namespaces, cgroups (for podman/docker)
+#   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
+#   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
+IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 OVERRIDES .= "${@':' + ':'.join((d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split()) if d.getVar('IOTGW_KERNEL_FEATURES') else ''}"

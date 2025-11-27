@@ -15,12 +15,18 @@ get_system_info() {
     RAUC_SLOT=$(rauc status 2>/dev/null | grep "Booted from:" | awk '{print $3}' || echo "unknown")
 }
 
-# Generate /etc/issue (login screen) - simple version without logo
+# Generate /etc/issue (login screen) - simple version with legal warning
 generate_issue() {
     get_system_info
 
-    # Simple pre-login message without the large ASCII logo
+    # Pre-login message with legal warning banner and system info
     {
+        printf "\n"
+        printf "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n"
+        printf "\033[1;33m                              ⚠ AUTHORIZED ACCESS ONLY ⚠\033[0m\n"
+        printf "\033[0;37mThis system is for authorized use only. All activity is monitored and logged.\n"
+        printf "Unauthorized access is not permitted.\033[0m\n"
+        printf "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n"
         printf "\n"
         printf "\033[1;36m%s\033[0m \033[0;37m%s\033[0m\n" "${DISTRO_NAME}" "${DISTRO_VERSION}"
         printf "\033[0;33mMachine:\033[0m %s | \033[0;33mTTY:\033[0m \\l\n" "${MACHINE}"
@@ -56,8 +62,8 @@ generate_motd() {
         printf "\n"
 
         # Footer
-        printf "    \033[0;36m📚 Documentation:\033[0m https://github.com/umair-uas/meta-meshiot\n"
-        printf "    \033[0;36m💬 Support:\033[0m IoT Gateway Development Team\n"
+        printf "    \033[0;36m📚 Documentation:\033[0m https://github.com/umair-uas/rpi5-kas-project\n"
+        printf "    \033[0;36m💬 Support:\033[0m Umair A.S. and the team\n"
         printf "\033[0m\n"
     } > /etc/motd
 }
