@@ -5,6 +5,7 @@ LICENSE = "MIT & ISC & BSD-2-Clause & BSD-3-Clause & Artistic-2.0 & Apache-2.0"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=9a7fcce64128730251dbc58aa41b4674"
 
 # Only for aarch64 targets (arm64 binaries)
+# Only for aarch64 targets (arm64 binaries)
 COMPATIBLE_HOST = "aarch64.*-linux"
 
 SRC_URI = "https://nodejs.org/dist/v${PV}/node-v${PV}-linux-arm64.tar.xz"
@@ -19,7 +20,7 @@ INHIBIT_PACKAGE_DEBUG_SPLIT = "1"
 
 # Provide the same logical provider as the compiled recipe
 PROVIDES += "nodejs"
-RPROVIDES:${PN} += "nodejs"
+RPROVIDES:${PN}:class-target += "nodejs"
 
 inherit bin_package
 
@@ -64,14 +65,14 @@ FILES:${PN}-npm = " \
     ${libdir}/node_modules/npm \
 "
 
-# Ensure packagegroup deps on nodejs-npm are satisfied
-RPROVIDES:${PN}-npm += "nodejs-npm"
+# Ensure packagegroup deps on nodejs-npm are satisfied (target only)
+RPROVIDES:${PN}-npm:class-target += "nodejs-npm"
 
 # Avoid QA complaining about prebuilt binaries/paths
 INSANE_SKIP:${PN} = "ldflags textrel already-stripped"
 INSANE_SKIP:${PN}-npm = "ldflags textrel already-stripped"
 
-# Prebuilt binary: declare expected runtime deps and relax file-rdeps QA
-RDEPENDS:${PN} += "glibc libstdc++ libgcc"
+# Prebuilt binary: declare expected runtime deps (target only) and relax file-rdeps QA
+RDEPENDS:${PN}:class-target += "glibc libstdc++ libgcc"
 INSANE_SKIP:${PN} += " file-rdeps"
 INSANE_SKIP:${PN}-npm += " file-rdeps"
