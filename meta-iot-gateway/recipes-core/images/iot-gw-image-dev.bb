@@ -7,28 +7,24 @@ LICENSE = "MIT"
 require iot-gw-image-base.inc
 
 # Image features for development
+# NOTE: NOT using debug-tweaks (empty root password, insecure SSH) - secure-by-design
+# Using tools-debug for gdb/strace, post-install-logging for debugging
 IMAGE_FEATURES += " \
-    ssh-server-openssh \
     tools-debug \
-    debug-tweaks \
+    post-install-logging \
     package-management \
-    splash \
 "
 
 # Core packages and developer tools
 CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-dev \
-    packagegroup-core-full-cmdline \
+    packagegroup-iot-gw-security \
     packagegroup-core-buildessential \
-    sudo \
-    strace \
-    gdb \
-    gdbserver \
-    ltrace \
-    perf \
-    valgrind \
+    bridge-utils \
+    avahi-daemon \
     tmux \
     btop \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr','',d)} \
 "
 
 # Extra space for development artifacts
