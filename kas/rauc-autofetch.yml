@@ -1,0 +1,40 @@
+header:
+  version: 18
+  includes:
+    - "rpi5-autofetch.yml"
+
+distro: iotgw
+
+repos:
+  meta-lts-mixins:
+    url: https://github.com/yoctoproject/meta-lts-mixins.git
+    refspec: scarthgap/u-boot
+    layers:
+      .:
+
+  meta-rauc:
+    url: https://github.com/rauc/meta-rauc.git
+    refspec: scarthgap
+
+  meta-rauc-community:
+    url: https://github.com/rauc/meta-rauc-community.git
+    refspec: scarthgap
+    layers:
+      meta-rauc-raspberrypi:
+
+local_conf_header:
+  rauc_toggle: |
+    # Enable RAUC support (class adds image types, packages, read-only-rootfs)
+    IOTGW_ENABLE_RAUC = "1"
+    # Use U-Boot on Raspberry Pi for RAUC flow
+    RPI_USE_U_BOOT = "1"
+    # Optional: override default layout variant
+    # WKS_FILE = "iot-gw-rauc-16g.wks.in"
+    # Optional: bundle format
+    RAUC_BUNDLE_FORMAT = "verity"
+  rauc_providers: |
+    PREFERRED_RPROVIDER_virtual-rauc-conf = "rauc-conf-iotgw"
+  boot_splash_opt_in: |
+    # To include the U-Boot splash image in the boot (FAT) partition, uncomment:
+    # FATPAYLOAD += " /boot/splash.bmp"
+

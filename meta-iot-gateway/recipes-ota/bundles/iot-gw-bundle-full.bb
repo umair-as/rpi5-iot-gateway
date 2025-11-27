@@ -6,7 +6,7 @@ require iot-gw-bundle-common.inc
 
 # Select the image to bundle from environment (fallback to standard image)
 # Use lazy expansion so env overrides (via BB_ENV_PASSTHROUGH_ADDITIONS) take effect
-BUNDLE_IMAGE_NAME ?= "iot-gw-image"
+BUNDLE_IMAGE_NAME ?= "iot-gw-image-dev"
 BUNDLE_IMAGE = "${BUNDLE_IMAGE_NAME}"
 
 # Enable /boot updates
