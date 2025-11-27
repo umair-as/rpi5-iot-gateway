@@ -1,0 +1,80 @@
+SUMMARY = "IoT Gateway Security Hardening"
+DESCRIPTION = "Security hardening configurations based on Lynis audit recommendations"
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+
+SRC_URI = " \
+    file://99-iotgw-hardening.conf \
+    file://blacklist.conf \
+    file://limits-hardening.conf \
+    file://umask.sh \
+    file://login.defs.hardening \
+    file://50-core-limits.conf \
+"
+
+S = "${WORKDIR}"
+
+do_install() {
+    # Sysctl hardening (KRNL-6000)
+    install -d ${D}${sysconfdir}/sysctl.d
+    install -m 0644 ${WORKDIR}/99-iotgw-hardening.conf ${D}${sysconfdir}/sysctl.d/
+
+    # Module blacklist (runtime prevention)
+    install -d ${D}${sysconfdir}/modprobe.d
+    install -m 0644 ${WORKDIR}/blacklist.conf ${D}${sysconfdir}/modprobe.d/iotgw-blacklist.conf
+
+    # Core dump limits (KRNL-5820)
+    install -d ${D}${sysconfdir}/security/limits.d
+    install -m 0644 ${WORKDIR}/limits-hardening.conf ${D}${sysconfdir}/security/limits.d/
+
+    # Systemd default limits for all services (also enforces core=0 for daemons)
+    install -d ${D}${sysconfdir}/systemd/system.conf.d
+    install -m 0644 ${WORKDIR}/50-core-limits.conf ${D}${sysconfdir}/systemd/system.conf.d/
+
+    # Restrictive umask (AUTH-9328)
+    install -d ${D}${sysconfdir}/profile.d
+    install -m 0644 ${WORKDIR}/umask.sh ${D}${sysconfdir}/profile.d/
+
+    # Password policy hardening
+    install -d ${D}${sysconfdir}/login.defs.d
+    install -m 0644 ${WORKDIR}/login.defs.hardening ${D}${sysconfdir}/login.defs.d/
+}
+
+pkg_postinst:${PN}() {
+    if [ -z "$D" ]; then
+        # Ensure stronger defaults in /etc/login.defs for Lynis visibility
+        # (Lynis may not parse /etc/login.defs.d). Update or append values.
+        defs=/etc/login.defs
+        tmp=$(mktemp)
+        if [ -r "$defs" ]; then
+            cp -a "$defs" "$tmp" || true
+            # Set UMASK 027
+            grep -q '^UMASK' "$tmp" && sed -i 's/^UMASK.*/UMASK\t\t027/' "$tmp" || echo 'UMASK\t\t027' >> "$tmp"
+            # Set password aging
+            grep -q '^PASS_MIN_DAYS' "$tmp" && sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS\t7/' "$tmp" || echo 'PASS_MIN_DAYS\t7' >> "$tmp"
+            grep -q '^PASS_MAX_DAYS' "$tmp" && sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS\t90/' "$tmp" || echo 'PASS_MAX_DAYS\t90' >> "$tmp"
+            grep -q '^PASS_WARN_AGE' "$tmp" && sed -i 's/^PASS_WARN_AGE.*/PASS_WARN_AGE\t14/' "$tmp" || echo 'PASS_WARN_AGE\t14' >> "$tmp"
+            # Configure SHA-crypt rounds
+            grep -q '^SHA_CRYPT_MIN_ROUNDS' "$tmp" && sed -i 's/^SHA_CRYPT_MIN_ROUNDS.*/SHA_CRYPT_MIN_ROUNDS\t5000/' "$tmp" || echo 'SHA_CRYPT_MIN_ROUNDS\t5000' >> "$tmp"
+            grep -q '^SHA_CRYPT_MAX_ROUNDS' "$tmp" && sed -i 's/^SHA_CRYPT_MAX_ROUNDS.*/SHA_CRYPT_MAX_ROUNDS\t10000/' "$tmp" || echo 'SHA_CRYPT_MAX_ROUNDS\t10000' >> "$tmp"
+            cp -a "$tmp" "$defs" || true
+            rm -f "$tmp"
+        fi
+    fi
+}
+
+FILES:${PN} = " \
+    ${sysconfdir}/sysctl.d/99-iotgw-hardening.conf \
+    ${sysconfdir}/modprobe.d/iotgw-blacklist.conf \
+    ${sysconfdir}/security/limits.d/limits-hardening.conf \
+    ${sysconfdir}/systemd/system.conf.d/50-core-limits.conf \
+    ${sysconfdir}/profile.d/umask.sh \
+    ${sysconfdir}/login.defs.d/login.defs.hardening \
+"
+
+CONFFILES:${PN} = " \
+    ${sysconfdir}/sysctl.d/99-iotgw-hardening.conf \
+    ${sysconfdir}/modprobe.d/iotgw-blacklist.conf \
+    ${sysconfdir}/security/limits.d/limits-hardening.conf \
+    ${sysconfdir}/profile.d/umask.sh \
+"
