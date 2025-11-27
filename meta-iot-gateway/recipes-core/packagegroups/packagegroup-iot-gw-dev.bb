@@ -14,6 +14,7 @@ RDEPENDS:${PN} = " \
     perf \
     wireshark \
     htop \
+    kernel-hardening-checker \
 "
 
 # Optional: container runtime tools (opt-in)
