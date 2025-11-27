@@ -9,6 +9,7 @@ RDEPENDS:${PN} = " \
     sudo \
     networkmanager \
     systemd-analyze \
+    lynis \
 "
 
 # Avoid allarch + dynamically renamed library deps (e.g., libgpiod -> libgpiod3)
