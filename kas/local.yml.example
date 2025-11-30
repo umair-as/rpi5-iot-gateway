@@ -1,7 +1,8 @@
 header:
   version: 18
   includes:
-    - "kas/rauc.yml"
+    # Default to auto-fetch stack (RAUC-enabled by distro)
+    - "kas/rpi5-autofetch.yml"
 
 env:
   # Directory holding your RAUC signing keys. Prefer absolute path here.
@@ -22,3 +23,7 @@ local_conf_header:
     # relying on $HOME expansion in local_conf.
     RAUC_KEY_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-key.pem"
     RAUC_CERT_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-cert.pem"
+  rauc_device_keyring: |
+    # Public key (certificate) installed on devices to verify bundles
+    # Typically the CA certificate created by generate-rauc-certs.sh
+    RAUC_DEVICE_KEYRING = "${IOTGW_RAUC_KEY_DIR}/ca.cert.pem"

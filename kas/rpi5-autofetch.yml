@@ -119,3 +119,8 @@ local_conf_header:
   hashserve: |
     # Enable hash equivalence for better sstate reuse
     BB_HASHSERVE = "auto"
+  rauc_providers: |
+    PREFERRED_RPROVIDER_virtual-rauc-conf = "rauc-conf-iotgw"
+  boot_splash_opt_in: |
+    # To include the U-Boot splash image in the boot (FAT) partition, uncomment:
+    # FATPAYLOAD += " /boot/splash.bmp"
