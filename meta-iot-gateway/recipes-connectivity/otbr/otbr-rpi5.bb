@@ -37,12 +37,10 @@ RDEPENDS:${PN} += " \
     radvd \
     libnetfilter-queue \
     ipset \
-    iptables \
     libnftnl \
     nftables \
     protobuf \
     protobuf-c \
-    dhcpcd \
 "
 
 inherit cmake systemd

@@ -14,25 +14,31 @@ ipset create -exist otbr-ingress-deny-src-swap hash:net family inet6 || true
 ipset create -exist otbr-ingress-allow-dst hash:net family inet6 || true
 ipset create -exist otbr-ingress-allow-dst-swap hash:net family inet6 || true
 
-# Configure NAT44 for Thread network to infrastructure network routing
-# This allows Thread devices to access the internet via the border router
-echo "Configuring iptables NAT for Thread ↔ Infrastructure routing..."
+# Configure NAT44 and forwarding via nftables (no legacy xtables modules)
+echo "Configuring nftables NAT and forwarding for Thread ↔ Infrastructure..."
 
-# Mark Thread traffic for NAT
-iptables -t mangle -C PREROUTING -i "$THREAD_IF" -j MARK --set-mark 0x1001 2>/dev/null || \
-    iptables -t mangle -A PREROUTING -i "$THREAD_IF" -j MARK --set-mark 0x1001
+# Remove any previous otbr table to avoid duplicate rules
+nft delete table inet otbr >/dev/null 2>&1 || true
 
-# Masquerade marked traffic
-iptables -t nat -C POSTROUTING -m mark --mark 0x1001 -j MASQUERADE 2>/dev/null || \
-    iptables -t nat -A POSTROUTING -m mark --mark 0x1001 -j MASQUERADE
+nft -f - <<EOF
+table inet otbr {
+    chain mangle_prerouting {
+        type filter hook prerouting priority mangle; policy accept;
+        iifname "$THREAD_IF" meta mark set 0x1001
+    }
 
-# Allow forwarding between Thread and infrastructure interfaces
-iptables -t filter -C FORWARD -o "$INFRA_IF" -j ACCEPT 2>/dev/null || \
-    iptables -t filter -A FORWARD -o "$INFRA_IF" -j ACCEPT
+    chain filter_forward {
+        type filter hook forward priority filter; policy accept;
+        oifname "$INFRA_IF" accept
+        iifname "$INFRA_IF" accept
+    }
 
-iptables -t filter -C FORWARD -i "$INFRA_IF" -j ACCEPT 2>/dev/null || \
-    iptables -t filter -A FORWARD -i "$INFRA_IF" -j ACCEPT
+    chain nat_postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        meta mark 0x1001 masquerade
+    }
+}
+EOF
 
-echo "OTBR firewall initialization complete"
+echo "OTBR nftables initialization complete"
 exit 0
-
