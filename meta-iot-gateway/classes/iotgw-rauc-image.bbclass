@@ -1,4 +1,4 @@
-## RAUC image additions (enable via IOTGW_ENABLE_RAUC = "1")
+## RAUC image additions (always enabled in this distro)
 
 # Explicitly set image formats (override meta-raspberrypi defaults)
 # - tar.bz2: rootfs archive for backup/inspection
@@ -16,6 +16,7 @@ IMAGE_INSTALL += " \
     virtual-rauc-conf \
     overlayfs-setup \
     iotgw-bootfiles-updater \
+    rauc-grow-data-part \
 "
 
 # Read-only rootfs pairs well with slot updates

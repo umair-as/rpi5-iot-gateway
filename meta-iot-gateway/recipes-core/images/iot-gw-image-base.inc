@@ -2,7 +2,7 @@
 
 # Core inheritance shared by all image variants
 inherit core-image iotgw-rootfs extrausers
-inherit ${@bb.utils.contains('IOTGW_ENABLE_RAUC','1','iotgw-rauc-image','',d)}
+inherit iotgw-rauc-image
 
 # Include centralized user/group definitions
 require iotgw-users.inc

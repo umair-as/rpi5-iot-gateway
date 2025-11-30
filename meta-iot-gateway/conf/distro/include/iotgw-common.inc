@@ -44,8 +44,11 @@ ERROR_TO_WARN_QA ?= "version-going-backwards"
 INIT_MANAGER ?= "systemd"
 VIRTUAL-RUNTIME_init_manager ?= "systemd"
 DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
-# Enable RAUC feature only when explicitly requested
-DISTRO_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_RAUC','1',' rauc','',d)}"
+# RAUC is mandatory in this distro
+DISTRO_FEATURES:append = " rauc"
+
+# Always use U-Boot on Raspberry Pi for RAUC boot flow
+RPI_USE_U_BOOT ?= "1"
 
 # Trim unneeded distro features (conservative defaults)
 DISTRO_FEATURES:remove = " pcmcia 3g nfc ptest debuginfod sysvinit"
@@ -60,7 +63,7 @@ ROOT_HOME ?= "/root"
 
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 
 # Prune machine features that are not relevant on Raspberry Pi 5
