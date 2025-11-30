@@ -14,7 +14,6 @@ INHIBIT_DEFAULT_DEPS = "1"
 
 SRC_URI += " \
     file://system.conf \
-    file://ca.cert.pem \
 "
 
 S = "${WORKDIR}"
@@ -24,7 +23,21 @@ do_install() {
     # Render system.conf from template using bundle-compatible
     sed "s|@COMPATIBLE@|${RAUC_BUNDLE_COMPATIBLE}|g" \
         ${WORKDIR}/system.conf > ${D}${sysconfdir}/rauc/system.conf
-    install -m 0644 ${WORKDIR}/ca.cert.pem ${D}${sysconfdir}/rauc/ca.cert.pem
+    # Install device keyring (public cert).
+    # Prefer RAUC_DEVICE_KEYRING; fallback to RAUC_CERT_FILE (dev setups often reuse it).
+    keyring="${RAUC_DEVICE_KEYRING}"
+    if [ -z "$keyring" ]; then
+        keyring="${RAUC_CERT_FILE}"
+    fi
+    if [ -z "$keyring" ]; then
+        echo "ERROR: Neither RAUC_DEVICE_KEYRING nor RAUC_CERT_FILE is set. Configure in kas/local.yml." >&2
+        exit 1
+    fi
+    if [ ! -f "$keyring" ]; then
+        echo "ERROR: Keyring file not found: $keyring" >&2
+        exit 1
+    fi
+    install -m 0644 "$keyring" ${D}${sysconfdir}/rauc/ca.cert.pem
 }
 
 FILES:${PN} = "${sysconfdir}/rauc/system.conf ${sysconfdir}/rauc/ca.cert.pem"

@@ -1,0 +1,21 @@
+[Unit]
+Description=Grow /data partition to fill SD card
+DefaultDependencies=no
+# Must run after block devices are available but before data.mount
+After=systemd-udev-settle.service
+Before=data.mount local-fs.target
+# Only run if we haven't already done it
+ConditionPathExists=!/var/lib/rauc-grow-done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/grow-data-partition.sh
+# Ensure logs go to the journal
+StandardOutput=journal
+StandardError=journal
+TimeoutSec=2min
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+
