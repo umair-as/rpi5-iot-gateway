@@ -215,9 +215,15 @@ Edit `BB_NUMBER_THREADS` and `PARALLEL_MAKE` in `rpi5.yml` or your local overlay
 
 ## 📚 Documentation
 
-- **Detailed OTA Guide**: See `OTA_UPDATE.md`
-- **Security Hardening**: See kernel fragments in `meta-iot-gateway/recipes-kernel/linux/files/fragments/`
-- **OTBR Setup**: See `meta-iot-gateway/recipes-connectivity/otbr/README.md`
+Detailed documentation is available in the `docs/` directory:
+
+- **[Security Hardening](docs/SECURITY.md)** — Kernel hardening, compiler flags, audit framework, validation
+- **[Kernel Configuration](docs/KERNEL.md)** — Feature sets, fragments, runtime parameters
+- **[Networking](docs/NETWORKING.md)** — WiFi, Ethernet, provisioning, VPN, firewall
+- **[Partition Layouts](docs/PARTITIONS.md)** — RAUC A/B partitions, WKS variants, sizing
+- **[Build System](docs/BUILD.md)** — Performance tuning, layer management, CI/CD
+- **[OpenThread Border Router](docs/OTBR.md)** — OTBR setup, configuration, commissioning
+- **[OTA Updates](OTA_UPDATE.md)** — RAUC workflow, bundles, rollback (root level)
 
 ---
 
