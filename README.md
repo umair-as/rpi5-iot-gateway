@@ -15,136 +15,48 @@
 
 ## 📋 Overview
 
-This project delivers a **hardened, embedded Linux distribution** tailored for IoT gateway deployments on Raspberry Pi 5. Built on the Yocto Project with KAS tooling, it offers:
+A **hardened, embedded Linux distribution** for IoT gateway deployments on Raspberry Pi 5. Built on Yocto Project with KAS tooling.
 
-- 🎯 **Custom `iotgw` Distribution** — Optimized for IoT workloads with minimal attack surface
-- 🔄 **A/B OTA Updates** — Atomic updates with automatic rollback via RAUC
-- 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags (PIE, RELRO, FORTIFY), runtime hardening
+**Key Features:**
+- 🔄 **A/B OTA Updates** — Atomic updates with automatic rollback via RAUC (enabled by default)
+- 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags, runtime hardening
 - 📦 **Container Runtime** — Podman, Buildah, and Skopeo for containerized workloads
 - 🛠️ **Developer-Friendly** — Comprehensive tooling for debugging and development
-- ⚡ **Fast Builds** — Shared download and sstate caches for reproducible builds
-
-### Security Features
-
-**Kernel Hardening** (Production image with `igw_security_prod`):
-- Memory protection: FORTIFY_SOURCE, heap/stack zeroing, SLAB hardening, PAGE_POISONING
-- Stack canaries, VMAP_STACK, per-syscall stack randomization
-- GCC security plugins: STACKLEAK, STRUCTLEAK, LATENT_ENTROPY
-- AppArmor LSM, Seccomp filtering, Kernel Audit framework
-- Disabled attack surfaces: /dev/mem, /proc/kcore, coredumps, KGDB, staging drivers
-
-**Compiler Hardening** (inherited from Poky):
-- Position Independent Executables (PIE/fPIE)
-- Stack Protector Strong (`-fstack-protector-strong`)
-- FORTIFY_SOURCE=2 for buffer overflow detection
-- Full RELRO + BIND_NOW (`-Wl,-z,relro,-z,now`)
-- Format string protection (`-Wformat-security -Werror=format-security`)
-
-**Runtime Hardening**:
-- AppArmor profiles for system services
-- Audit rules for security-relevant events
-- System call filtering via seccomp
-- Restricted umask (027), kernel dmesg restrictions
-- Network protocol blacklisting (SCTP, DCCP, RDS, TIPC)
-
-**Validation Tools**:
-- `kernel-hardening-checker` integration for KSPP compliance validation
-- Lynis security auditing from meta-security layer
-
----
-
-## ⚙️ Prerequisites
-
-### Install KAS Build Tool
-
-```bash
-pip3 install kas
-```
-
-### Layer Management Strategy
-
-Choose your approach based on your use case:
-
-| Approach | When to Use | Configuration |
-|----------|------------|---------------|
-| **🌐 Auto-Fetch** (Recommended) | Single project, first-time users | `kas/rpi5-autofetch.yml` |
-| **💾 Local Clones** (Advanced) | Multi-project reuse, CI/CD pipelines | `~/yocto_resource/layers/` + `rpi5.yml` |
-
-**Auto-fetch** automatically downloads and pins all upstream layers.
-**Local clones** reduce network traffic and enable cross-project sstate sharing.
 
 ---
 
 ## 🚀 Quick Start
 
+### Prerequisites
+
+```bash
+# Install KAS build tool
+pip3 install kas
+```
+
 ### Build Images
 
-<table>
-<tr><th>Using KAS Directly</th><th>Using Makefile</th></tr>
-<tr>
-<td>
-
 ```bash
-# Base image (headless)
-kas build kas/rpi5-autofetch.yml
+# Copy example config and edit with your keys/WiFi
+cp kas/local.yml.example kas/local.yml
+# Edit kas/local.yml - set RAUC key paths and WiFi credentials
 
-# Development image
-kas shell -c "bitbake iot-gw-image-dev" \
-  kas/rpi5-autofetch.yml
+# Build images (using Makefile - recommended)
+make dev         # Development image
+make prod        # Production image
+make bundle-dev-full   # OTA bundle with kernel
 
-# Production image
-kas shell -c "bitbake iot-gw-image-prod" \
-  kas/rpi5-autofetch.yml
-
-# RAUC bundle
-kas shell -c 'bitbake iot-gw-bundle' \
-  kas/rauc.yml
+# OR using KAS directly
+kas build kas/local.yml --target iot-gw-image-dev
+kas build kas/local.yml --target iot-gw-image-prod
+kas build kas/local.yml --target iot-gw-bundle-full
 ```
-
-</td>
-<td>
-
-```bash
-# Show all targets
-make help
-
-# Build images (RAUC-enabled by default)
-make dev
-make prod
-make base
-
-# Build full bundles (rootfs + kernel/DTBs)
-make bundle-dev-full
-make bundle-prod-full
-
-# Security validation
-make kernel-hardening-check      # Check kernel config
-make khc-target HOST=root@192.168.1.100  # Check on device
-```
-
-</td>
-</tr>
-</table>
-
-> 💡 **Tip**: Enable RAUC on dev/prod images by setting `IOTGW_ENABLE_RAUC = "1"` in a KAS overlay.
-
 
 ### Flash to SD Card
 
 ```bash
-# Base image
-sudo bmaptool copy \
-  build/tmp/deploy/images/raspberrypi5/iot-gw-image-raspberrypi5.rootfs.wic.bz2 \
-  /dev/sdX
-
-# Development image
 sudo bmaptool copy \
   build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.bz2 \
-  /dev/sdX
-
-# Production image
-sudo bmaptool copy \
-  build/tmp/deploy/images/raspberrypi5/iot-gw-image-prod-raspberrypi5.rootfs.wic.bz2 \
   /dev/sdX
 ```
 
@@ -155,103 +67,21 @@ sudo bmaptool copy \
 | Root | `root` | `iotgateway` |
 | Developer | `devel` | `devel` |
 
-> ⚠️ **Security Warning**: Change default passwords immediately after first boot!
-
----
-
-## 📁 Project Structure
-
-```
-rpi5-kas-project/
-├── 📄 rpi5.yml                   # Base image configuration
-├── 📁 kas/                       # KAS overlays
-│   ├── rauc.yml                  # RAUC OTA configuration
-│   ├── desktop.yml.example       # Desktop/GUI variant
-│   └── local.yml.example         # Local overrides (secrets, WiFi)
-├── 📁 meta-iot-gateway/          # Custom Yocto layer
-│   ├── conf/distro/              # iotgw distribution config
-│   ├── recipes-core/             # Images, packagegroups, base-files
-│   ├── recipes-bsp/              # Boot components (U-Boot, splash)
-│   ├── recipes-network/          # NetworkManager profiles
-│   ├── recipes-support/          # System configs (users, sysctl, journald)
-│   ├── recipes-ota/              # RAUC configs and bundles
-│   └── wic/                      # Disk partition layouts
-├── 📁 build/                     # Build artifacts (generated)
-└── 📄 Makefile                   # Convenience targets
-```
-
-### External Resources
-
-- **Layers**: `~/yocto_resource/layers/` (optional, for local clones)
-- **Downloads**: `~/yocto_resource/DL_SHARED/` (shared package cache)
-- **Sstate**: `~/yocto_resource/SSTATE/` (shared build cache)
-
----
-
-## 💿 Partition Layout (RAUC Image)
-
-### Available Card Sizes
-
-| Card Size | WKS File | Image Size |
-|-----------|----------|------------|
-| **16GB** (default) | `iot-gw-rauc-16g.wks.in` | ~10GB |
-| **32GB** | `iot-gw-rauc-32g.wks.in` | ~20GB |
-| **64GB** | `iot-gw-rauc-64g.wks.in` | ~40GB |
-
-Select variant by setting `WKS_FILE` in your KAS overlay:
-
-```yaml
-local_conf_header:
-  rauc_toggle: |
-    WKS_FILE = "iot-gw-rauc-32g.wks.in"  # or -16g / -64g
-```
-
-### Default 16GB Layout
-
-| # | Device | Label | Size | Type | Mount | Purpose |
-|---|--------|-------|------|------|-------|---------|
-| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat | `/boot` | 🥾 Bootloader & kernel (shared) |
-| 2 | `/dev/mmcblk0p2` | `rootA` | 3G | ext4 | `/` | 🅰️ Root filesystem Slot A |
-| 3 | `/dev/mmcblk0p3` | `rootB` | 3G | ext4 | - | 🅱️ Root filesystem Slot B |
-| 4 | `/dev/mmcblk0p4` | `data` | 2G | ext4 | `/data` | 💾 Persistent data |
-
-> 📊 **Space Efficiency**: ~10GB total leaves room for wear leveling on 16GB cards
+> ⚠️ **Change default passwords immediately after first boot!**
 
 ---
 
 ## 🔄 RAUC Over-The-Air Updates
 
-### How It Works
-
-```mermaid
-graph LR
-    A[Boot Slot A] --> B[Install bundle to Slot B]
-    B --> C[Reboot to Slot B]
-    C --> D{Boot Success?}
-    D -->|Yes| E[Mark Good]
-    D -->|No| F[Rollback to Slot A]
-```
-
-1. **Boot** from active slot (A or B)
-2. **Install** bundle to the inactive slot
-3. **Reboot** into the updated slot
-4. **Verify** — Automatic or manual health check
-5. **Rollback** on failure (automatic)
+RAUC is **enabled by default** in this distribution.
 
 ### Deploy an Update
 
 ```bash
-# 1. Copy bundle to device (choose based on what you built)
-# Rootfs + kernel update (full):
-scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full.raucb \
-    root@<device-ip>:/tmp/
+# 1. Copy bundle to device
+scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full.raucb root@<device-ip>:/tmp/
 
-# OR rootfs-only update:
-scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle.raucb \
-    root@<device-ip>:/tmp/
-
-# 2. Install on device
-rauc info /tmp/iot-gw-bundle-full.raucb
+# 2. Install and reboot
 rauc install /tmp/iot-gw-bundle-full.raucb
 reboot
 
@@ -259,291 +89,146 @@ reboot
 rauc status
 ```
 
-### Good Marking
+### Generate RAUC Signing Keys
 
-| Method | Command |
-|--------|---------|
-| **Automatic** | `rauc-mark-good.service` (oneshot after boot) |
-| **Manual** | `systemctl start rauc-mark-good && rauc status` |
-
-> 🛡️ **Safety**: Automatic rollback occurs if boot fails or health checks don't pass
-
-### Optional: Serial Logging
+> ⚠️ **Required**: Generate your own keys before building bundles!
 
 ```bash
-tio -b 115200 -t --log --log-strip --log-directory ./logs /dev/ttyACM0
-```
-
-### Boot Flow Notes
-- U-Boot prints RAUC bootchooser details during boot:
-  - Env: `BOOT_ORDER`, `BOOT_A_LEFT`, `BOOT_B_LEFT`
-  - Slot selection and remaining tries
-  - Appended kernel args: `root=… rauc.slot=…`
-- Optional runtime kernel args:
-  - Set: `fw_setenv EXTRA_KERNEL_ARGS "cma=256M"`
-  - Clear: `fw_setenv EXTRA_KERNEL_ARGS`
-  - U-Boot appends `EXTRA_KERNEL_ARGS` to the kernel cmdline and logs it.
-
-### Bundles Update /boot
-- RAUC bundles now carry `bootfiles.tar.gz` and run a post-install hook that refreshes `/boot` if needed:
-  - Files considered: `boot.scr`, `u-boot.bin`, `Image`, `kernel_2712.img`, `bcm2712-rpi-5-b.dtb`, `overlays/`, `splash.bmp`
-  - Logs: `journalctl -u rauc` shows `[bundle-hook] …` messages
-- This keeps kernel/DTBs in sync with the modules in the new rootfs — kernel updates via bundle no longer require re-flashing.
-
-See OTA_UPDATE.md for details, diagrams, and rollback notes.
-
-### 🔐 Security & Signing
-
-> ⚠️ **Critical**: Private keys are NOT included in this repository for security!
-
-#### Generate Your RAUC Keys
-
-First-time setup - generate signing keys:
-
-```bash
+# Generate keys
 ./meta-iot-gateway/scripts/generate-rauc-certs.sh
-```
 
-This creates keys in the current directory. Move them to a secure location:
-
-```bash
+# Move to secure location
 mkdir -p ~/rauc-keys
-mv dev-key.pem dev-cert.pem ~/rauc-keys/
+mv dev-key.pem dev-cert.pem ca.cert.pem ~/rauc-keys/
+
+# Configure in kas/local.yml
+# Set IOTGW_RAUC_KEY_DIR to ~/rauc-keys
 ```
 
-#### Configure Build System
-
-Create `kas/local.yml` (git-ignored) with your key paths:
-
-```yaml
-header:
-  version: 18
-  includes:
-    - "kas/rauc.yml"
-
-env:
-  # Prefer absolute path; using $HOME depends on how kas is invoked
-  IOTGW_RAUC_KEY_DIR: "$HOME/rauc-keys"
-
-local_conf_header:
-  rauc_keys: |
-    RAUC_KEY_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-key.pem"
-    RAUC_CERT_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-cert.pem"
-```
-
-#### Build Signed Bundles
-
-```bash
-# Build bundle with your keys
-kas build kas/local.yml --target iot-gw-bundle
-
-# Or build image + bundle (RAUC-enabled)
-kas build kas/local.yml --target iot-gw-image-prod
-
-Note: Use the same KAS config for image and bundle steps. Mixing `rpi5.yml` (no RAUC) for the image and `kas/local.yml` (RAUC) for the bundle changes task hashes and forces unnecessary rebuilds (e.g., kernel). Prefer the RAUC flow end-to-end, or use the Makefile one-shot targets like `make dev-bundle-full`. If environment expansion for `$HOME` is unreliable in your setup, use absolute paths in `kas/local.yml`.
-```
-
-> 📖 See `meta-iot-gateway/recipes-ota/rauc/files/README-KEYS.md` for detailed key management instructions.
-
-#### Security Auditing & Validation
-
-##### Lynis Security Audit
-
-Installed from the `meta-security` layer as part of the base image.
-
-```bash
-# Quick audit on-device
-lynis audit system --quick
-
-# Full audit (more thorough, takes longer)
-lynis audit system
-```
-
-Reports and logs:
-- Log: `/var/log/lynis.log`
-- Report (key=value): `/var/log/lynis-report.dat`
-
-Tip: capture a baseline after first boot, then compare over time to track hardening progress.
-
-##### Kernel Hardening Validation
-
-Validate kernel security configuration against KSPP recommendations:
-
-```bash
-# During build (checks built kernel config)
-make kernel-hardening-check
-
-# On running device (requires /proc/config.gz)
-make khc-target HOST=root@192.168.1.100
-```
-
-The checker validates:
-- Memory protection (FORTIFY_SOURCE, INIT_ON_ALLOC/FREE, SLAB hardening)
-- Stack protection (stack canaries, VMAP_STACK, randomization)
-- Access restrictions (SECURITY_DMESG_RESTRICT, DEVMEM, PROC_KCORE)
-- Attack surface reduction (disabled legacy features, TRIM_UNUSED_KSYMS)
-- GCC security plugins (STACKLEAK, STRUCTLEAK, LATENT_ENTROPY)
-
-Results are saved to `build/reports/kernel-hardening-YYYYMMDD-HHMMSS.txt`
+See `kas/local.yml.example` for configuration template.
 
 ---
 
-## 🎨 Customization
+## 💿 Partition Layout
 
-### Package Groups
+### Default 16GB Layout (RAUC A/B)
 
-| Package Group | Contents |
-|---------------|----------|
-| `packagegroup-iot-gw-base` | 🔧 Core system (systemd, networking, utilities) |
-| `packagegroup-iot-gw-apps` | 🚀 Applications (MQTT, containers, runtime) |
-| `packagegroup-iot-gw-devtools` | 🐛 Debug tools (vim, tcpdump, strace, gdb) |
+| Device | Label | Size | Mount | Purpose |
+|--------|-------|------|-------|---------|
+| `/dev/mmcblk0p1` | `boot` | 256M | `/boot` | Bootloader & kernel (shared) |
+| `/dev/mmcblk0p2` | `rootA` | 3G | `/` | Root filesystem Slot A |
+| `/dev/mmcblk0p3` | `rootB` | 3G | - | Root filesystem Slot B |
+| `/dev/mmcblk0p4` | `data` | 2G | `/data` | Persistent data |
 
-### First-boot provisioning (optional)
-
-Place files on `/boot` (FAT) before first boot:
-- `/boot/iotgw/authorized_keys`
-- `/boot/iotgw/nm/*.nmconnection`
-- `/boot/iotgw/nm-conf/*.conf` (e.g., backend override)
-
-### Networking defaults
-- NetworkManager backend: `wpa_supplicant`
-- Wi‑Fi: no SSIDs stored in the repo. Inject at build time (KAS/local.conf):
-  - Single network (legacy):
-    ```yaml
-    local_conf_header:
-      wifi: |
-        IOTGW_WIFI_SSID = "HomeWiFi"
-        IOTGW_WIFI_PSK = "Secret"
-    ```
-  - Multiple networks (preferred), one per line as `ssid|psk|iface|method|priority|ipv4addr/prefix|gateway|dns1;dns2`:
-    ```yaml
-    local_conf_header:
-      wifi: |
-        IOTGW_WIFI_NETWORKS = "HomeWiFi|Secret|wlan0|manual|100|192.168.0.222/24|192.168.0.1|1.1.1.1;8.8.8.8\nNEWWIFISSID|AnotherPass|wlan0|manual|100|192.168.28.50/24|192.168.28.1|1.1.1.1;8.8.8.8"
-    ```
-  - Or drop `.nmconnection` files on `/boot/iotgw/nm/` before first boot.
-- Bridge `br0`: 192.168.100.1/24, `ipv4.never-default=true`
-- Wi‑Fi autoconnect-priority: 100
-- MAC randomization (defaults, override in local.conf):
-  - `IOTGW_NM_SCAN_RAND = "yes"` (scan-time)
-  - `IOTGW_NM_WIFI_CLONED_MAC = "stable"` (per-connection policy: preserve|random|stable)
-
-### Kernel Configuration
-- Modular kernel config fragments are provided and can be toggled per build using `IOTGW_KERNEL_FEATURES`.
-- Always included:
-  - `branding.cfg`: sets `CONFIG_LOCALVERSION="-v8-16k-igw"`.
-  - `storage-filesystems.cfg`: enables `overlayfs`, `dm-verity`, and `squashfs(+zstd/xz/zlib)`.
-- Optional sets (enable by adding the keyword to `IOTGW_KERNEL_FEATURES`):
-  - `igw_compute_media`: VC4/V3D KMS, V4L2/media core, UVC, huge/THP.
-  - `igw_containers`: namespaces + cgroups (MEMCG, CGROUP_BPF, etc.).
-  - `igw_networking_iot`: WireGuard, SocketCAN(+MCP251x), VLAN 802.1Q.
-  - `igw_observability_dev`: BPF/JIT, kprobes, ftrace, kallsyms (dev only).
-  - `igw_security_prod`: comprehensive hardening based on KSPP recommendations.
-    - Module signing (SHA256), AppArmor LSM, Seccomp filtering, Kernel Audit
-    - Memory hardening: FORTIFY_SOURCE, INIT_ON_ALLOC/FREE, PAGE_POISONING, SLAB hardening
-    - Stack protection: STACKPROTECTOR_STRONG, VMAP_STACK, RANDOMIZE_KSTACK_OFFSET
-    - GCC security plugins: STACKLEAK, STRUCTLEAK, LATENT_ENTROPY, ARM_SSP_PER_TASK
-    - Access restrictions: SECURITY_DMESG_RESTRICT, disabled DEVMEM/PROC_KCORE/COREDUMP
-    - ASLR: RANDOMIZE_BASE with increased entropy (ARCH_MMAP_RND_BITS=30)
-    - Attack surface reduction: disabled BINFMT_MISC, KGDB, STAGING, uncommon protocols
-
-Enable via KAS overlay (example):
-```yaml
-local_conf_header:
-  kernel_features: |
-    # Development-focused set
-    IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw_observability_dev"
-```
-
-Production-oriented set:
-```yaml
-local_conf_header:
-  kernel_features: |
-    IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw_security_prod"
-```
-
-Notes
-- Headless devices typically don’t need large CMA; when needed (e.g., camera), set `EXTRA_KERNEL_ARGS="cma=256M"` via U-Boot env and reboot.
-- Kernel branding appears in `uname -r` once the rebuilt kernel is deployed (suffix `-v8-16k-igw`).
-
-
-### Profiles (Headless/Desktop)
-- Default profile: headless (no X11/Wayland/OpenGL/PulseAudio)
-- Enable desktop (Wayland/Weston minimal stack):
-  - Copy `kas/desktop.yml.example` to `kas/desktop.yml`
-  - Build: `kas build kas/rauc.yml:kas/desktop.yml --target iot-gw-image-dev`
-- How it works:
-  - `IOTGW_PROFILE` controls overrides (`headless` or `desktop`)
-  - Features source of truth: `conf/distro/include/iotgw-common.inc`
-  - Desktop pulls `IOTGW_DESKTOP_PACKAGES` into the image (extend as needed)
-
-### System services & tuning
-- Firewall: nftables baseline installed and enabled
-- Journald: persistent with size/retention caps (`/etc/systemd/journald.conf.d/iotgw.conf`)
-- Sysctl: tuned for IoT/containers (keepalives, buffers, inotify, forwarding)
-
-### Build Performance
-
-Adjust in `rpi5.yml`:
-```yaml
-parallel: |
-  BB_NUMBER_THREADS = "8"
-  PARALLEL_MAKE = "-j10"
-hashserve: |
-  # Enable hash equivalence for better sstate reuse
-  BB_HASHSERVE = "auto"
-```
-
-### KAS Overlays (secrets and variants)
-- Local Wi‑Fi credentials (ignored by git):
-  - Copy `kas/local.yml.example` → `kas/local.yml`, edit values
-  - Build: `kas build kas/rauc.yml:kas/local.yml --target iot-gw-image-prod`
-- Desktop variant (Wayland/Weston):
-  - Copy `kas/desktop.yml.example` → `kas/desktop.yml`
-  - Build: `kas build kas/rauc.yml:kas/desktop.yml --target iot-gw-image-dev`
+**Other sizes available:** 32GB, 64GB — see `meta-iot-gateway/wic/` for WKS files.
 
 ---
 
 ## 📦 Image Variants
 
-| Image | Target Audience | Includes | Size |
-|-------|----------------|----------|------|
-| **`iot-gw-image-base`** | Standard | Package management, basic tools | Small |
-| **`iot-gw-image-dev`** | Development | +Debug tools, compilers, buildessential | Medium |
-| **`iot-gw-image-prod`** | Production | Lean runtime, hardened | Minimal |
+| Image | Purpose | Includes | Size |
+|-------|---------|----------|------|
+| `iot-gw-image-base` | Minimal production | Core system, RAUC | Small |
+| `iot-gw-image-dev` | Development | +Debug tools, compilers | Medium |
+| `iot-gw-image-prod` | Production | Lean runtime, hardened | Minimal |
 
-> 💡 **Enable RAUC**: Use `kas/rauc.yml` overlay with `--target <image-name>`
+Build commands:
+```bash
+make dev       # or kas build kas/local.yml --target iot-gw-image-dev
+make prod      # or kas build kas/local.yml --target iot-gw-image-prod
+```
+
+---
+
+## 🎨 Customization
+
+### Layer Management
+
+Two approaches:
+
+| Approach | When to Use | Config File |
+|----------|-------------|-------------|
+| **Auto-Fetch** (Default) | First-time users, single project | `kas/rpi5-autofetch.yml` |
+| **Local Clones** | Multi-project, CI/CD | `kas/rauc.yml` |
+
+Switch by editing the `includes:` section in `kas/local.yml`.
+
+### WiFi Configuration
+
+**Option 1: Build-time injection** (in `kas/local.yml`):
+```yaml
+local_conf_header:
+  wifi: |
+    IOTGW_WIFI_SSID = "YourSSID"
+    IOTGW_WIFI_PSK = "YourPassword"
+```
+
+**Option 2: First-boot provisioning**:
+Place `.nmconnection` files in `/boot/iotgw/nm/` before first boot.
+
+### Kernel Features
+
+Enable optional kernel feature sets via `IOTGW_KERNEL_FEATURES`:
+- `igw_containers` — Namespaces, cgroups for containers
+- `igw_networking_iot` — WireGuard, CAN, VLAN
+- `igw_security_prod` — KSPP hardening (recommended for production)
+- `igw_observability_dev` — BPF, kprobes, ftrace (development only)
+
+Example (in `kas/local.yml`):
+```yaml
+local_conf_header:
+  kernel_features: |
+    IOTGW_KERNEL_FEATURES = "igw_containers igw_networking_iot igw_security_prod"
+```
+
+### Optional: OpenThread Border Router (OTBR)
+
+Enable OTBR support at build time:
+```bash
+IOTGW_ENABLE_OTBR=1 make dev
+# or
+IOTGW_ENABLE_OTBR=1 kas build kas/local.yml --target iot-gw-image-dev
+```
 
 ---
 
 ## 🛠️ Common Tasks
 
-### Clean Build After Layout Change
+### Clean Build
 
 ```bash
-kas shell -c 'bitbake -c cleansstate iot-gw-image-dev && bitbake iot-gw-image-dev' \
-  kas/rauc.yml --target iot-gw-image-dev
+make clean
 ```
 
-### Enable mDNS for `.local` Hostnames
+### Enable Desktop/GUI (Wayland/Weston)
 
-Add to your image recipe:
-
-```python
-IMAGE_INSTALL:append = " avahi-daemon nss-mdns"
+```bash
+cp kas/desktop.yml.example kas/desktop.yml
+kas build kas/local.yml:kas/desktop.yml --target iot-gw-image-dev
 ```
+
+### Build Performance Tuning
+
+Edit `BB_NUMBER_THREADS` and `PARALLEL_MAKE` in `rpi5.yml` or your local overlay.
+
+---
+
+## 📚 Documentation
+
+- **Detailed OTA Guide**: See `OTA_UPDATE.md`
+- **Security Hardening**: See kernel fragments in `meta-iot-gateway/recipes-kernel/linux/files/fragments/`
+- **OTBR Setup**: See `meta-iot-gateway/recipes-connectivity/otbr/README.md`
 
 ---
 
 ## 📚 References
 
-| Resource | Description |
-|----------|-------------|
-| [Yocto Project](https://docs.yoctoproject.org) | Build system documentation |
-| [KAS Build Tool](https://kas.readthedocs.io) | Setup tool documentation |
-| [meta-raspberrypi](https://github.com/agherzan/meta-raspberrypi) | RPi BSP layer |
-| [RAUC Framework](https://rauc.readthedocs.io) | OTA update system |
-| [Raspberry Pi 5](https://www.raspberrypi.com/documentation/) | Hardware documentation |
+| Resource | URL |
+|----------|-----|
+| Yocto Project | https://docs.yoctoproject.org |
+| KAS Build Tool | https://kas.readthedocs.io |
+| RAUC Framework | https://rauc.readthedocs.io |
+| Raspberry Pi 5 | https://www.raspberrypi.com/documentation/ |
 
 ---
 
@@ -552,5 +237,3 @@ IMAGE_INSTALL:append = " avahi-daemon nss-mdns"
 **MIT License** — See [LICENSE](LICENSE) for details.
 
 Individual components retain their respective licenses.
-
----
