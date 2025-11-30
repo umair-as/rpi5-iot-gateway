@@ -36,5 +36,20 @@ if [ -d "$SRC_DIR/nm" ]; then
     fi
 fi
 
+# Also seed profiles shipped in the image if missing (handles overlayfs on /etc)
+if [ -d /usr/share/iotgw-nm/connections ]; then
+    install -d /etc/NetworkManager/system-connections
+    for f in /usr/share/iotgw-nm/connections/*.nmconnection; do
+        [ -e "$f" ] || continue
+        bn=$(basename "$f")
+        if [ ! -e "/etc/NetworkManager/system-connections/$bn" ]; then
+            install -m 0600 "$f" /etc/NetworkManager/system-connections/
+        fi
+    done
+    if command -v nmcli >/dev/null 2>&1; then
+        nmcli connection reload || true
+    fi
+fi
+
 touch "$STAMP"
 exit 0

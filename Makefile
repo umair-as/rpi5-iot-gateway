@@ -8,6 +8,10 @@ LOCAL ?= kas/local.yml
 # Default to RAUC builds always; prefer local RAUC config if present
 BASE ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
 
+# Export optional toggles so users can do:
+#   IOTGW_ENABLE_OTBR=1 make dev|prod|bundle-*
+export IOTGW_ENABLE_OTBR
+
 help:
 	@echo "Targets (RAUC-enabled by default):"
 	@echo "  make dev                  # Build developer image"
@@ -34,8 +38,9 @@ prod:
 	$(KAS) build $(BASE) --target iot-gw-image-prod
 
 define bundle_cmd
-  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME" \
+  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR" \
                    BUNDLE_IMAGE_NAME=$(1) \
+                   IOTGW_ENABLE_OTBR=$$IOTGW_ENABLE_OTBR \
                    bitbake $(2)' $(BASE)
 endef
 

@@ -24,7 +24,7 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     avahi-daemon \
     tmux \
     btop \
-    ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr','',d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5','',d)} \
 "
 
 # Extra space for development artifacts

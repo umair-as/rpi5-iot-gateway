@@ -30,15 +30,12 @@ RAUC_BUNDLE_HOOKS[file] = "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1
 
 # Make RAUC cert and hooks available via FILESEXTRAPATHS
 FILESEXTRAPATHS:prepend := "${THISDIR}/../rauc/files:"
-SRC_URI += "file://dev-cert.pem file://bundle-hooks.sh;mode=0755"
+SRC_URI += "file://bundle-hooks.sh;mode=0755"
 
-# Key and cert paths - override in local.conf or kas/local.yml
-# Default expects keys in the repository (for backward compatibility if keys are present)
-# For security, keys should be stored outside repo and paths set via:
-#   RAUC_KEY_FILE = "${HOME}/rauc-keys/dev-key.pem"
-#   RAUC_CERT_FILE = "${HOME}/rauc-keys/dev-cert.pem"
-RAUC_KEY_FILE ?= "${WORKDIR}/dev-key.pem"
-RAUC_CERT_FILE ?= "${WORKDIR}/dev-cert.pem"
+# Key and cert paths must be provided via local.conf or kas/local.yml
+# Example in kas/local.yml.example:
+#   RAUC_KEY_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-key.pem"
+#   RAUC_CERT_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-cert.pem"
 
 # Output name
 BUNDLE_BASENAME = "${BUNDLE_IMAGE}-bundle"

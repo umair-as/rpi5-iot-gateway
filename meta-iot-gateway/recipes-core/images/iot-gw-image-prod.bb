@@ -15,6 +15,7 @@ IMAGE_FEATURES += " \
 # Core functionality only
 CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-prod \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5','',d)} \
 "
 
 # Keep image smaller by avoiding extra free space
