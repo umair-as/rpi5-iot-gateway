@@ -1,7 +1,18 @@
 #!/bin/sh
 set -eu
 
-log() { echo "[bundle-hook] $*" >&2; }
+# Logging functions with descriptive emojis for better visibility
+log_info()    { echo "📦 [bundle-hook] $*" >&2; }
+log_success() { echo "✅ [bundle-hook] $*" >&2; }
+log_update()  { echo "📝 [bundle-hook] $*" >&2; }
+log_error()   { echo "❌ [bundle-hook] $*" >&2; }
+log_warn()    { echo "⚠️  [bundle-hook] $*" >&2; }
+log_clean()   { echo "🧹 [bundle-hook] $*" >&2; }
+log_install() { echo "⚙️  [bundle-hook] $*" >&2; }
+log_check()   { echo "🔍 [bundle-hook] $*" >&2; }
+log_skip()    { echo "⏭️  [bundle-hook] $*" >&2; }
+# Backward compatibility
+log() { log_info "$*"; }
 
 # Determine hook type as RAUC defines it
 # Canonical: RAUC passes hook name as first positional arg for slot hooks
@@ -25,17 +36,17 @@ BOOT_MP="/boot"
 
 case "${HOOK_TYPE:-}" in
   post-install)
-    :
+    log_info "Hook type: post-install"
     ;;
   *)
-    log "unknown or unset hook type '${HOOK_TYPE:-}' (expected post-install)"
+    log_warn "Unknown or unset hook type '${HOOK_TYPE:-}' (expected post-install)"
     exit 0
     ;;
 esac
 
 ARCHIVE="${BUNDLE_MNT}/bootfiles.tar.gz"
 if [ ! -r "$ARCHIVE" ]; then
-  log "no bootfiles.tar.gz in bundle; skipping /boot update"
+  log_skip "No bootfiles.tar.gz in bundle; skipping /boot update"
   exit 0
 fi
 
@@ -43,10 +54,11 @@ tmpdir=$(mktemp -d /tmp/bootfiles.XXXXXX)
 cleanup() { rm -rf "$tmpdir" || true; }
 trap cleanup EXIT INT TERM
 
-log "updating /boot from bundle archive"
-tar -C "$tmpdir" -xzf "$ARCHIVE" || { log "failed to extract bootfiles"; exit 1; }
+log_install "Extracting bootfiles from bundle archive..."
+tar -C "$tmpdir" -xzf "$ARCHIVE" || { log_error "Failed to extract bootfiles"; exit 1; }
 
 # Validate module/kernel release alignment if possible
+log_check "Validating kernel/module version alignment..."
 MODS_DIR="$RAUC_SLOT_MOUNT_POINT/lib/modules"
 mods_release=""
 if [ -d "$MODS_DIR" ]; then
@@ -57,14 +69,21 @@ if [ -f "$tmpdir/kernel.release" ]; then
   expected_release="$(cat "$tmpdir/kernel.release" 2>/dev/null || true)"
 fi
 if [ -n "$expected_release" ] && [ -n "$mods_release" ] && [ "$expected_release" != "$mods_release" ]; then
-  log "mismatch: expected kernel release '$expected_release' but rootfs has modules for '$mods_release'"
+  log_error "Kernel/module mismatch: expected '$expected_release' but rootfs has modules for '$mods_release'"
   exit 1
+fi
+if [ -n "$expected_release" ] && [ -n "$mods_release" ]; then
+  log_success "Kernel release validation passed: $expected_release"
 fi
 
 # Ensure /boot is mounted
+log_check "Checking /boot mount status..."
 if ! mountpoint -q "$BOOT_MP"; then
+  log_install "Mounting $BOOT_DEV at $BOOT_MP..."
   mkdir -p "$BOOT_MP"
-  mount -t vfat "$BOOT_DEV" "$BOOT_MP" || { log "failed to mount $BOOT_DEV at $BOOT_MP"; exit 0; }
+  mount -t vfat "$BOOT_DEV" "$BOOT_MP" || { log_error "Failed to mount $BOOT_DEV at $BOOT_MP"; exit 0; }
+else
+  log_success "/boot is already mounted"
 fi
 
 # Try to ensure rw mount
@@ -75,7 +94,7 @@ updated=0
 FILES="boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb"
 for f in $FILES; do
   if [ -f "$tmpdir/$f" ]; then
-    log "installing $f to /boot"
+    log_install "Installing $f to /boot"
     install -m 0644 "$tmpdir/$f" "$BOOT_MP/$f"
     updated=1
   fi
@@ -93,49 +112,87 @@ if [ -d "$tmpdir/overlays" ]; then
     updated=1
   done
   if [ "${overlays_copied}" -gt 0 ]; then
-    log "installed ${overlays_copied} overlay file(s) to /boot/overlays"
+    log_install "Installed ${overlays_copied} overlay file(s) to /boot/overlays"
   fi
 fi
 
 # Ensure kernel_2712.img exists for Pi5 firmware even if bundle only shipped Image
 if [ ! -f "$tmpdir/kernel_2712.img" ] && [ -f "$tmpdir/Image" ]; then
-  log "installing kernel_2712.img (from Image) to /boot"
+  log_install "Installing kernel_2712.img (from Image) to /boot"
   install -m 0644 "$tmpdir/Image" "$BOOT_MP/kernel_2712.img"
   updated=1
 fi
 
 if [ "$updated" -eq 1 ]; then
   sync || true
-  log "boot files updated"
+  log_success "Boot files updated successfully"
 else
-  log "boot files already up-to-date"
+  log_skip "Boot files already up-to-date"
 fi
+
+MAX_BACKUPS="${MAX_BOOT_BACKUPS:-3}"
+
+# Helper: prune backups, keep newest N matching pattern <file>.bak.*
+prune_backups() {
+  f="$1"; n="$2"
+  dir=$(dirname "$f"); base=$(basename "$f")
+  # Newest first
+  set +e
+  list=$(ls -1t "$dir/${base}.bak."* 2>/dev/null)
+  rc=$?
+  set -e
+  [ $rc -ne 0 ] && return 0
+  # Delete everything beyond first N and report count
+  to_prune=$(echo "$list" | awk 'NR>n {print}' n="$n" | wc -l | awk '{print $1}')
+  if [ "$to_prune" -gt 0 ]; then
+    echo "$list" | awk 'NR>n {print}' n="$n" | xargs -n1 -- rm -f --
+    log_clean "Pruned ${to_prune} old backups for ${base}, kept latest ${n}"
+  fi
+}
 
 # Prefer U-Boot chainloading when available: enforce kernel=u-boot.bin in config.txt
 if [ -r "$BOOT_MP/config.txt" ] && [ -r "$BOOT_MP/u-boot.bin" ]; then
-  log "ensuring config.txt boots U-Boot (kernel=u-boot.bin)"
-  cp -a "$BOOT_MP/config.txt" "$BOOT_MP/config.txt.bak.$(date +%Y%m%d%H%M%S)" || true
-  # Remove existing kernel= lines and append kernel=u-boot.bin
-  sed -E '/^[[:space:]]*kernel=/d' "$BOOT_MP/config.txt" > "$BOOT_MP/config.txt.tmp" || cp -a "$BOOT_MP/config.txt" "$BOOT_MP/config.txt.tmp"
-  printf '%s\n' "kernel=u-boot.bin" >> "$BOOT_MP/config.txt.tmp"
-  mv "$BOOT_MP/config.txt.tmp" "$BOOT_MP/config.txt"
-  sync || true
+  log_check "Checking U-Boot configuration in config.txt..."
+  # Compute prospective new config (proper newlines, no literal \n)
+  tmpcfg="$BOOT_MP/config.txt.tmp"
+  sed -E '/^[[:space:]]*kernel=/d' "$BOOT_MP/config.txt" > "$tmpcfg" || cp -a "$BOOT_MP/config.txt" "$tmpcfg"
+  echo "kernel=u-boot.bin" >> "$tmpcfg"
+  # Only change if different
+  if ! cmp -s "$tmpcfg" "$BOOT_MP/config.txt"; then
+    log_update "Updating config.txt to boot U-Boot (kernel=u-boot.bin)"
+    bk="$BOOT_MP/config.txt.bak.$(date +%Y%m%d%H%M%S)"
+    cp -a "$BOOT_MP/config.txt" "$bk" || true
+    prune_backups "$BOOT_MP/config.txt" "$MAX_BACKUPS"
+    mv "$tmpcfg" "$BOOT_MP/config.txt"
+    sync || true
+  else
+    rm -f "$tmpcfg" || true
+    log_success "config.txt already set for U-Boot; no change"
+  fi
 
-  # With U-Boot in charge, remove any firmware-preset root=/rauc.slot= from cmdline.txt
-  if [ -r "$BOOT_MP/cmdline.txt" ]; then
-    log "stripping root=/rauc.slot= from cmdline.txt (U-Boot controls root)"
-    cp -a "$BOOT_MP/cmdline.txt" "$BOOT_MP/cmdline.txt.bak.$(date +%Y%m%d%H%M%S)" || true
-    current=$(cat "$BOOT_MP/cmdline.txt" 2>/dev/null || echo "")
+  # With U-Boot in charge (and config.txt actually set), remove any firmware-preset root=/rauc.slot=
+  if [ -r "$BOOT_MP/cmdline.txt" ] && grep -Eq '^[[:space:]]*kernel[[:space:]]*=[[:space:]]*u-boot\.bin[[:space:]]*$' "$BOOT_MP/config.txt"; then
+    log_check "Checking cmdline.txt for U-Boot compatibility..."
+    current="$(cat "$BOOT_MP/cmdline.txt" 2>/dev/null || echo "")"
     stripped=$(printf '%s\n' "$current" \
       | sed -E 's/(^| )root=[^ ]+//g; s/(^| )rauc\.slot=[^ ]+//g' \
       | tr -s ' ' \
       | sed -E 's/^ +| +$//g')
-    printf '%s\n' "$stripped" > "$BOOT_MP/cmdline.txt"
-    sync || true
+    if [ "${current}" != "${stripped}" ]; then
+      log_update "Stripping root=/rauc.slot= from cmdline.txt (U-Boot controls root)"
+      bk="$BOOT_MP/cmdline.txt.bak.$(date +%Y%m%d%H%M%S)"
+      cp -a "$BOOT_MP/cmdline.txt" "$bk" || true
+      prune_backups "$BOOT_MP/cmdline.txt" "$MAX_BACKUPS"
+      printf '%s\n' "$stripped" > "$BOOT_MP/cmdline.txt"
+      sync || true
+    else
+      log_success "cmdline.txt already clean; no change"
+    fi
   fi
 else
   # If we boot via firmware (not U-Boot), ensure next boot root= points to the
   # just-installed target slot by updating /boot/cmdline.txt accordingly.
+  log_check "Checking firmware boot configuration (non-U-Boot mode)..."
   TARGET_ROOT=""
   # Prefer RAUC-provided slot device if available
   if [ -n "${RAUC_SLOT_DEVICE:-}" ]; then
@@ -147,17 +204,25 @@ else
     esac
   fi
   if [ -n "$TARGET_ROOT" ] && [ -r "$BOOT_MP/cmdline.txt" ]; then
-    log "updating cmdline.txt root=${TARGET_ROOT} for next boot"
-    cp -a "$BOOT_MP/cmdline.txt" "$BOOT_MP/cmdline.txt.bak.$(date +%Y%m%d%H%M%S)" || true
-    current=$(cat "$BOOT_MP/cmdline.txt" 2>/dev/null || echo "")
+    current="$(cat "$BOOT_MP/cmdline.txt" 2>/dev/null || echo "")"
     stripped=$(printf '%s\n' "$current" | sed -E 's/(^| )root=[^ ]+//g' | tr -s ' ' | sed -E 's/^ +| +$//g')
     if [ -n "$stripped" ]; then
-      echo "$stripped root=${TARGET_ROOT}" > "$BOOT_MP/cmdline.txt"
+      newcmd="$stripped root=${TARGET_ROOT}"
     else
-      echo "root=${TARGET_ROOT}" > "$BOOT_MP/cmdline.txt"
+      newcmd="root=${TARGET_ROOT}"
     fi
-    sync || true
+    if [ "${current}" != "${newcmd}" ]; then
+      log_update "Updating cmdline.txt root=${TARGET_ROOT} for next boot"
+      bk="$BOOT_MP/cmdline.txt.bak.$(date +%Y%m%d%H%M%S)"
+      cp -a "$BOOT_MP/cmdline.txt" "$bk" || true
+      prune_backups "$BOOT_MP/cmdline.txt" "$MAX_BACKUPS"
+      printf '%s\n' "$newcmd" > "$BOOT_MP/cmdline.txt"
+      sync || true
+    else
+      log_success "cmdline.txt already points to ${TARGET_ROOT}; no change"
+    fi
   fi
 fi
 
+log_success "Bundle post-install hook completed successfully"
 exit 0

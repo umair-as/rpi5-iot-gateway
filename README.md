@@ -219,7 +219,8 @@ Detailed documentation is available in the `docs/` directory:
 
 - **[Security Hardening](docs/SECURITY.md)** — Kernel hardening, compiler flags, audit framework, validation
 - **[Kernel Configuration](docs/KERNEL.md)** — Feature sets, fragments, runtime parameters
-- **[Networking](docs/NETWORKING.md)** — WiFi, Ethernet, provisioning, VPN, firewall
+- **[Networking](docs/NETWORKING.md)** — WiFi, Ethernet, provisioning (network only), VPN, firewall
+- **[Dev SSH Keys](docs/DEV_SSH_KEYS.md)** — Bake developer authorized_keys into dev images
 - **[Partition Layouts](docs/PARTITIONS.md)** — RAUC A/B partitions, WKS variants, sizing
 - **[Build System](docs/BUILD.md)** — Performance tuning, layer management, CI/CD
 - **[OpenThread Border Router](docs/OTBR.md)** — OTBR setup, configuration, commissioning
