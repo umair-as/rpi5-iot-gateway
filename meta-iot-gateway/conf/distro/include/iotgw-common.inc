@@ -8,8 +8,8 @@ VENDOR_LONG_NAME ?= "IoT Gateway"
 # Propagate vendor into target triplet and SDK names
 TARGET_VENDOR ?= "-${VENDOR_SHORT_NAME}"
 
-# Distro/versioning
-DISTRO_VERSION ??= "${VENDOR_SHORT_NAME}.0.1"
+# Distro/versioning (override OE-Core default 'nodistro.0')
+DISTRO_VERSION = "${VENDOR_SHORT_NAME}.0.1"
 # Default codename for this product line (override in CI if desired)
 DISTRO_CODENAME ?= "rpi5"
 

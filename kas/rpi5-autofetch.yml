@@ -9,12 +9,15 @@ target:
   - iot-gw-image
 
 repos:
-  poky:
-    url: https://git.yoctoproject.org/poky
+  bitbake:
+    url: https://git.openembedded.org/bitbake
+    refspec: "2.8"
+    layers: {}
+  openembedded-core:
+    url: https://git.openembedded.org/openembedded-core
     refspec: scarthgap
     layers:
       meta:
-      meta-poky:
 
   meta-openembedded:
     url: https://github.com/openembedded/meta-openembedded.git
@@ -58,7 +61,7 @@ repos:
 
 bblayers_conf_header:
   standard: |
-    POKY_BBLAYERS_CONF_VERSION = "2"
+    BBLAYERS_CONF_VERSION = "2"
     BBPATH = "${TOPDIR}"
     BBFILES ?= ""
 

@@ -10,11 +10,14 @@ target:
 
 repos:
 
-  poky:
-    path: /home/umair/yocto_resource/layers/poky
+  bitbake:
+    path: /home/umair/yocto_resource/layers/bitbake
+    layers: {}
+
+  openembedded-core:
+    path: /home/umair/yocto_resource/layers/openembedded-core
     layers:
       meta:
-      meta-poky:
 
   meta-openembedded:
     path: /home/umair/yocto_resource/layers/meta-openembedded
@@ -38,7 +41,7 @@ repos:
 
 bblayers_conf_header:
   standard: |
-    POKY_BBLAYERS_CONF_VERSION = "2"
+    BBLAYERS_CONF_VERSION = "2"
     BBPATH = "${TOPDIR}"
     BBFILES ?= ""
 
