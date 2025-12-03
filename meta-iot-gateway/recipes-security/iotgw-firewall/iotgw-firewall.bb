@@ -14,5 +14,4 @@ do_install() {
 
 FILES:${PN} = "${datadir}/iotgw-firewall/nftables.conf"
 
-RRECOMMENDS:${PN} += "nftables"
-
+RDEPENDS:${PN} += "nftables"

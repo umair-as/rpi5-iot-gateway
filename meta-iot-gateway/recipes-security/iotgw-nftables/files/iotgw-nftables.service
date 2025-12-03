@@ -1,0 +1,14 @@
+[Unit]
+Description=IoT Gateway nftables baseline rules
+Documentation=man:nft(8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nft -f /etc/nftables.conf
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+

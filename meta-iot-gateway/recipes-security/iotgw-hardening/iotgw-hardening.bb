@@ -10,6 +10,9 @@ SRC_URI = " \
     file://umask.sh \
     file://login.defs.hardening \
     file://50-core-limits.conf \
+    file://coredump.conf \
+    file://tmp.mount.override \
+    file://dev-shm.mount.override \
 "
 
 S = "${WORKDIR}"
@@ -30,6 +33,16 @@ do_install() {
     # Systemd default limits for all services (also enforces core=0 for daemons)
     install -d ${D}${sysconfdir}/systemd/system.conf.d
     install -m 0644 ${WORKDIR}/50-core-limits.conf ${D}${sysconfdir}/systemd/system.conf.d/
+
+    # Disable persistent core dumps for user processes (coredumpd)
+    install -d ${D}${sysconfdir}/systemd/coredump.conf.d
+    install -m 0644 ${WORKDIR}/coredump.conf ${D}${sysconfdir}/systemd/coredump.conf.d/iotgw.conf
+
+    # Harden tmpfs mounts for /tmp and /dev/shm via drop-in units
+    install -d ${D}${sysconfdir}/systemd/system/tmp.mount.d
+    install -m 0644 ${WORKDIR}/tmp.mount.override ${D}${sysconfdir}/systemd/system/tmp.mount.d/override.conf
+    install -d ${D}${sysconfdir}/systemd/system/dev-shm.mount.d
+    install -m 0644 ${WORKDIR}/dev-shm.mount.override ${D}${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf
 
     # Restrictive umask (AUTH-9328)
     install -d ${D}${sysconfdir}/profile.d
@@ -68,6 +81,9 @@ FILES:${PN} = " \
     ${sysconfdir}/modprobe.d/iotgw-blacklist.conf \
     ${sysconfdir}/security/limits.d/limits-hardening.conf \
     ${sysconfdir}/systemd/system.conf.d/50-core-limits.conf \
+    ${sysconfdir}/systemd/coredump.conf.d/iotgw.conf \
+    ${sysconfdir}/systemd/system/tmp.mount.d/override.conf \
+    ${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf \
     ${sysconfdir}/profile.d/umask.sh \
     ${sysconfdir}/login.defs.d/login.defs.hardening \
 "

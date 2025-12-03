@@ -1,5 +1,5 @@
 # Enable baseline services on first boot
-enable nftables.service
+enable iotgw-nftables.service
 enable avahi-daemon.service
 enable iotgw-provision.service
 enable systemd-timesyncd.service
