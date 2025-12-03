@@ -27,11 +27,16 @@ for dir in ${OVERLAY_DIRS}; do
     # Create overlay directories
     mkdir -p "${upper}" "${work}"
 
-    # Mount overlayfs
+    # Mount overlayfs with extra safety on selected paths
+    # Default options
+    opts="lowerdir=${dir},upperdir=${upper},workdir=${work}"
+    case "${dir}" in
+        /home|/var)
+            opts="${opts},nodev,nosuid"
+            ;;
+    esac
     echo "Setting up overlay for ${dir}..."
-    mount -t overlay overlay \
-        -o lowerdir="${dir}",upperdir="${upper}",workdir="${work}" \
-        "${dir}"
+    mount -t overlay overlay -o "${opts}" "${dir}"
 done
 
 echo "Overlayfs setup complete"

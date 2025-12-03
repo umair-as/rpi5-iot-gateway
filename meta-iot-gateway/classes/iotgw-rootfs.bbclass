@@ -4,7 +4,7 @@
 # Copy staged sudoers drop-in into place to avoid opkg directory ownership conflicts.
 iotgw_rootfs_setup_sudoers() {
     if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-sudoers/devel ]; then
-        install -d ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d
+        install -d -m 0750 ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d
         install -m 0440 ${IMAGE_ROOTFS}${datadir}/iotgw-sudoers/devel \
             ${IMAGE_ROOTFS}${sysconfdir}/sudoers.d/devel
     fi
@@ -91,5 +91,9 @@ iotgw_rootfs_buildinfo() {
         echo "RAUC_BUNDLE_COMPATIBLE=${RAUC_BUNDLE_COMPATIBLE}"
         echo "BUILD_SYS=${BUILD_SYS}"
     } > ${IMAGE_ROOTFS}/etc/buildinfo
+
+    # Provide a single-line version file for compatibility with tools expecting /etc/version
+    # Use IMAGE_NAME to include timestamped build identifier
+    echo "${IMAGE_NAME}" > ${IMAGE_ROOTFS}/etc/version
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_buildinfo;"
