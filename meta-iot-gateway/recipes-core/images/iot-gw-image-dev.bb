@@ -24,6 +24,7 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     avahi-daemon \
     tmux \
     btop \
+    iotgw-dev-ssh-keys \
     ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5','',d)} \
 "
 

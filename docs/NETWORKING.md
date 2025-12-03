@@ -250,15 +250,11 @@ Or in KAS overlay, add a recipe to install `/etc/NetworkManager/conf.d/wifi-back
 
 ## First-boot Provisioning
 
-The `iotgw-provision` service runs **once** on first boot.
+The `iotgw-provision` service runs NetworkManager provisioning once on first boot.
 
 ### Provisioning Locations
 
-**SSH Keys:**
-```
-/boot/iotgw/authorized_keys  →  /root/.ssh/authorized_keys
-                             →  /home/devel/.ssh/authorized_keys
-```
+SSH keys are not handled by the provisioning service. See "Developer SSH Keys" for dev-only key installation.
 
 **NetworkManager Connections:**
 ```
@@ -304,14 +300,14 @@ sudo umount /mnt
 
 **Systemd Unit:** `iotgw-provision.service`
 
-**Script:** `/usr/sbin/iotgw-provision.sh`
+**Script:** `/usr/bin/iotgw-provision.sh`
 
 **Logs:**
 ```bash
 journalctl -u iotgw-provision
 ```
 
-**Disable after first boot:** The service automatically disables itself after successful provisioning.
+**Disable after first boot:** Network provisioning is stamped and skipped on subsequent boots.
 
 ---
 
