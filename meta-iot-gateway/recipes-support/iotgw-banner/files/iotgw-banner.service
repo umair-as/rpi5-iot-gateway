@@ -1,8 +1,8 @@
 [Unit]
 Description=IoT Gateway Dynamic Banner Generator
-# Ensure overlay/rauc ready and wait for network-online to show IP reliably
-After=rauc.service overlayfs-setup.service network-online.target
-Wants=getty.target network-online.target
+# Ensure overlay/rauc ready; don't block boot on network-online
+After=rauc.service overlayfs-setup.service network.target
+Wants=getty.target
 Before=getty.target
 
 [Service]
