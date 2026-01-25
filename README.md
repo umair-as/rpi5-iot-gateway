@@ -60,14 +60,18 @@ sudo bmaptool copy \
   /dev/sdX
 ```
 
-### Default Credentials
+### Default Accounts
 
-| User | Username | Password |
-|------|----------|----------|
-| Root | `root` | `iotgateway` |
-| Developer | `devel` | `devel` |
+Default users: `root`, `devel`.
+Override at build time with hashed passwords in `kas/local.yml` or `build/conf/local.conf`:
 
-> ⚠️ **Change default passwords immediately after first boot!**
+```bash
+IOTGW_ROOT_PASSWORD_HASH = "$6$<hash>"
+IOTGW_DEVEL_PASSWORD_HASH = "$6$<hash>"
+```
+
+Generate hashes with `openssl passwd -6` or `mkpasswd -m sha-512`.
+For dev builds, you can also bake SSH keys: `docs/DEV_SSH_KEYS.md`.
 
 ---
 
