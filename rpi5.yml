@@ -84,6 +84,7 @@ local_conf_header:
 
   rpi_display: |
     DISABLE_OVERSCAN = "1"
+    DISABLE_SPLASH = "1"
 
   rpi_extras: |
     # Accept the Synaptics WiFi/BT firmware license flag required on RPi

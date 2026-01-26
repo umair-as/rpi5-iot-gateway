@@ -78,17 +78,18 @@ OVERRIDES .= ":${IOTGW_PROFILE}"
 # Headless profile trims windowing/graphics/audio stacks
 DISTRO_FEATURES:remove:headless = " x11 wayland vulkan opengl pulseaudio"
 
-# Desktop profile enables graphics/audio stacks
-DISTRO_FEATURES:append:desktop = " wayland opengl vulkan pulseaudio"
+# Desktop profile: enable graphics/audio stacks, PAM and polkit (Wayland/Weston)
+DISTRO_FEATURES:append:desktop = " wayland opengl vulkan pulseaudio pam polkit"
 
 # Desktop packages (consumed by image recipes via override)
-IOTGW_DESKTOP_PACKAGES ?= "weston weston-init wayland-utils mesa libdrm"
+# Upstream weston-init manages the service and user/groups; we don't duplicate it.
+IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 
-# Optional kernel feature sets (enable fragments via OVERRIDES)
+
+# Optional kernel feature sets (selected via IOTGW_KERNEL_FEATURES)
 # Globally enabled: networking (WireGuard/CAN/VLAN) + security (AppArmor/Seccomp/no-SCTP)
-# Per-image additions via IOTGW_KERNEL_FEATURES:
+# Per-image additions via IOTGW_KERNEL_FEATURES (space or comma-separated):
 #   igw_containers         - namespaces, cgroups (for podman/docker)
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
-OVERRIDES .= "${@':' + ':'.join((d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split()) if d.getVar('IOTGW_KERNEL_FEATURES') else ''}"

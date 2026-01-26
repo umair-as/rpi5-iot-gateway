@@ -23,6 +23,7 @@ cp kas/local.yml.example kas/local.yml
 make dev         # Development image
 make prod        # Production image
 make base        # Base image
+make desktop     # Desktop image (Wayland/Weston)
 
 # Build OTA bundles
 make bundle-dev-full   # Dev image + kernel bundle
@@ -44,6 +45,7 @@ make help
 make dev         # iot-gw-image-dev
 make prod        # iot-gw-image-prod
 make base        # iot-gw-image-base
+make desktop     # iot-gw-image-desktop
 ```
 
 ### Bundle Targets
