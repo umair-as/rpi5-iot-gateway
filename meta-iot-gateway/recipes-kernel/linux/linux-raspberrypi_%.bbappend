@@ -11,14 +11,13 @@ SRC_URI:append = " \
     file://fragments/audit.cfg \
 "
 
-# Optional fragments toggled via OVERRIDES using IOTGW_KERNEL_FEATURES
-# Enable by setting IOTGW_KERNEL_FEATURES (space or comma-separated) to include
-# one or more of: igw_compute_media igw_containers igw_networking_iot igw_observability_dev igw_security_prod
-SRC_URI:append:igw_compute_media = " file://fragments/compute-media.cfg"
-SRC_URI:append:igw_containers = " file://fragments/containers-cgroups.cfg"
-SRC_URI:append:igw_networking_iot = " file://fragments/networking-iot.cfg"
-SRC_URI:append:igw_observability_dev = " file://fragments/observability-dev.cfg"
-SRC_URI:append:igw_security_prod = " file://fragments/security-prod.cfg"
+# Optional fragments toggled via IOTGW_KERNEL_FEATURES (space/comma-separated)
+# Add fragments conditionally without mutating OVERRIDES to keep metadata deterministic
+SRC_URI:append = "${@' file://fragments/compute-media.cfg' if 'igw_compute_media' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/containers-cgroups.cfg' if 'igw_containers' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/networking-iot.cfg' if 'igw_networking_iot' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/observability-dev.cfg' if 'igw_observability_dev' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/security-prod.cfg' if 'igw_security_prod' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 
 # Merge any present fragments with the base defconfig for linux-raspberrypi
 do_configure:append() {

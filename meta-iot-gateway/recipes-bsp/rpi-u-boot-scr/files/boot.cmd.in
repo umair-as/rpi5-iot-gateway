@@ -11,12 +11,12 @@ echo "  Boot     : U-Boot (script)"
 echo "===================================================="
 echo "Boot media: @@BOOT_MEDIA@@  | Image: @@KERNEL_IMAGETYPE@@"
 
-# Optional splash: only when iotgw_splash=1 and splash.bmp exists on boot
-if test "${iotgw_splash}" = "1"; then
-    if fatload @@BOOT_MEDIA@@ 0:1 ${loadaddr} splash.bmp; then
-        echo "Displaying splash..."
-        bmp display ${loadaddr} m m
-    fi
+# Display splash if present in /boot (no env toggle required)
+if fatload @@BOOT_MEDIA@@ 0:1 ${loadaddr} splash.bmp; then
+    echo "Displaying splash..."
+    # Clear any earlier framebuffer contents (e.g., built-in U-Boot logo)
+    cls
+    bmp display ${loadaddr} m m
 fi
 
 # Determine slot to boot (RAUC integration)
