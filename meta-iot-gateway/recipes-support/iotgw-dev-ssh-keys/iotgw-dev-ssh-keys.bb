@@ -25,7 +25,7 @@ do_install() {
     if [ -n "${IOTGW_DEV_DEVEL_AUTH_KEYS_FILE}" ] && [ -f "${IOTGW_DEV_DEVEL_AUTH_KEYS_FILE}" ]; then
         install -d -m 0700 ${D}/home/devel/.ssh
         install -m 0600 "${IOTGW_DEV_DEVEL_AUTH_KEYS_FILE}" ${D}/home/devel/.ssh/authorized_keys
-        # Ownership of /home/devel is also normalized by iotgw-rauc-image.bbclass (1000:1000)
+        # Ownership of /home/devel is normalized in iotgw-rauc-image.bbclass
     fi
 }
 
