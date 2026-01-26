@@ -1,0 +1,16 @@
+header:
+  version: 18
+  includes:
+    - "kas/rauc.yml"
+
+# Build desktop image with full GUI environment
+target:
+  - iot-gw-image-desktop
+
+local_conf_header:
+  desktop: |
+    # Enable desktop profile (Wayland/Weston, OpenGL, PulseAudio)
+    IOTGW_PROFILE = "desktop"
+  desktop_kernel: |
+    # Ensure GPU/V4L2/media features for desktop workloads
+    IOTGW_KERNEL_FEATURES = "igw_networking_iot igw_security_prod igw_compute_media"
