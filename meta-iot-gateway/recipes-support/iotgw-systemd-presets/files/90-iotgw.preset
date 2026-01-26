@@ -1,5 +1,13 @@
 # Enable baseline services on first boot
 enable iotgw-nftables.service
+
+# Disable systemd-networkd wait-online since we use NetworkManager
+disable systemd-networkd-wait-online.service
+disable systemd-networkd.service
+disable systemd-networkd.socket
 enable avahi-daemon.service
 enable iotgw-provision.service
 enable systemd-timesyncd.service
+enable iotgw-update-bootfiles.service
+enable weston.service
+enable weston.socket
