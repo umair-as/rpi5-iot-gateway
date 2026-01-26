@@ -33,7 +33,7 @@ iotgw_rauc_create_data_mount() {
 iotgw_rauc_create_home_dirs() {
     install -d -m 0755 ${IMAGE_ROOTFS}/home
     if [ -d ${IMAGE_ROOTFS}/home/devel ]; then
-        chown -R 1000:1000 ${IMAGE_ROOTFS}/home/devel
+        chown -R devel:devel ${IMAGE_ROOTFS}/home/devel || true
     fi
 }
 
@@ -49,3 +49,8 @@ iotgw_stage_bootfiles() {
 
 # Desktop profile hook (Wayland/Weston minimal stack when requested)
 IMAGE_INSTALL:append:desktop = " ${IOTGW_DESKTOP_PACKAGES}"
+
+# Ensure custom splash (splash.bmp) is available in DEPLOY_DIR_IMAGE so
+# iotgw_stage_bootfiles can pick it up and the updater can copy it to /boot
+# on first boot. Using do_deploy ensures we get the deployed artifact.
+do_rootfs[depends] += "iotgw-bootlogo:do_deploy"

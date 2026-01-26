@@ -170,6 +170,26 @@ if [ -r "$BOOT_MP/config.txt" ] && [ -r "$BOOT_MP/u-boot.bin" ]; then
     log_success "config.txt already set for U-Boot; no change"
   fi
 
+  # Ensure Raspberry Pi firmware splash is disabled (prefer U-Boot splash)
+  if [ -r "$BOOT_MP/config.txt" ]; then
+    log_check "Ensuring disable_splash=1 in config.txt..."
+    tmpcfg="$BOOT_MP/config.txt.tmp"
+    # Drop any existing disable_splash lines (commented or not) and append desired setting
+    sed -E '/^[[:space:]]*#?[[:space:]]*disable_splash[[:space:]]*=/d' "$BOOT_MP/config.txt" > "$tmpcfg" || cp -a "$BOOT_MP/config.txt" "$tmpcfg"
+    echo "disable_splash=1" >> "$tmpcfg"
+    if ! cmp -s "$tmpcfg" "$BOOT_MP/config.txt"; then
+      log_update "Setting disable_splash=1 in config.txt"
+      bk="$BOOT_MP/config.txt.bak.$(date +%Y%m%d%H%M%S)"
+      cp -a "$BOOT_MP/config.txt" "$bk" || true
+      prune_backups "$BOOT_MP/config.txt" "$MAX_BACKUPS"
+      mv "$tmpcfg" "$BOOT_MP/config.txt"
+      sync || true
+    else
+      rm -f "$tmpcfg" || true
+      log_success "disable_splash already set; no change"
+    fi
+  fi
+
   # With U-Boot in charge (and config.txt actually set), remove any firmware-preset root=/rauc.slot=
   if [ -r "$BOOT_MP/cmdline.txt" ] && grep -Eq '^[[:space:]]*kernel[[:space:]]*=[[:space:]]*u-boot\.bin[[:space:]]*$' "$BOOT_MP/config.txt"; then
     log_check "Checking cmdline.txt for U-Boot compatibility..."
