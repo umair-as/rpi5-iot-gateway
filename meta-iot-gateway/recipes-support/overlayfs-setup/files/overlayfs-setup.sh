@@ -16,7 +16,10 @@ if ! mountpoint -q "${DATA_PART}"; then
     exit 1
 fi
 
+log() { echo "[overlayfs-setup] $*"; }
+
 # Create overlay base directory structure
+log "Initializing overlay base at ${OVERLAY_BASE}"
 mkdir -p "${OVERLAY_BASE}"
 
 for dir in ${OVERLAY_DIRS}; do
@@ -27,16 +30,31 @@ for dir in ${OVERLAY_DIRS}; do
     # Create overlay directories
     mkdir -p "${upper}" "${work}"
 
+    # If already mounted as overlay, ensure it is writable
+    if mountpoint -q "${dir}" && mount | grep -q "on ${dir} type overlay"; then
+        log "${dir} already mounted as overlay; remounting rw"
+        if ! mount -o remount,rw "${dir}"; then
+            log "WARN: remount failed for ${dir}, retrying with overlay type"
+            if ! mount -t overlay overlay -o remount,rw "${dir}"; then
+                log "WARN: remount still failed for ${dir}"
+            fi
+        fi
+        continue
+    fi
+
     # Mount overlayfs with extra safety on selected paths
     # Default options
-    opts="lowerdir=${dir},upperdir=${upper},workdir=${work}"
+    opts="lowerdir=${dir},upperdir=${upper},workdir=${work},rw"
     case "${dir}" in
         /home|/var)
             opts="${opts},nodev,nosuid"
             ;;
     esac
-    echo "Setting up overlay for ${dir}..."
-    mount -t overlay overlay -o "${opts}" "${dir}"
+    log "Setting up overlay for ${dir}"
+    if ! mount -t overlay overlay -o "${opts}" "${dir}"; then
+        log "ERROR: failed to mount overlay for ${dir}"
+        exit 1
+    fi
 done
 
-echo "Overlayfs setup complete"
+log "Overlayfs setup complete"

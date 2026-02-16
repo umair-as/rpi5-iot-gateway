@@ -23,5 +23,8 @@ do_install() {
     install -m 0644 ${WORKDIR}/overlayfs-setup.service ${D}${systemd_system_unitdir}/
 }
 
-FILES:${PN} += "${sbindir}/overlayfs-setup.sh ${systemd_system_unitdir}/overlayfs-setup.service"
+FILES:${PN} += " \
+    ${sbindir}/overlayfs-setup.sh \
+    ${systemd_system_unitdir}/overlayfs-setup.service \
+"
 RDEPENDS:${PN} += "bash"

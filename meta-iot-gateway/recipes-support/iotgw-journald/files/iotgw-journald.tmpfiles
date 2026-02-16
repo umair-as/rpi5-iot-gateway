@@ -1,0 +1,2 @@
+# Ensure persistent journald storage exists
+d /var/log/journal 2755 root systemd-journal -
