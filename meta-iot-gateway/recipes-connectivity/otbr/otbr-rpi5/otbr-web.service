@@ -4,6 +4,9 @@ After=otbr-agent.service
 ConditionPathExists=/usr/sbin/otbr-web
 
 [Service]
+User=otbr
+Group=otbr
+Environment=OTBR_SOCKET_DIR=/run/otbr
 EnvironmentFile=-/etc/default/otbr-web
 ExecStart=/usr/sbin/otbr-web $OTBR_WEB_OPTS
 Restart=on-failure
@@ -17,7 +20,16 @@ NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
 
 [Install]
 WantedBy=multi-user.target
-Alias=otbr-web.service

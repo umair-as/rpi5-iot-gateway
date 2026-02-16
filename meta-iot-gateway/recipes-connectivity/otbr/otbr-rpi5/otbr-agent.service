@@ -1,12 +1,22 @@
 [Unit]
 Description=OpenThread Border Router Agent
 ConditionPathExists=/usr/sbin/otbr-agent
-Requires=dbus.socket avahi-daemon.service
-After=dbus.socket avahi-daemon.service
+Requires=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
+After=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
 
 [Service]
+User=otbr
+Group=otbr
+SupplementaryGroups=dialout
 EnvironmentFile=-/etc/default/otbr-agent
-ExecStartPre=/usr/libexec/otbr/otbr-ipset-init
+# Ensure /run/otbr is created with correct ownership for non-root socket/lock
+RuntimeDirectory=otbr
+RuntimeDirectoryMode=0750
+# Place OTBR sockets in a dedicated run dir owned by otbr
+Environment=OTBR_SOCKET_DIR=/run/otbr
+# Ensure runtime artifacts are writable by otbr
+ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
+ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed
 Restart=on-failure
@@ -17,20 +27,25 @@ RestartPreventExitStatus=SIGKILL
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
-ProtectSystem=false
+ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
-ProtectKernelTunables=false
+PrivateDevices=false
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
 ProtectClock=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-RestrictNamespaces=false
+RestrictNamespaces=true
+RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=false
 
 # Persistent state for OpenThread settings
 StateDirectory=thread
 ReadWritePaths=/var/lib/thread
+ReadWritePaths=/run
 
 [Install]
 WantedBy=multi-user.target

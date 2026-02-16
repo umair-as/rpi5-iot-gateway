@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: IoT Gateway <iotgw@local>
+Date: Sun, 16 Feb 2026 12:00:00 +0000
+Subject: [PATCH] web: skip upstream npm frontend build
+
+The IoT Gateway ships its own Alpine.js + D3 v7 frontend that replaces
+the upstream AngularJS + MDL + Angular Material frontend.  Remove the
+cmake dependency on the npm-based frontend target so the otbr-web C++
+binary can be compiled without Node.js or network access during build.
+
+Frontend assets are installed by the Yocto recipe's do_install instead.
+
+Upstream-Status: Inappropriate [IoT Gateway custom frontend]
+---
+ src/web/CMakeLists.txt | 4 ----
+ 1 file changed, 4 deletions(-)
+
+diff --git a/src/web/CMakeLists.txt b/src/web/CMakeLists.txt
+index 1234567..abcdefg 100644
+--- a/src/web/CMakeLists.txt
++++ b/src/web/CMakeLists.txt
+@@ -58,10 +58,6 @@ install(
+     DESTINATION sbin
+ )
+
+-add_subdirectory(web-service/frontend)
+-
+-add_dependencies(otbr-web otbr-web-frontend)
+-
+ if(OTBR_SYSTEMD_UNIT_DIR)
+     configure_file(otbr-web.service.in otbr-web.service)
+     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/otbr-web.service

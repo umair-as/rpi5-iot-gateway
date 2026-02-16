@@ -1,0 +1,2 @@
+OTBR_AGENT_OPTS="-I wpan0 -B wlan0 spinel+hdlc+uart:///dev/otbr-rcp?uart-baudrate=460800 trel://wlan0"
+OTBR_NO_AUTO_ATTACH=0

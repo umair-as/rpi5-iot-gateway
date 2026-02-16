@@ -1,0 +1,43 @@
+From 2dd5e3f3e5f2f9c3a4b6d9f0f5a02c7f7b9e2f1c Mon Sep 17 00:00:00 2001
+From: Codex <codex@openai.com>
+Date: Wed, 12 Feb 2026 19:55:00 +0000
+Subject: [PATCH] posix: place otbr daemon socket under /run/otbr
+
+Use /run/otbr as the default daemon socket directory on Linux so the
+socket/lock live in a writable tmpfiles-managed path owned by otbr.
+This avoids requiring ACLs on /run.
+
+Upstream-Status: Inappropriate [IoT Gateway custom socket path]
+---
+ src/web/web-service/ot_client.cpp                                   | 2 +-
+ .../src/posix/platform/openthread-posix-daemon-config.h             | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/web/web-service/ot_client.cpp b/src/web/web-service/ot_client.cpp
+index 7b1e15c..df24e46 100644
+--- a/src/web/web-service/ot_client.cpp
++++ b/src/web/web-service/ot_client.cpp
+@@ -50,9 +50,9 @@
+ // Temporary solution before posix platform header files are cleaned up.
+ #ifndef OPENTHREAD_POSIX_DAEMON_SOCKET_NAME
+ #ifdef __linux__
+-#define OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME "/run/openthread-%s"
++#define OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME "/run/otbr/openthread-%s"
+ #else
+ #define OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME "/tmp/openthread-%s"
+ #endif
+ #define OPENTHREAD_POSIX_DAEMON_SOCKET_NAME OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME ".sock"
+ #endif
+
+diff --git a/third_party/openthread/repo/src/posix/platform/openthread-posix-daemon-config.h b/third_party/openthread/repo/src/posix/platform/openthread-posix-daemon-config.h
+index 5b5c4e1..80e10a5 100644
+--- a/third_party/openthread/repo/src/posix/platform/openthread-posix-daemon-config.h
++++ b/third_party/openthread/repo/src/posix/platform/openthread-posix-daemon-config.h
+@@ -44,6 +44,6 @@
+ #ifndef OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME
+ #ifdef __linux__
+-#define OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME "/run/openthread-%s"
++#define OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME "/run/otbr/openthread-%s"
+ #else
+ #define OPENTHREAD_POSIX_CONFIG_DAEMON_SOCKET_BASENAME "/tmp/openthread-%s"
+ #endif
