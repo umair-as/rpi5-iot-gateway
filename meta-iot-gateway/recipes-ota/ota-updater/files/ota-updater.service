@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: MIT
+#
+# ota-updater.service: Oneshot service triggered by timer to check for updates
+#
+
+[Unit]
+Description=OTA Update Check
+Documentation=man:rauc(1)
+After=network-online.target rauc.service ota-certs-provision.service
+Wants=network-online.target
+Requires=ota-certs-provision.service
+ConditionPathExists=/etc/ota/updater.conf
+ConditionPathExists=/etc/ota/device.crt
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ota-update-check
+Environment=OTA_CONFIG=/etc/ota/updater.conf
+
+# Run as dedicated user (cert files must be readable by 'ota' user/group)
+User=ota
+Group=ota
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ota-updater
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+PrivateDevices=true
+
+# Allow read access to certs and config
+ReadOnlyPaths=/etc/ota /etc/rauc
+
+# Allow write to state directory
+ReadWritePaths=/data/ota
+
+# Allow running rauc commands (needs D-Bus access)
+PrivateUsers=false
+
+[Install]
+WantedBy=multi-user.target
