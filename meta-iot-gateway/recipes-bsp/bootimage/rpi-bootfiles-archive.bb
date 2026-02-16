@@ -54,8 +54,13 @@ do_deploy() {
 
     cd "$workdir"
     # Write kernel.release based on modules archive if available (helps post-install validation)
-    if [ -f ${DEPLOY_DIR_IMAGE}/modules-raspberrypi5.tgz ]; then
-        rel=$(tar -tzf ${DEPLOY_DIR_IMAGE}/modules-raspberrypi5.tgz | head -1 | sed -n 's#^\.?/*lib/modules/\([^/]*\)/.*#\1#p')
+    modules_tgz="${DEPLOY_DIR_IMAGE}/modules-${MACHINE}.tgz"
+    if [ ! -f "$modules_tgz" ]; then
+        # Backward-compatible fallback
+        modules_tgz="${DEPLOY_DIR_IMAGE}/modules-raspberrypi5.tgz"
+    fi
+    if [ -f "$modules_tgz" ]; then
+        rel=$(tar -tzf "$modules_tgz" | head -1 | sed -n 's#^\.?/*lib/modules/\([^/]*\)/.*#\1#p')
         if [ -n "$rel" ]; then
             echo "$rel" > "$workdir/kernel.release"
         fi

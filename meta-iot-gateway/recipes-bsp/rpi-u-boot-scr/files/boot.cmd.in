@@ -1,7 +1,7 @@
 # IoT Gateway customized bootscript for Raspberry Pi (U-Boot)
 # Based on meta-raspberrypi default; adds banner and optional splash
 
-setenv iotgw_banner "IoT Gateway — Secure Boot"
+setenv iotgw_banner "IoT Gateway — U-Boot Boot"
 echo ""
 echo "===================================================="
 echo "  ${iotgw_banner}"
@@ -10,6 +10,15 @@ echo "  Platform : Raspberry Pi 5"
 echo "  Boot     : U-Boot (script)"
 echo "===================================================="
 echo "Boot media: @@BOOT_MEDIA@@  | Image: @@KERNEL_IMAGETYPE@@"
+if test -n "${iotgw_build}"; then
+    echo "Build     : ${iotgw_build}"
+fi
+if test -n "${iotgw_last_update}"; then
+    echo "Updated   : ${iotgw_last_update}"
+fi
+if test -n "${iotgw_bootcount}"; then
+    echo "Boot cnt  : ${iotgw_bootcount}"
+fi
 
 # Display splash if present in /boot (no env toggle required)
 if fatload @@BOOT_MEDIA@@ 0:1 ${loadaddr} splash.bmp; then
@@ -62,6 +71,12 @@ done
 fdt addr ${fdt_addr} && fdt get value bootargs /chosen bootargs
 if test -n "${bootpart}"; then
     setenv bootargs "${bootargs} root=${bootpart} rauc.slot=${rauc_slot}"
+    # Track boot count and last selected slot
+    if test -z "${iotgw_bootcount}"; then
+        setenv iotgw_bootcount 0
+    fi
+    setexpr iotgw_bootcount ${iotgw_bootcount} + 1
+    setenv iotgw_last_slot ${rauc_slot}
     # Optional extra kernel args from environment for runtime tuning (e.g., cma=256M)
     if test -n "${EXTRA_KERNEL_ARGS}"; then
         echo "[RAUC] Appending EXTRA_KERNEL_ARGS='${EXTRA_KERNEL_ARGS}'"
@@ -77,7 +92,6 @@ else
     reset
 fi
 
-# Build kernel cmdline: start from firmware-provided args, then append root per slot
 echo "[bootscript] Selected RAUC slot ${rauc_slot} (root=${bootpart})"
 
 echo "[RAUC] Loading kernel from boot partition; slot=${rauc_slot} root=${bootpart}"

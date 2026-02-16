@@ -13,9 +13,10 @@ WKS_FILE = "iot-gw-rauc-16g.wks.in"
 # Packages required for RAUC flow
 IMAGE_INSTALL += " \
     rauc \
+    rauc-service \
     virtual-rauc-conf \
+    rauc-healthcheck \
     overlayfs-setup \
-    iotgw-bootfiles-updater \
     rauc-grow-data-part \
 "
 
@@ -25,7 +26,6 @@ IMAGE_FEATURES += " read-only-rootfs"
 # Ensure data partition mount point and home base exist
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rauc_create_data_mount;"
 ROOTFS_POSTPROCESS_COMMAND:append = " iotgw_rauc_create_home_dirs;"
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_stage_bootfiles;"
 
 iotgw_rauc_create_data_mount() {
     install -d ${IMAGE_ROOTFS}/data
@@ -42,20 +42,7 @@ iotgw_rauc_create_home_dirs() {
     fi
 }
 
-# Stage current boot files into rootfs so we can update /boot via service or bundle hooks
-iotgw_stage_bootfiles() {
-    install -d ${IMAGE_ROOTFS}/usr/share/iotgw/bootfiles
-    for f in boot.scr u-boot.bin splash.bmp; do
-        if [ -f ${DEPLOY_DIR_IMAGE}/$f ]; then
-            install -m 0644 ${DEPLOY_DIR_IMAGE}/$f ${IMAGE_ROOTFS}/usr/share/iotgw/bootfiles/$f
-        fi
-    done
-}
-
 # Desktop profile hook (Wayland/Weston minimal stack when requested)
 IMAGE_INSTALL:append:desktop = " ${IOTGW_DESKTOP_PACKAGES}"
 
-# Ensure custom splash (splash.bmp) is available in DEPLOY_DIR_IMAGE so
-# iotgw_stage_bootfiles can pick it up and the updater can copy it to /boot
-# on first boot. Using do_deploy ensures we get the deployed artifact.
-do_rootfs[depends] += "iotgw-bootlogo:do_deploy"
+## Note: bootfiles are updated via RAUC bundle hooks (bootfiles.tar.gz)

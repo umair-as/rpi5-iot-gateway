@@ -1,5 +1,6 @@
-#!/bin/sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
+IFS=$'\n\t'
 
 # Logging functions with descriptive emojis for better visibility
 log_info()    { echo "📦 [bundle-hook] $*" >&2; }
@@ -11,8 +12,12 @@ log_clean()   { echo "🧹 [bundle-hook] $*" >&2; }
 log_install() { echo "⚙️  [bundle-hook] $*" >&2; }
 log_check()   { echo "🔍 [bundle-hook] $*" >&2; }
 log_skip()    { echo "⏭️  [bundle-hook] $*" >&2; }
+die()         { log_error "$*"; exit 1; }
 # Backward compatibility
 log() { log_info "$*"; }
+
+on_err() { log_error "failed at line ${1:-?}"; }
+trap 'on_err $LINENO' ERR
 
 # Determine hook type as RAUC defines it
 # Canonical: RAUC passes hook name as first positional arg for slot hooks
@@ -33,6 +38,12 @@ esac
 BUNDLE_MNT="${RAUC_BUNDLE_MOUNT_POINT:-/run/rauc/mnt/bundle}"
 BOOT_DEV="/dev/mmcblk0p1"
 BOOT_MP="/boot"
+VERBOSE="${IOTGW_VERBOSE:-0}"
+VERBOSE_OVERLAYS="${IOTGW_VERBOSE_OVERLAYS:-0}"
+
+for cmd in tar mount mountpoint install cmp sed awk sync grep; do
+  command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
+done
 
 case "${HOOK_TYPE:-}" in
   post-install)
@@ -50,19 +61,31 @@ if [ ! -r "$ARCHIVE" ]; then
   exit 0
 fi
 
+if [ ! -d "$BUNDLE_MNT" ]; then
+  die "Bundle mount point missing: $BUNDLE_MNT"
+fi
+
+log_info "Summary: slot='${RAUC_SLOT_NAME:-unknown}', bundle='${ARCHIVE}', boot='${BOOT_DEV}'"
+
 tmpdir=$(mktemp -d /tmp/bootfiles.XXXXXX)
 cleanup() { rm -rf "$tmpdir" || true; }
 trap cleanup EXIT INT TERM
 
 log_install "Extracting bootfiles from bundle archive..."
-tar -C "$tmpdir" -xzf "$ARCHIVE" || { log_error "Failed to extract bootfiles"; exit 1; }
+tar -C "$tmpdir" -xzf "$ARCHIVE" || die "Failed to extract bootfiles"
 
 # Validate module/kernel release alignment if possible
 log_check "Validating kernel/module version alignment..."
-MODS_DIR="$RAUC_SLOT_MOUNT_POINT/lib/modules"
 mods_release=""
-if [ -d "$MODS_DIR" ]; then
-  mods_release=$(basename "$(ls -d "$MODS_DIR"/* 2>/dev/null | head -n1)" || true)
+if [ -n "${RAUC_SLOT_MOUNT_POINT:-}" ]; then
+  MODS_DIR="${RAUC_SLOT_MOUNT_POINT}/lib/modules"
+  if [ -d "$MODS_DIR" ]; then
+    for modpath in "$MODS_DIR"/*; do
+      [ -d "$modpath" ] || continue
+      mods_release=$(basename "$modpath")
+      break
+    done
+  fi
 fi
 expected_release=""
 if [ -f "$tmpdir/kernel.release" ]; then
@@ -81,53 +104,132 @@ log_check "Checking /boot mount status..."
 if ! mountpoint -q "$BOOT_MP"; then
   log_install "Mounting $BOOT_DEV at $BOOT_MP..."
   mkdir -p "$BOOT_MP"
-  mount -t vfat "$BOOT_DEV" "$BOOT_MP" || { log_error "Failed to mount $BOOT_DEV at $BOOT_MP"; exit 0; }
+  mount -t vfat "$BOOT_DEV" "$BOOT_MP" || die "Failed to mount $BOOT_DEV at $BOOT_MP"
 else
   log_success "/boot is already mounted"
 fi
 
 # Try to ensure rw mount
-mount -o remount,rw "$BOOT_MP" || true
+if ! mount -o remount,rw "$BOOT_MP"; then
+  log_warn "Failed to remount $BOOT_MP read-write"
+fi
 
 updated=0
+bootfiles_changed=0
+bootfiles_skipped=0
+# Install file only when content differs
+install_if_changed() {
+  src="$1"
+  dest="$2"
+  mode="${3:-0644}"
+  label="$4"
+  quiet_skip="${5:-0}"
+
+  if [ -f "$dest" ] && cmp -s "$src" "$dest"; then
+    if [ -n "$label" ] && [ "$quiet_skip" -eq 0 ] && [ "$VERBOSE" = "1" ]; then
+      log_skip "$label unchanged"
+    fi
+    bootfiles_skipped=$((bootfiles_skipped + 1))
+    return 1
+  fi
+
+  if [ -n "$label" ]; then
+    if [ "$VERBOSE" = "1" ]; then
+      log_install "Installing $label to /boot"
+    else
+      log_install "Updating $label"
+    fi
+  fi
+  install -m "$mode" "$src" "$dest"
+  bootfiles_changed=$((bootfiles_changed + 1))
+  return 0
+}
+
 # Files we may replace in /boot
 FILES="boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb"
 for f in $FILES; do
   if [ -f "$tmpdir/$f" ]; then
-    log_install "Installing $f to /boot"
-    install -m 0644 "$tmpdir/$f" "$BOOT_MP/$f"
-    updated=1
+    label="$f"
+    if [ "$VERBOSE" != "1" ]; then
+      label="$f"
+    fi
+    if install_if_changed "$tmpdir/$f" "$BOOT_MP/$f" 0644 "$label"; then
+      updated=1
+    fi
   fi
 done
 
-# Overlays directory (copy present files; keep logs concise)
+# Overlays directory (copy present files; keep logs concise unless verbose)
 if [ -d "$tmpdir/overlays" ]; then
   mkdir -p "$BOOT_MP/overlays"
+  # Build overlay allowlist from config.txt (dtoverlay=...)
+  allowlist=""
+  if [ -r "$BOOT_MP/config.txt" ]; then
+    allowlist=$(grep -E '^[[:space:]]*dtoverlay=' "$BOOT_MP/config.txt" \
+      | sed -E 's/^[[:space:]]*dtoverlay=([^,[:space:]]+).*/\1/' \
+      | tr '\n' ' ' || true)
+  fi
+  # Always allow overlay_map metadata if present
+  allowlist="${allowlist} overlay_map overlay_map_pi5"
+
   overlays_copied=0
+  overlays_total=0
   for f in "$tmpdir"/overlays/*; do
     [ -f "$f" ] || continue
     bn=$(basename "$f")
-    install -m 0644 "$f" "$BOOT_MP/overlays/$bn"
-    overlays_copied=$((overlays_copied + 1))
-    updated=1
+    base="${bn%.dtbo}"
+    base="${base%.dtb}"
+    if [ -n "$allowlist" ]; then
+      case " $allowlist " in
+        *" ${base} "*) ;;
+        *) continue ;;
+      esac
+    fi
+    overlays_total=$((overlays_total + 1))
+    label=""
+    if [ "$VERBOSE_OVERLAYS" = "1" ]; then
+      label="overlays/$bn"
+    fi
+    if install_if_changed "$f" "$BOOT_MP/overlays/$bn" 0644 "$label" 1; then
+      overlays_copied=$((overlays_copied + 1))
+      updated=1
+    fi
   done
-  if [ "${overlays_copied}" -gt 0 ]; then
-    log_install "Installed ${overlays_copied} overlay file(s) to /boot/overlays"
+  if [ "${overlays_total}" -gt 0 ]; then
+    if [ "${overlays_copied}" -gt 0 ]; then
+      log_install "Installed ${overlays_copied}/${overlays_total} overlay file(s) to /boot/overlays"
+    else
+      log_skip "Overlays unchanged (${overlays_total} file(s))"
+    fi
   fi
 fi
 
 # Ensure kernel_2712.img exists for Pi5 firmware even if bundle only shipped Image
 if [ ! -f "$tmpdir/kernel_2712.img" ] && [ -f "$tmpdir/Image" ]; then
-  log_install "Installing kernel_2712.img (from Image) to /boot"
-  install -m 0644 "$tmpdir/Image" "$BOOT_MP/kernel_2712.img"
-  updated=1
+  if install_if_changed "$tmpdir/Image" "$BOOT_MP/kernel_2712.img" 0644 "kernel_2712.img (from Image)"; then
+    updated=1
+  fi
 fi
 
 if [ "$updated" -eq 1 ]; then
   sync || true
-  log_success "Boot files updated successfully"
+  log_success "Boot files updated: ${bootfiles_changed} changed, ${bootfiles_skipped} unchanged"
 else
   log_skip "Boot files already up-to-date"
+fi
+
+# Persist bundle metadata to U-Boot environment when available
+if command -v fw_setenv >/dev/null 2>&1; then
+  now_utc=$(date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || true)
+  if [ -n "${RAUC_SLOT_NAME:-}" ]; then
+    fw_setenv iotgw_last_slot "${RAUC_SLOT_NAME}" || log_warn "failed to set iotgw_last_slot"
+  fi
+  if [ -n "$now_utc" ]; then
+    fw_setenv iotgw_last_update "$now_utc" || log_warn "failed to set iotgw_last_update"
+  fi
+  log_info "Updated U-Boot env (iotgw_last_slot/iotgw_last_update)"
+else
+  log_warn "fw_setenv not available; skipping U-Boot env update"
 fi
 
 MAX_BACKUPS="${MAX_BOOT_BACKUPS:-3}"
