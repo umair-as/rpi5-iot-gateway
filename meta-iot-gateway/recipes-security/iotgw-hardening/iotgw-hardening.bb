@@ -13,6 +13,10 @@ SRC_URI = " \
     file://coredump.conf \
     file://tmp.mount.override \
     file://dev-shm.mount.override \
+    file://service-hardening.conf \
+    file://service-hardening-net.conf \
+    file://sshd@.service.override \
+    file://service-hardening-mosquitto.conf \
 "
 
 S = "${WORKDIR}"
@@ -43,6 +47,23 @@ do_install() {
     install -m 0644 ${WORKDIR}/tmp.mount.override ${D}${sysconfdir}/systemd/system/tmp.mount.d/override.conf
     install -d ${D}${sysconfdir}/systemd/system/dev-shm.mount.d
     install -m 0644 ${WORKDIR}/dev-shm.mount.override ${D}${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf
+
+    # Systemd service hardening drop-ins for network-facing services
+    for unit in dnsmasq.service avahi-daemon.service; do
+        install -d ${D}${sysconfdir}/systemd/system/${unit}.d
+        install -m 0644 ${WORKDIR}/service-hardening.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
+    done
+    for unit in NetworkManager.service wpa_supplicant.service; do
+        install -d ${D}${sysconfdir}/systemd/system/${unit}.d
+        install -m 0644 ${WORKDIR}/service-hardening-net.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
+    done
+
+    install -d ${D}${sysconfdir}/systemd/system/mosquitto.service.d
+    install -m 0644 ${WORKDIR}/service-hardening-mosquitto.conf ${D}${sysconfdir}/systemd/system/mosquitto.service.d/override.conf
+
+    # SSH per-connection daemon hardening
+    install -d ${D}${sysconfdir}/systemd/system/sshd@.service.d
+    install -m 0644 ${WORKDIR}/sshd@.service.override ${D}${sysconfdir}/systemd/system/sshd@.service.d/override.conf
 
     # Restrictive umask (AUTH-9328)
     install -d ${D}${sysconfdir}/profile.d
@@ -84,6 +105,12 @@ FILES:${PN} = " \
     ${sysconfdir}/systemd/coredump.conf.d/iotgw.conf \
     ${sysconfdir}/systemd/system/tmp.mount.d/override.conf \
     ${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf \
+    ${sysconfdir}/systemd/system/NetworkManager.service.d/override.conf \
+    ${sysconfdir}/systemd/system/wpa_supplicant.service.d/override.conf \
+    ${sysconfdir}/systemd/system/dnsmasq.service.d/override.conf \
+    ${sysconfdir}/systemd/system/mosquitto.service.d/override.conf \
+    ${sysconfdir}/systemd/system/avahi-daemon.service.d/override.conf \
+    ${sysconfdir}/systemd/system/sshd@.service.d/override.conf \
     ${sysconfdir}/profile.d/umask.sh \
     ${sysconfdir}/login.defs.d/login.defs.hardening \
 "
