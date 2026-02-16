@@ -8,7 +8,19 @@ ConditionPathExists=/usr/share/iotgw/bootfiles
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/iotgw-update-bootfiles.sh
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/boot
 
 [Install]
 WantedBy=multi-user.target
-

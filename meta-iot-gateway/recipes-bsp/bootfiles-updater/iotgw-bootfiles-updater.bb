@@ -3,6 +3,9 @@ DESCRIPTION = "Oneshot systemd service that copies /usr/share/iotgw/bootfiles/* 
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
+# NOTE: Currently not installed in images. We update /boot only via RAUC
+# bundle hooks (bootfiles.tar.gz) to avoid overlapping mechanisms.
+
 inherit systemd
 
 SRC_URI = "file://iotgw-update-bootfiles.sh file://iotgw-update-bootfiles.service"
@@ -23,4 +26,3 @@ do_install() {
 FILES:${PN} += "${systemd_system_unitdir}/iotgw-update-bootfiles.service ${bindir}/iotgw-update-bootfiles.sh"
 
 RDEPENDS:${PN} = "bash coreutils"
-
