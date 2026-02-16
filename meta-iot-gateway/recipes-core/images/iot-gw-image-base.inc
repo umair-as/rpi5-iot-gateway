@@ -13,8 +13,10 @@ IMAGE_FSTYPES:remove = "ext3"
 # Common baseline features
 IMAGE_FEATURES += " \
     ssh-server-openssh \
-    splash \
 "
+
+# Desktop profile can include splash
+IMAGE_FEATURES:append:desktop = " splash"
 
 # Common packages across all variants
 CORE_IMAGE_EXTRA_INSTALL += " \
