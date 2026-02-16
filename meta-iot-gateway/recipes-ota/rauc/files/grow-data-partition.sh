@@ -35,6 +35,10 @@ main() {
 
     command -v parted >/dev/null 2>&1 || die "parted not installed"
     command -v resize2fs >/dev/null 2>&1 || die "resize2fs not installed"
+    command -v e2fsck >/dev/null 2>&1 || die "e2fsck not installed"
+    command -v lsblk >/dev/null 2>&1 || die "lsblk not installed"
+    command -v partprobe >/dev/null 2>&1 || die "partprobe not installed"
+    command -v udevadm >/dev/null 2>&1 || die "udevadm not installed"
 
     DATA_PART=$(resolve_data_part) || die "could not resolve data partition by label 'data'"
     [ -b "$DATA_PART" ] || die "not a block device: $DATA_PART"
@@ -82,4 +86,3 @@ main() {
 }
 
 main "$@"
-
