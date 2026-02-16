@@ -1,0 +1,15 @@
+{
+    "_comment": "OTA Updater Configuration - mTLS authentication",
+
+    "server_url": "@IOTGW_OTA_SERVER_URL@",
+    "manifest_path": "@IOTGW_OTA_MANIFEST_PATH@",
+
+    "device_cert": "/etc/ota/device.crt",
+    "device_key": "/etc/ota/device.key",
+    "ca_cert": "/etc/ota/ca.crt",
+
+    "connect_timeout": 30,
+    "max_time": 300,
+
+    "dry_run": false
+}

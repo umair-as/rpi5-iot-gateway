@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: MIT
+#
+# ota-certs-provision.service: Provision mTLS certificates at boot
+#
+
+[Unit]
+Description=OTA Certificate Provisioning
+Documentation=man:openssl(1)
+After=local-fs.target
+Before=ota-updater.timer
+RequiresMountsFor=/boot /data
+ConditionPathExists=!/var/lib/ota-certs-provision.done
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/ota-certs-provision
+RemainAfterExit=yes
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ota-certs
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/etc/ota /data/ota /var/lib /boot
+
+[Install]
+WantedBy=multi-user.target
