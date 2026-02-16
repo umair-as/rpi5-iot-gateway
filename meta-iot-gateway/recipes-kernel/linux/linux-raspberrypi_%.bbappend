@@ -1,11 +1,9 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# Apply a tiny learning patch that prints a boot-time message
-SRC_URI:append = " file://0001-igw-hello-on-boot.patch"
-
 # Ship base kernel config fragments (always included)
 SRC_URI:append = " \
     file://fragments/branding.cfg \
+    file://fragments/trim.cfg \
     file://fragments/storage-filesystems.cfg \
     file://fragments/ikconfig.cfg \
     file://fragments/audit.cfg \
