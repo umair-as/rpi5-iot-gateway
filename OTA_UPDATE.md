@@ -238,6 +238,52 @@ journalctl -u rauc -b | grep "\[bundle-hook\]"
 | **Bundle Signing** | Cryptographic signatures verified on-device |
 | **Integrity Protection** | dm-verity format for tamper detection |
 | **Secure Boot** | U-Boot + signed bundles |
+
+---
+
+## 🌐 HTTPS Streaming Updates (mTLS)
+
+RAUC now supports installing bundles directly over HTTPS without pre-downloading to local storage. This uses RAUC's streaming mode (NBD + HTTP range requests) with mutual TLS authentication.
+
+### ✅ What This Enables
+
+- **Native streaming install**: `rauc install https://<server>:8443/bundles/....raucb`
+- **Device tracking** via headers sent by RAUC (boot-id, machine-id, transaction-id)
+- **mTLS auth** using device certificates provisioned on the gateway
+
+### 🔧 Device Configuration
+
+The streaming client is configured in `/etc/rauc/system.conf`:
+
+```ini
+[streaming]
+sandbox-user=ota
+tls-cert=/etc/ota/device.crt
+tls-key=/etc/ota/device.key
+tls-ca=/etc/ota/ca.crt
+send-headers=boot-id;machine-id;transaction-id
+```
+
+### 🔐 Certificates
+
+Device certs are provisioned by `ota-certs-provision`:
+- Production: `/boot/iotgw/ota/` or `/data/ota/certs/`
+- Dev fallback: auto-generated using dev CA
+
+Server cert must include a SAN matching the OTA server IP/hostname.
+
+### 🧪 Test Flow
+
+```bash
+# Upload bundle to OTA server and activate it
+
+# On device (streaming)
+rauc install https://<server>:8443/bundles/<bundle>.raucb
+
+# Verify
+rauc status --detailed
+journalctl -u rauc -b | tail -n 200
+```
 | **Keyring** | Device keyring at `/etc/rauc/ca.cert.pem` |
 
 ---
