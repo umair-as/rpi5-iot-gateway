@@ -6,8 +6,9 @@ SRC_URI:append = " \
     file://grow-data-partition.sh \
 "
 
-# grow-data-partition.sh requires bash and e2fsprogs (for e2fsck)
-RDEPENDS:${PN}-grow-data-part:append = " bash e2fsprogs"
+# grow-data-partition.sh requires bash/e2fsprogs plus util-linux (lsblk, partprobe)
+# and udev (udevadm).
+RDEPENDS:${PN}-grow-data-part:append = " bash e2fsprogs util-linux udev"
 
 do_install:append() {
     # Override unit with our hardened version
@@ -24,3 +25,5 @@ do_install:append() {
 # Ensure the script is placed with the grow subpackage
 FILES:rauc-grow-data-part:append = " ${sbindir}/grow-data-partition.sh"
 
+# Keep RAUC available for D-Bus activation, but don't start it by default
+SYSTEMD_AUTO_ENABLE:${PN}-service = "disable"

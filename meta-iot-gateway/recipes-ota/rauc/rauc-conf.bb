@@ -12,6 +12,8 @@ PN = "rauc-conf-iotgw"
 RPROVIDES:${PN} += "virtual-rauc-conf"
 INHIBIT_DEFAULT_DEPS = "1"
 
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+
 SRC_URI += " \
     file://system.conf \
 "
@@ -19,6 +21,8 @@ SRC_URI += " \
 S = "${WORKDIR}"
 
 do_install() {
+    # Force our template to win over any bbappend-provided system.conf.
+    cp ${THISDIR}/files/system.conf ${WORKDIR}/system.conf
     install -d ${D}${sysconfdir}/rauc
     # Render system.conf from template using bundle-compatible
     sed "s|@COMPATIBLE@|${RAUC_BUNDLE_COMPATIBLE}|g" \
@@ -41,3 +45,6 @@ do_install() {
 }
 
 FILES:${PN} = "${sysconfdir}/rauc/system.conf ${sysconfdir}/rauc/ca.cert.pem"
+
+# ota-certs provisions the streaming TLS certificates referenced in system.conf
+RDEPENDS:${PN} += "ota-certs"
