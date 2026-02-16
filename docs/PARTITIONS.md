@@ -89,7 +89,7 @@ Three pre-configured layouts for different SD card sizes:
 **Format:** FAT32 (vfat)
 **Size:** 256MB
 **Mount:** `/boot`
-**Read/Write:** Read-write
+**Read/Write:** Read-write (noatime,nodiratime)
 
 **Contents:**
 - U-Boot bootloader (`u-boot.bin`)
@@ -130,6 +130,7 @@ Three pre-configured layouts for different SD card sizes:
 **Format:** ext4
 **Mount:** `/data`
 **Read/Write:** Read-write
+**Mount Options:** `noatime,nodiratime,commit=60`
 
 **Purpose:**
 - Persistent application data
@@ -137,6 +138,8 @@ Three pre-configured layouts for different SD card sizes:
 - Configuration files that survive updates
 - Container volumes
 - User data
+
+**Note:** Journald persistent storage is under `/var/log/journal` on the overlay-backed `/var` (stored on `/data`).
 
 **Survives OTA Updates:** This partition is not touched by RAUC updates.
 
@@ -188,8 +191,8 @@ mount | grep mmcblk0
 **Example Output:**
 ```
 /dev/mmcblk0p2 on / type ext4 (ro,relatime)
-/dev/mmcblk0p1 on /boot type vfat (rw,relatime)
-/dev/mmcblk0p4 on /data type ext4 (rw,relatime)
+/dev/mmcblk0p1 on /boot type vfat (rw,noatime,nodiratime)
+/dev/mmcblk0p4 on /data type ext4 (rw,noatime,nodiratime,commit=60)
 ```
 
 ### RAUC Slot Status

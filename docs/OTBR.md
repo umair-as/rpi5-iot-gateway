@@ -81,10 +81,21 @@ kas build kas/local.yml --target iot-gw-image-dev
 When enabled, the following are included:
 - `otbr-rpi5` package (otbr-agent, otbr-web)
 - systemd services (otbr-agent, otbr-web)
-- Dependencies (Avahi, radvd, nftables rules)
+- Dependencies (Avahi, radvd)
+- Firewall rules for OTBR web UI (only when `IOTGW_ENABLE_OTBR=1`)
 - Kernel features (netfilter, NAT support)
 
 **Note:** Ensure `igw_networking_iot` kernel features are enabled for nftables/NAT support.
+
+### Thread Version
+
+Default Thread version is **1.4**. Override in `kas/local.yml` if needed:
+
+```yaml
+local_conf_header:
+  otbr: |
+    IOTGW_OT_THREAD_VERSION = "1.4"
+```
 
 ---
 
@@ -146,8 +157,8 @@ systemctl disable otbr-web
 
 **Reduce logging:**
 ```bash
-# Edit /etc/default/otbr-agent
-OTBR_LOG_LEVEL=warn
+# Edit /etc/default/otbr-agent and add a debug flag
+OTBR_AGENT_OPTS="... -d 3"
 ```
 
 ---

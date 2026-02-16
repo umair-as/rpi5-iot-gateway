@@ -26,8 +26,9 @@ make base        # Base image
 make desktop     # Desktop image (Wayland/Weston)
 
 # Build OTA bundles
-make bundle-dev-full   # Dev image + kernel bundle
-make bundle-prod-full  # Prod image + kernel bundle
+make bundle-dev-full      # Dev image + kernel bundle
+make bundle-prod-full     # Prod image + kernel bundle
+make bundle-desktop-full  # Desktop image + kernel bundle
 ```
 
 ---
@@ -51,10 +52,10 @@ make desktop     # iot-gw-image-desktop
 ### Bundle Targets
 
 ```bash
-make bundle-dev-full   # Full bundle (rootfs + kernel) for dev image
-make bundle-prod-full  # Full bundle (rootfs + kernel) for prod image
-make bundle-dev        # Rootfs-only bundle for dev image
-make bundle-prod       # Rootfs-only bundle for prod image
+make bundle-dev-full      # Full bundle (rootfs + kernel) for dev image
+make bundle-prod-full     # Full bundle (rootfs + kernel) for prod image
+make bundle-desktop-full  # Full bundle (rootfs + kernel) for desktop image
+make bundle-desktop       # Rootfs-only bundle for desktop image
 ```
 
 ### Utility Targets
