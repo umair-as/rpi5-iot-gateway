@@ -39,6 +39,7 @@ RDEPENDS:${PN} = " \
     wget \
     ca-certificates \
     openssl-bin \
+    linuxptp \
     less \
     file \
     which \
@@ -50,4 +51,3 @@ RDEPENDS:${PN} = " \
     bzip2 \
     psmisc \
 "
-

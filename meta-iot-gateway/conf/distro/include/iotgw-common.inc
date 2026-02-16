@@ -51,7 +51,10 @@ DISTRO_FEATURES:append = " rauc"
 RPI_USE_U_BOOT ?= "1"
 
 # Trim unneeded distro features (conservative defaults)
-DISTRO_FEATURES:remove = " pcmcia 3g nfc ptest debuginfod sysvinit"
+DISTRO_FEATURES:remove = " pcmcia 3g nfc ptest debuginfod sysvinit nfs"
+
+# Exclude unused RPC portmapper (pulled in by base packagegroups)
+PACKAGE_EXCLUDE:append = " rpcbind"
 
 # If product is headless, consider also removing windowing/graphics stacks:
 # DISTRO_FEATURES:remove:append = " x11 wayland vulkan opengl pulseaudio"

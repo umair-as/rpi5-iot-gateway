@@ -15,6 +15,7 @@ RDEPENDS:${PN} = " \
     wireshark \
     htop \
     kernel-hardening-checker \
+    ota-certs-devca \
 "
 
 # Optional: container runtime tools (opt-in)

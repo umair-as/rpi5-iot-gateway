@@ -4,7 +4,8 @@ LICENSE = "MIT"
 
 inherit packagegroup
 
-RDEPENDS:${PN} = " "
-
-# Intentionally minimal; extend with prod-only agents/services as needed
+RDEPENDS:${PN} = " \
+    ota-certs \
+    ota-updater \
+"
 

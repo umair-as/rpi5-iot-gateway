@@ -13,6 +13,7 @@ EXTRA_USERS_PARAMS:append = " \
     groupadd -f -r gpio; \
     groupadd -f -r i2c; \
     groupadd -f -r spi; \
+    groupadd -f -r ota; \
     groupadd -f -r systemd-timesync; \
     useradd -r -g systemd-timesync -d / -s /sbin/nologin systemd-timesync; \
     useradd -d /home/devel -m -s /bin/bash -G sudo,dialout,netdev,plugdev,video,render,input,wireshark,podman,gpio,i2c,spi devel; \

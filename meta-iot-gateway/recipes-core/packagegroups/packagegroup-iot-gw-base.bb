@@ -10,6 +10,8 @@ RDEPENDS:${PN} = " \
     networkmanager \
     systemd-analyze \
     lynis \
+    ota-certs \
+    ota-updater \
 "
 
 # Avoid allarch + dynamically renamed library deps (e.g., libgpiod -> libgpiod3)

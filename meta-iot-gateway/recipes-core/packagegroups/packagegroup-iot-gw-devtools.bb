@@ -15,4 +15,8 @@ RDEPENDS:${PN} = " \
     ethtool \
     vim \
     nano \
+    libmnl-dev \
+    libcap-bin \
+    systemd-dev \
+    pkgconfig \
 "
