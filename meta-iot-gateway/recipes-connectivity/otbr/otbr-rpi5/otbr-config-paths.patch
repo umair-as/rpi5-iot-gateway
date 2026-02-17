@@ -1,0 +1,37 @@
+From 7d2fb62e78585a8dc9966d690a0c53b4c1164c1e Mon Sep 17 00:00:00 2001
+From: IoT Gateway <iotgw@example.com>
+Date: Tue, 18 Feb 2026 12:00:00 +0000
+Subject: [PATCH] agent: avoid embedding build path in default config file
+
+Replace the default config file paths that reference PROJECT_SOURCE_DIR
+with a stable system path to satisfy buildpaths QA and keep binaries
+relocatable.
+
+Upstream-Status: Inappropriate [embedded path for Yocto build]
+Signed-off-by: IoT Gateway <iotgw@example.com>
+---
+ src/agent/openthread-otbr-posix-config.h.in | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/agent/openthread-otbr-posix-config.h.in b/src/agent/openthread-otbr-posix-config.h.in
+index 6ae42c47..e3b765a5 100644
+--- a/src/agent/openthread-otbr-posix-config.h.in
++++ b/src/agent/openthread-otbr-posix-config.h.in
+@@ -36,7 +36,7 @@
+  */
+ #ifndef OPENTHREAD_POSIX_CONFIG_FACTORY_CONFIG_FILE
+ #define OPENTHREAD_POSIX_CONFIG_FACTORY_CONFIG_FILE \
+-    "@PROJECT_SOURCE_DIR@/third_party/openthread/repo/src/posix/platform/openthread.conf.example"
++    "/etc/openthread.conf"
+ #endif
+ 
+ /**
+@@ -47,7 +47,7 @@
+  */
+ #ifndef OPENTHREAD_POSIX_CONFIG_PRODUCT_CONFIG_FILE
+ #define OPENTHREAD_POSIX_CONFIG_PRODUCT_CONFIG_FILE \
+-    "@PROJECT_SOURCE_DIR@/third_party/openthread/repo/src/posix/platform/openthread.conf.example"
++    "/etc/openthread.conf"
+ #endif
+ 
+ #endif // OPENTHREAD_OTBR_POSIX_CONFIG_H_

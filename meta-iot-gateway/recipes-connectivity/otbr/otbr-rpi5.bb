@@ -15,6 +15,8 @@ SRC_URI += " \
     file://otbr-skip-npm-frontend.patch \
     file://otbr-tmpfiles.conf \
     file://otbr-rcp.rules \
+    file://dbus-wrapper-otbr.sh \
+    file://otbr-config-paths.patch \
     file://frontend \
 "
 
@@ -48,6 +50,7 @@ RDEPENDS:${PN} += " \
     nftables \
     protobuf \
     protobuf-c \
+    bash \
 "
 
 inherit cmake systemd useradd
@@ -82,6 +85,9 @@ EXTRA_OECMAKE = " \
     -DCMAKE_CXX_STANDARD=17 \
 "
 
+# Enable telemetry and link metrics for richer D-Bus/dashboard data.
+EXTRA_OECMAKE:append = " -DOTBR_TELEMETRY_DATA_API=ON -DOTBR_LINK_METRICS_TELEMETRY=ON -DOTBR_FEATURE_FLAGS=ON"
+
 # Enable and configure systemd services
 SYSTEMD_AUTO_ENABLE = "enable"
 SYSTEMD_SERVICE:${PN} = "otbr-agent.service otbr-web.service"
@@ -112,6 +118,10 @@ do_install:append() {
     # Udev rule for RCP device access
     install -d ${D}${sysconfdir}/udev/rules.d
     install -m 0644 ${WORKDIR}/otbr-rcp.rules ${D}${sysconfdir}/udev/rules.d/99-otbr-rcp.rules
+
+    # Install DBus wrapper helper (debug/testing)
+    install -d ${D}${sbindir}
+    install -m 0755 ${WORKDIR}/dbus-wrapper-otbr.sh ${D}${sbindir}/dbus-wrapper-otbr.sh
 
     # Install custom IoT Gateway branded frontend (overrides upstream files)
     if [ -d "${WORKDIR}/frontend" ]; then
