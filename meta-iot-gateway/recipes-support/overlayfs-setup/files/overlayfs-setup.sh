@@ -57,4 +57,12 @@ for dir in ${OVERLAY_DIRS}; do
     fi
 done
 
+# Ensure persistent journald storage exists after /var overlay is mounted.
+if [ ! -d /var/log/journal ]; then
+    log "Creating /var/log/journal for persistent journald storage"
+    mkdir -p /var/log/journal
+    chown root:systemd-journal /var/log/journal
+    chmod 2755 /var/log/journal
+fi
+
 log "Overlayfs setup complete"
