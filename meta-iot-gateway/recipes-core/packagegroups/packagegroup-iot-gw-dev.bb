@@ -16,6 +16,7 @@ RDEPENDS:${PN} = " \
     htop \
     kernel-hardening-checker \
     ota-certs-devca \
+    iotgw-otbrctl \
 "
 
 # Optional: container runtime tools (opt-in)

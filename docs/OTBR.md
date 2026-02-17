@@ -163,6 +163,54 @@ OTBR_AGENT_OPTS="... -d 3"
 
 ---
 
+## OTBR D-Bus CLI (Testing)
+
+The image includes a lightweight D-Bus client for OTBR testing and debugging.
+
+**Binary:** `iotgw-otbrctl`
+
+**Examples:**
+```bash
+# Basic status
+iotgw-otbrctl get DeviceRole
+iotgw-otbrctl get NetworkName
+
+# Scans
+iotgw-otbrctl scan
+iotgw-otbrctl --output json energy-scan 1000
+
+# Network operations
+iotgw-otbrctl attach --network-name Demo --panid 4660 --channel-mask 0x07fff800
+iotgw-otbrctl detach
+iotgw-otbrctl permit-join 0 60
+iotgw-otbrctl factory-reset --yes
+
+# Prefix and routes
+iotgw-otbrctl add-on-mesh-prefix fd00:1234::/64 --preferred true --slaac true
+iotgw-otbrctl remove-on-mesh-prefix fd00:1234::/64
+iotgw-otbrctl add-external-route 2001:db8::/64 --stable true
+iotgw-otbrctl remove-external-route 2001:db8::/64
+
+# NAT64
+iotgw-otbrctl nat64 enable
+iotgw-otbrctl nat64 disable
+
+# Border Agent + MeshCoP TXT
+iotgw-otbrctl border-agent disable
+iotgw-otbrctl border-agent enable
+iotgw-otbrctl meshcop-txt vendor=0x69746777 model=0x6f746272
+
+# Ephemeral key (ePSKc)
+iotgw-otbrctl epskc-activate 0
+iotgw-otbrctl epskc-deactivate false
+```
+
+**Notes:**
+- Some properties are build-dependent; `Not implemented in this build` is expected if the feature is disabled.
+- JSON output is JSON Lines for dashboard ingestion (`--output json`).
+
+---
+
 ## Security Considerations
 
 ### Network Isolation
