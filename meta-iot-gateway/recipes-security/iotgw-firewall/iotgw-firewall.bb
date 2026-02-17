@@ -12,7 +12,7 @@ do_install() {
     install -m 0644 ${WORKDIR}/nftables.conf ${D}${datadir}/iotgw-firewall/nftables.conf
 
     if [ "${IOTGW_ENABLE_OTBR}" = "1" ]; then
-        sed -i '/@OTBR_RULES@/c\\    # OTBR web UI\\n    tcp dport 80 accept\\n    tcp dport 443 accept' \
+        sed -i '/@OTBR_RULES@/c\\    # OTBR web UI and REST API\\n    tcp dport 80 accept\\n    tcp dport 443 accept\\n    tcp dport 8081 accept' \
             ${D}${datadir}/iotgw-firewall/nftables.conf
     else
         sed -i '/@OTBR_RULES@/d' ${D}${datadir}/iotgw-firewall/nftables.conf
