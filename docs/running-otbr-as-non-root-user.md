@@ -33,10 +33,7 @@ Group=otbr
 SupplementaryGroups=dialout
 EnvironmentFile=-/etc/default/otbr-agent
 ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
-RuntimeDirectory=otbr
-RuntimeDirectoryMode=0750
-Environment=OTBR_SOCKET_DIR=/run/otbr
-ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
+ExecStartPre=+/bin/sh -c 'rm -f /run/openthread-wpan0.sock; touch /run/openthread-wpan0.lock; chown otbr:otbr /run/openthread-wpan0.lock; chmod 660 /run/openthread-wpan0.lock'
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed
 Restart=on-failure
@@ -67,10 +64,7 @@ EnvironmentFile=-/etc/default/otbr-agent
 
 # Setup (runs as root due to + prefix)
 ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
-RuntimeDirectory=otbr
-RuntimeDirectoryMode=0750
-Environment=OTBR_SOCKET_DIR=/run/otbr
-ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
+ExecStartPre=+/bin/sh -c 'rm -f /run/openthread-wpan0.sock; touch /run/openthread-wpan0.lock; chown otbr:otbr /run/openthread-wpan0.lock; chmod 660 /run/openthread-wpan0.lock'
 
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed
@@ -147,11 +141,12 @@ systemctl reload dbus
 
 ## Unix Socket Permissions
 
-OTBR creates a Unix socket at `/run/otbr/openthread-<interface>.sock` (e.g., `/run/otbr/openthread-wpan0.sock`). In this project, the socket directory is set via `OTBR_SOCKET_DIR` and the upstream path is patched accordingly. It also creates `/run/otbr/openthread-<interface>.lock`.
+OTBR creates a Unix socket at `/run/openthread-<interface>.sock` (e.g., `/run/openthread-wpan0.sock`) and a lock file at `/run/openthread-<interface>.lock`.
 
 ### Solution 1: tmpfiles.d + socket dir override (Recommended)
 
-Add a tmpfiles rule to create a dedicated socket directory and set `OTBR_SOCKET_DIR`:
+If you want a dedicated socket directory (instead of `/run`), set `OTBR_SOCKET_DIR` and ensure the daemon respects it.
+This may require patching upstream if the build does not honor the variable.
 
 Create `/usr/lib/tmpfiles.d/otbr.conf`:
 ```

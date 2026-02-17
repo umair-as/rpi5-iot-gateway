@@ -75,7 +75,7 @@ Distribution-level compiler flags provide additional runtime protections.
 
 Unnecessary kernel modules are blacklisted to reduce attack surface.
 
-**Configuration:** `meta-iot-gateway/recipes-support/iotgw-hardening/files/module-blacklist.conf`
+**Configuration:** `meta-iot-gateway/recipes-security/iotgw-hardening/files/blacklist.conf`
 
 ### Other Hardening
 

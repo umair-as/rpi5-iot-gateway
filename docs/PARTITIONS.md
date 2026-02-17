@@ -15,19 +15,21 @@ The IoT Gateway OS uses **A/B partition layout** for atomic OTA updates:
 
 ## Available Layouts
 
-Three pre-configured layouts for different SD card sizes:
+Three pre-configured layouts for different SD card sizes. The `/data` partition
+starts at the base size shown below and is **expanded to fill remaining space**
+on first boot by `rauc-grow-data-partition`.
 
-| Card Size | WKS File | Total Used | Remaining |
-|-----------|----------|------------|-----------|
-| **16GB** (default) | `iot-gw-rauc-16g.wks.in` | ~10GB | ~6GB free |
-| **32GB** | `iot-gw-rauc-32g.wks.in` | ~20GB | ~12GB free |
-| **64GB** | `iot-gw-rauc-64g.wks.in` | ~40GB | ~24GB free |
+| Card Size | WKS File | RootA/B Size | /data Base Size | Remaining (for auto-grow) |
+|-----------|----------|--------------|-----------------|---------------------------|
+| **16GB** (default) | `iot-gw-rauc-16g.wks.in` | 3G / 3G | 2G | ~7GB |
+| **32GB** | `iot-gw-rauc-32g.wks.in` | 6G / 6G | 12G | ~8GB |
+| **64GB** | `iot-gw-rauc-64g.wks.in` | 8G / 8G | 36G | ~12GB |
 
 ---
 
 ## 16GB Layout (Default)
 
-**Total Allocated:** ~10GB
+**Total Allocated (base):** ~8.3GB
 **Target Card:** 16GB SD card
 **File:** `iot-gw-rauc-16g.wks.in`
 
@@ -38,7 +40,8 @@ Three pre-configured layouts for different SD card sizes:
 | 3 | `/dev/mmcblk0p3` | `rootB` | 3G | ext4 | - | Root filesystem Slot B |
 | 4 | `/dev/mmcblk0p4` | `data` | 2G | ext4 | `/data` | Persistent user data |
 
-**Remaining Space:** ~6GB unallocated (wear leveling, emergency resize)
+**Remaining Space:** ~7GB reserved for auto-grow
+**After First Boot:** `/data` expands to fill remaining free space
 
 **Use Case:** Compact IoT gateway, minimal storage requirements
 
@@ -46,7 +49,7 @@ Three pre-configured layouts for different SD card sizes:
 
 ## 32GB Layout
 
-**Total Allocated:** ~20GB
+**Total Allocated (base):** ~24.3GB
 **Target Card:** 32GB SD card
 **File:** `iot-gw-rauc-32g.wks.in`
 
@@ -55,9 +58,10 @@ Three pre-configured layouts for different SD card sizes:
 | 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
 | 2 | `/dev/mmcblk0p2` | `rootA` | 6G | ext4 | `/` | Root filesystem Slot A |
 | 3 | `/dev/mmcblk0p3` | `rootB` | 6G | ext4 | - | Root filesystem Slot B |
-| 4 | `/dev/mmcblk0p4` | `data` | 6G | ext4 | `/data` | Persistent user data |
+| 4 | `/dev/mmcblk0p4` | `data` | 12G | ext4 | `/data` | Persistent user data |
 
-**Remaining Space:** ~12GB unallocated
+**Remaining Space:** ~8GB reserved for auto-grow
+**After First Boot:** `/data` expands to fill remaining free space
 
 **Use Case:** Gateway with moderate storage needs, more data partition space
 
@@ -65,7 +69,7 @@ Three pre-configured layouts for different SD card sizes:
 
 ## 64GB Layout
 
-**Total Allocated:** ~40GB
+**Total Allocated (base):** ~52.3GB
 **Target Card:** 64GB SD card
 **File:** `iot-gw-rauc-64g.wks.in`
 
@@ -74,9 +78,10 @@ Three pre-configured layouts for different SD card sizes:
 | 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
 | 2 | `/dev/mmcblk0p2` | `rootA` | 8G | ext4 | `/` | Root filesystem Slot A |
 | 3 | `/dev/mmcblk0p3` | `rootB` | 8G | ext4 | - | Root filesystem Slot B |
-| 4 | `/dev/mmcblk0p4` | `data` | 20G | ext4 | `/data` | Persistent user data |
+| 4 | `/dev/mmcblk0p4` | `data` | 36G | ext4 | `/data` | Persistent user data |
 
-**Remaining Space:** ~24GB unallocated
+**Remaining Space:** ~12GB reserved for auto-grow
+**After First Boot:** `/data` expands to fill remaining free space
 
 **Use Case:** Gateway with heavy data logging, container images, media storage
 
@@ -143,7 +148,7 @@ Three pre-configured layouts for different SD card sizes:
 
 **Survives OTA Updates:** This partition is not touched by RAUC updates.
 
-**Auto-resize:** On first boot, `rauc-grow-data-part` service expands this partition to fill remaining space.
+**Auto-resize:** On first boot, `rauc-grow-data-partition` expands this partition to fill remaining space.
 
 ---
 
