@@ -15,7 +15,7 @@ SRC_URI = " \
     file://dev-shm.mount.override \
     file://service-hardening.conf \
     file://service-hardening-net.conf \
-    file://sshd@.service.override \
+    file://sshd@.service \
     file://service-hardening-mosquitto.conf \
 "
 
@@ -61,9 +61,9 @@ do_install() {
     install -d ${D}${sysconfdir}/systemd/system/mosquitto.service.d
     install -m 0644 ${WORKDIR}/service-hardening-mosquitto.conf ${D}${sysconfdir}/systemd/system/mosquitto.service.d/override.conf
 
-    # SSH per-connection daemon hardening
-    install -d ${D}${sysconfdir}/systemd/system/sshd@.service.d
-    install -m 0644 ${WORKDIR}/sshd@.service.override ${D}${sysconfdir}/systemd/system/sshd@.service.d/override.conf
+    # Ship hardened sshd@ unit directly.
+    install -d ${D}${sysconfdir}/systemd/system
+    install -m 0644 ${WORKDIR}/sshd@.service ${D}${sysconfdir}/systemd/system/sshd@.service
 
     # Restrictive umask (AUTH-9328)
     install -d ${D}${sysconfdir}/profile.d
@@ -110,7 +110,7 @@ FILES:${PN} = " \
     ${sysconfdir}/systemd/system/dnsmasq.service.d/override.conf \
     ${sysconfdir}/systemd/system/mosquitto.service.d/override.conf \
     ${sysconfdir}/systemd/system/avahi-daemon.service.d/override.conf \
-    ${sysconfdir}/systemd/system/sshd@.service.d/override.conf \
+    ${sysconfdir}/systemd/system/sshd@.service \
     ${sysconfdir}/profile.d/umask.sh \
     ${sysconfdir}/login.defs.d/login.defs.hardening \
 "

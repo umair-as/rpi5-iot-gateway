@@ -5,6 +5,8 @@ After=network.target
 
 [Service]
 Type=oneshot
+# Reset only our baseline table; ignore failure when table is absent.
+ExecStartPre=-/usr/sbin/nft delete table inet filter
 ExecStart=/usr/sbin/nft -f /etc/nftables.conf
 RemainAfterExit=yes
 NoNewPrivileges=true
