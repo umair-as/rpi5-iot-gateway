@@ -96,3 +96,29 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
+
+# Raspberry Pi 5 DTB policy by kernel provider:
+# - meta-raspberrypi provider supports the full CM5+Pi5 set.
+# - mainline bring-up providers currently ship only the rpi-5-b DTB.
+IOTGW_RPI5_KERNEL_DTBS_DEFAULT ?= " \
+    broadcom/bcm2712-rpi-5-b.dtb \
+    broadcom/bcm2712-rpi-cm5-cm5io.dtb \
+    broadcom/bcm2712-rpi-cm5-cm4io.dtb \
+    broadcom/bcm2712-rpi-cm5l-cm5io.dtb \
+    broadcom/bcm2712-rpi-cm5l-cm4io.dtb \
+"
+IOTGW_RPI5_KERNEL_DTBS_MAINLINE ?= "broadcom/bcm2712-rpi-5-b.dtb"
+
+RPI_KERNEL_DEVICETREE:raspberrypi5 = "${@bb.utils.contains_any('PREFERRED_PROVIDER_virtual/kernel', \
+    'linux-iotgw-mainline linux-iotgw-mainline-fit', \
+    '${IOTGW_RPI5_KERNEL_DTBS_MAINLINE}', '${IOTGW_RPI5_KERNEL_DTBS_DEFAULT}', d)}"
+
+# Mainline providers currently do not ship the Raspberry Pi overlay dtbo set
+# used by meta-raspberrypi's raspberrypi5 machine config.
+python () {
+    if d.getVar("MACHINE") != "raspberrypi5":
+        return
+    provider = (d.getVar("PREFERRED_PROVIDER_virtual/kernel") or "").strip()
+    if provider in ("linux-iotgw-mainline", "linux-iotgw-mainline-fit"):
+        d.setVar("RPI_KERNEL_DEVICETREE_OVERLAYS", "")
+}

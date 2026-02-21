@@ -1,0 +1,19 @@
+header:
+  version: 18
+  includes:
+    - "kas/local.yml"
+
+local_conf_header:
+  kernel_fit_provider: |
+    # Parallel FIT flow: keep default local.yml unchanged, opt-in via this overlay.
+    PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline-fit"
+    PREFERRED_VERSION_linux-iotgw-mainline-fit = "6.18%"
+  kernel_fit_image: |
+    # Build and boot fitImage through U-Boot.
+    KERNEL_IMAGETYPE = "fitImage"
+    KERNEL_IMAGETYPES = "fitImage"
+    KERNEL_CLASSES = " kernel-fitimage "
+    KERNEL_BOOTCMD = "bootm"
+  kernel_fit_signing: |
+    # Start with unsigned FIT for bring-up; enable once U-Boot verification is configured.
+    UBOOT_SIGN_ENABLE = "0"
