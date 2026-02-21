@@ -19,8 +19,8 @@ RAUC_BUNDLE_SLOTS = "rootfs"
 # Use the selected image for the rootfs slot (set BUNDLE_IMAGE in variants)
 RAUC_SLOT_rootfs = "${BUNDLE_IMAGE}"
 RAUC_SLOT_rootfs[fstype] = "ext4"
-# Always run post-install hook for update-scoped reconciliation logic.
-RAUC_SLOT_rootfs[hooks] = "post-install"
+# Run pre/post hooks for update-scoped reconciliation and bootfile handling.
+RAUC_SLOT_rootfs[hooks] = "pre-install post-install"
 
 # Bundle format
 RAUC_BUNDLE_FORMAT = "verity"

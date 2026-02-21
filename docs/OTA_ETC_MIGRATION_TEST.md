@@ -1,7 +1,7 @@
 # OTA /etc Overlay Reconciliation Test Plan
 
 This runbook validates update-scoped `/etc` overlay reconciliation executed in
-the RAUC bundle `post-install` hook.
+RAUC slot hooks (`pre-install` + `post-install`).
 
 ## Scope
 
@@ -29,7 +29,8 @@ Policies:
 
 ## Behavior Model
 
-- Reconciliation happens during `rauc install` post-install hook.
+- `pre-install`: records transaction metadata under `/data/iotgw/overlay-reconcile/txn.json`.
+- `post-install`: applies reconciliation using manifests from the newly written target slot.
 - It updates `/data/overlays/etc/upper` for the target slot transition.
 - No perpetual runtime/boot service loop is used.
 
@@ -51,18 +52,20 @@ rauc install <bundle>.raucb
 Check hook logs:
 
 ```bash
-journalctl -u rauc.service -b --no-pager | grep -E "bundle-hook|Overlay reconciliation"
+journalctl -u rauc.service -b --no-pager | grep -E "bundle-hook|overlay-reconcile"
 ```
 
 Expected during install:
 
-- `Overlay reconciliation complete: removed=<N>, preserved=<N>`
+- `pre-install plan recorded`
+- `overlay reconciliation complete: removed=<N>, preserved=<N>, missing=<N>`
 
 ## Validate Reconciliation Artifacts
 
 ```bash
 ls -l /data/iotgw/overlay-reconcile/
 cat /data/iotgw/overlay-reconcile/state.tsv
+cat /data/iotgw/overlay-reconcile/txn.json
 find /data/iotgw/overlay-reconcile/backups -maxdepth 3 -type f | tail -n 20
 ```
 

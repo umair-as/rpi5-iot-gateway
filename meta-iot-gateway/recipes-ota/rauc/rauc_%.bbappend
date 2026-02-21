@@ -5,6 +5,7 @@ SRC_URI:append = " \
     file://rauc-grow-data-partition.service \
     file://grow-data-partition.sh \
     file://managed-paths.conf \
+    file://overlay-reconcile.py \
 "
 
 # grow-data-partition.sh requires bash/e2fsprogs plus util-linux (lsblk, partprobe)
@@ -26,11 +27,17 @@ do_install:append() {
     install -d ${D}${datadir}/iotgw/overlay-reconcile
     install -m 0644 ${WORKDIR}/managed-paths.conf \
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.conf
+
+    # Install Python overlay reconciler invoked by bundle hooks.
+    install -d ${D}${libexecdir}/rauc
+    install -m 0755 ${WORKDIR}/overlay-reconcile.py \
+        ${D}${libexecdir}/rauc/overlay-reconcile.py
 }
 
 # Ensure the script is placed with the grow subpackage
 FILES:rauc-grow-data-part:append = " ${sbindir}/grow-data-partition.sh"
-FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf"
+FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf ${libexecdir}/rauc/overlay-reconcile.py"
+RDEPENDS:${PN}-service:append = " python3-core"
 
 # Keep RAUC available for D-Bus activation, but don't start it by default
 SYSTEMD_AUTO_ENABLE:${PN}-service = "disable"
