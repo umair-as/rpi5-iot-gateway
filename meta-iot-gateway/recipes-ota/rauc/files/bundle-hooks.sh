@@ -2,16 +2,45 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Logging functions with descriptive emojis for better visibility
-log_info()    { echo "📦 [bundle-hook] $*" >&2; }
-log_success() { echo "✅ [bundle-hook] $*" >&2; }
-log_update()  { echo "📝 [bundle-hook] $*" >&2; }
-log_error()   { echo "❌ [bundle-hook] $*" >&2; }
-log_warn()    { echo "⚠️  [bundle-hook] $*" >&2; }
-log_clean()   { echo "🧹 [bundle-hook] $*" >&2; }
-log_install() { echo "⚙️  [bundle-hook] $*" >&2; }
-log_check()   { echo "🔍 [bundle-hook] $*" >&2; }
-log_skip()    { echo "⏭️  [bundle-hook] $*" >&2; }
+# Logging
+# Default level is INFO. Set IOTGW_HOOK_LOG_LEVEL=DEBUG for verbose traces.
+HOOK_LOG_LEVEL="${IOTGW_HOOK_LOG_LEVEL:-INFO}"
+case "${HOOK_LOG_LEVEL}" in
+  error|ERROR) HOOK_LOG_LEVEL="ERROR" ;;
+  warn|WARN|warning|WARNING) HOOK_LOG_LEVEL="WARN" ;;
+  debug|DEBUG) HOOK_LOG_LEVEL="DEBUG" ;;
+  *) HOOK_LOG_LEVEL="INFO" ;;
+esac
+
+_log_level_num() {
+  case "$1" in
+    ERROR) echo 0 ;;
+    WARN) echo 1 ;;
+    INFO) echo 2 ;;
+    DEBUG) echo 3 ;;
+    *) echo 2 ;;
+  esac
+}
+
+_log() {
+  local level="$1"
+  shift
+  local wanted current
+  wanted=$(_log_level_num "$level")
+  current=$(_log_level_num "$HOOK_LOG_LEVEL")
+  [ "$wanted" -le "$current" ] || return 0
+  printf '[bundle-hook][%s] %s\n' "$level" "$*" >&2
+}
+
+log_error()   { _log ERROR "$*"; }
+log_warn()    { _log WARN "$*"; }
+log_info()    { _log INFO "$*"; }
+log_success() { _log INFO "$*"; }
+log_update()  { _log INFO "$*"; }
+log_clean()   { _log DEBUG "$*"; }
+log_install() { _log DEBUG "$*"; }
+log_check()   { _log DEBUG "$*"; }
+log_skip()    { _log DEBUG "$*"; }
 die()         { log_error "$*"; exit 1; }
 # Backward compatibility
 log() { log_info "$*"; }
