@@ -305,16 +305,14 @@ fi
 
 MAX_BACKUPS="${MAX_BOOT_BACKUPS:-3}"
 
-# Helper: prune backups, keep newest N matching pattern <file>.bak.*
+# Helper: prune backups, keep newest N matching pattern <file>.bak*
 prune_backups() {
   f="$1"; n="$2"
   dir=$(dirname "$f"); base=$(basename "$f")
-  # Newest first
-  set +e
-  list=$(ls -1t "$dir/${base}.bak."* 2>/dev/null)
-  rc=$?
-  set -e
-  [ $rc -ne 0 ] && return 0
+  list=$(find "$dir" -maxdepth 1 -type f -name "${base}.bak*" -printf '%T@ %p\n' 2>/dev/null \
+    | sort -nr \
+    | awk '{print $2}')
+  [ -n "$list" ] || return 0
   # Delete everything beyond first N and report count
   to_prune=$(echo "$list" | awk 'NR>n {print}' n="$n" | wc -l | awk '{print $1}')
   if [ "$to_prune" -gt 0 ]; then
@@ -325,14 +323,12 @@ prune_backups() {
 
 # Prefer U-Boot chainloading when available: enforce kernel=u-boot.bin in config.txt
 if [ -r "$BOOT_MP/config.txt" ] && [ -r "$BOOT_MP/u-boot.bin" ]; then
-  log_check "Checking U-Boot configuration in config.txt..."
   # Compute prospective new config (proper newlines, no literal \n)
   tmpcfg="$BOOT_MP/config.txt.tmp"
   sed -E '/^[[:space:]]*kernel=/d' "$BOOT_MP/config.txt" > "$tmpcfg" || cp -a "$BOOT_MP/config.txt" "$tmpcfg"
   echo "kernel=u-boot.bin" >> "$tmpcfg"
   # Only change if different
   if ! cmp -s "$tmpcfg" "$BOOT_MP/config.txt"; then
-    log_update "Updating config.txt to boot U-Boot (kernel=u-boot.bin)"
     bk="$BOOT_MP/config.txt.bak.$(date +%Y%m%d%H%M%S)"
     cp -a "$BOOT_MP/config.txt" "$bk" || true
     prune_backups "$BOOT_MP/config.txt" "$MAX_BACKUPS"
@@ -340,18 +336,15 @@ if [ -r "$BOOT_MP/config.txt" ] && [ -r "$BOOT_MP/u-boot.bin" ]; then
     sync || true
   else
     rm -f "$tmpcfg" || true
-    log_success "config.txt already set for U-Boot; no change"
   fi
 
   # Ensure Raspberry Pi firmware splash is disabled (prefer U-Boot splash)
   if [ -r "$BOOT_MP/config.txt" ]; then
-    log_check "Ensuring disable_splash=1 in config.txt..."
     tmpcfg="$BOOT_MP/config.txt.tmp"
     # Drop any existing disable_splash lines (commented or not) and append desired setting
     sed -E '/^[[:space:]]*#?[[:space:]]*disable_splash[[:space:]]*=/d' "$BOOT_MP/config.txt" > "$tmpcfg" || cp -a "$BOOT_MP/config.txt" "$tmpcfg"
     echo "disable_splash=1" >> "$tmpcfg"
     if ! cmp -s "$tmpcfg" "$BOOT_MP/config.txt"; then
-      log_update "Setting disable_splash=1 in config.txt"
       bk="$BOOT_MP/config.txt.bak.$(date +%Y%m%d%H%M%S)"
       cp -a "$BOOT_MP/config.txt" "$bk" || true
       prune_backups "$BOOT_MP/config.txt" "$MAX_BACKUPS"
@@ -359,27 +352,22 @@ if [ -r "$BOOT_MP/config.txt" ] && [ -r "$BOOT_MP/u-boot.bin" ]; then
       sync || true
     else
       rm -f "$tmpcfg" || true
-      log_success "disable_splash already set; no change"
     fi
   fi
 
   # With U-Boot in charge (and config.txt actually set), remove any firmware-preset root=/rauc.slot=
   if [ -r "$BOOT_MP/cmdline.txt" ] && grep -Eq '^[[:space:]]*kernel[[:space:]]*=[[:space:]]*u-boot\.bin[[:space:]]*$' "$BOOT_MP/config.txt"; then
-    log_check "Checking cmdline.txt for U-Boot compatibility..."
     current="$(cat "$BOOT_MP/cmdline.txt" 2>/dev/null || echo "")"
     stripped=$(printf '%s\n' "$current" \
       | sed -E 's/(^| )root=[^ ]+//g; s/(^| )rauc\.slot=[^ ]+//g' \
       | tr -s ' ' \
       | sed -E 's/^ +| +$//g')
     if [ "${current}" != "${stripped}" ]; then
-      log_update "Stripping root=/rauc.slot= from cmdline.txt (U-Boot controls root)"
       bk="$BOOT_MP/cmdline.txt.bak.$(date +%Y%m%d%H%M%S)"
       cp -a "$BOOT_MP/cmdline.txt" "$bk" || true
       prune_backups "$BOOT_MP/cmdline.txt" "$MAX_BACKUPS"
       printf '%s\n' "$stripped" > "$BOOT_MP/cmdline.txt"
       sync || true
-    else
-      log_success "cmdline.txt already clean; no change"
     fi
   fi
 else
