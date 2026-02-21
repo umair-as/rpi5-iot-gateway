@@ -15,6 +15,60 @@ command -v rauc >/dev/null 2>&1 || die "rauc binary not found"
 command -v jq >/dev/null 2>&1 || die "jq not found"
 command -v systemctl >/dev/null 2>&1 || die "systemctl not found"
 
+prune_boot_backups() {
+    local boot_mp="/boot"
+    local keep="${MAX_BOOT_BACKUPS_AFTER_GOOD:-2}"
+    local ro_before="0"
+    local deleted=0
+    local found=0
+    local bases
+
+    [[ "$keep" =~ ^[0-9]+$ ]] || keep=2
+    [ -d "$boot_mp" ] || return 0
+    mountpoint -q "$boot_mp" || return 0
+
+    if findmnt -no OPTIONS "$boot_mp" 2>/dev/null | grep -qw ro; then
+        ro_before="1"
+        mount -o remount,rw "$boot_mp" >/dev/null 2>&1 || {
+            log_warn "Could not remount $boot_mp rw for backup cleanup"
+            return 0
+        }
+    fi
+
+    bases=$(find "$boot_mp" -maxdepth 2 -type f -name '*.bak*' 2>/dev/null \
+        | sed -E 's/\.bak(\..*)?$//' \
+        | sort -u)
+
+    if [ -n "$bases" ]; then
+        while IFS= read -r base; do
+            [ -n "$base" ] || continue
+            found=1
+            dir=$(dirname "$base")
+            bn=$(basename "$base")
+            list=$(find "$dir" -maxdepth 1 -type f -name "${bn}.bak*" -printf '%T@ %p\n' 2>/dev/null \
+                | sort -nr \
+                | awk '{print $2}')
+            [ -n "$list" ] || continue
+            prune=$(echo "$list" | awk -v n="$keep" 'NR>n {print}')
+            if [ -n "$prune" ]; then
+                while IFS= read -r f; do
+                    [ -n "$f" ] || continue
+                    rm -f -- "$f" || true
+                    deleted=$((deleted + 1))
+                done <<< "$prune"
+            fi
+        done <<< "$bases"
+    fi
+
+    if [ "$ro_before" = "1" ]; then
+        mount -o remount,ro "$boot_mp" >/dev/null 2>&1 || true
+    fi
+
+    if [ "$found" -eq 1 ]; then
+        log_info "Boot backup cleanup complete: deleted=${deleted}, keep=${keep}"
+    fi
+}
+
 # Avoid spamming on very early boot
 uptime_sec=$(cut -d. -f1 /proc/uptime || echo 0)
 if [ "$uptime_sec" -lt "$MIN_UPTIME_SEC" ]; then
@@ -51,3 +105,6 @@ log_info "Marking booted slot '$booted_slot' good"
 if ! rauc status mark-good booted; then
     die "Failed to mark booted slot good"
 fi
+
+# After successful mark-good, prune old boot backup files (*.bak*).
+prune_boot_backups

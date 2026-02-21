@@ -205,8 +205,8 @@ install_if_changed() {
   return 0
 }
 
-# Files we may replace in /boot
-FILES=(boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
+# FIT variant: stage fitImage first; keep Image/kernel_2712 for compatibility.
+FILES=(boot.scr u-boot.bin splash.bmp fitImage Image kernel_2712.img bcm2712-rpi-5-b.dtb)
 for f in "${FILES[@]}"; do
   if [ -f "$tmpdir/$f" ]; then
     label="$f"
