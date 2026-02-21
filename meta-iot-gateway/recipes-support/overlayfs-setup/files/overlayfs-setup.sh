@@ -18,6 +18,16 @@ fi
 
 log() { echo "[overlayfs-setup] $*"; }
 
+is_mount_rw() {
+    target="$1"
+    opts=$(awk -v m="$target" '$2 == m {print $4}' /proc/mounts | tail -n1)
+    [ -n "$opts" ] || return 1
+    case ",$opts," in
+        *,rw,*) return 0 ;;
+    esac
+    return 1
+}
+
 # Create overlay base directory structure
 log "Initializing overlay base at ${OVERLAY_BASE}"
 mkdir -p "${OVERLAY_BASE}"
@@ -36,8 +46,13 @@ for dir in ${OVERLAY_DIRS}; do
         if ! mount -o remount,rw "${dir}"; then
             log "WARN: remount failed for ${dir}, retrying with overlay type"
             if ! mount -t overlay overlay -o remount,rw "${dir}"; then
-                log "WARN: remount still failed for ${dir}"
+                log "ERROR: remount still failed for ${dir}"
+                exit 1
             fi
+        fi
+        if ! is_mount_rw "${dir}"; then
+            log "ERROR: ${dir} overlay is not mounted rw"
+            exit 1
         fi
         continue
     fi
@@ -53,6 +68,10 @@ for dir in ${OVERLAY_DIRS}; do
     log "Setting up overlay for ${dir}"
     if ! mount -t overlay overlay -o "${opts}" "${dir}"; then
         log "ERROR: failed to mount overlay for ${dir}"
+        exit 1
+    fi
+    if ! is_mount_rw "${dir}"; then
+        log "ERROR: ${dir} overlay is not mounted rw"
         exit 1
     fi
 done

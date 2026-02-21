@@ -20,12 +20,14 @@ do_deploy() {
     # Stage from DEPLOY_DIR_IMAGE if present
     cd ${DEPLOY_DIR_IMAGE}
     # Core boot files to attempt to stage (dereference symlinks like 'Image -> Image-<version>.bin')
-    for f in boot.scr u-boot.bin config.txt cmdline.txt splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb; do
+    for f in boot.scr u-boot.bin config.txt cmdline.txt splash.bmp Image kernel_2712.img; do
         if [ -e "$f" ]; then
             # Create destination dir if needed and copy, dereferencing symlinks
             cp -L "$f" "$workdir/" 2>/dev/null || cp -a "$f" "$workdir/"
         fi
     done
+    # Include all Raspberry Pi 5 family DTBs present in deploy dir.
+    cp -a bcm2712-rpi-*.dtb "$workdir/" 2>/dev/null || true
 
     # Also pull firmware config files from BOOTFILES_DIR_NAME if present (meta-raspberrypi)
     if [ -n "${BOOTFILES_DIR_NAME}" ] && [ -d "${BOOTFILES_DIR_NAME}" ]; then

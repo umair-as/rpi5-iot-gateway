@@ -16,6 +16,7 @@ ConditionPathExists=/etc/ota/device.crt
 Type=oneshot
 ExecStart=/usr/sbin/ota-update-check
 Environment=OTA_CONFIG=/etc/ota/updater.conf
+Environment=OTA_LOCK_FILE=/data/ota/ota-updater.lock
 
 # Run as dedicated user (cert files must be readable by 'ota' user/group)
 User=ota

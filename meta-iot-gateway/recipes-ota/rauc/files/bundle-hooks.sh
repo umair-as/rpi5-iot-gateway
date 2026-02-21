@@ -41,7 +41,7 @@ BOOT_MP="/boot"
 VERBOSE="${IOTGW_VERBOSE:-0}"
 VERBOSE_OVERLAYS="${IOTGW_VERBOSE_OVERLAYS:-0}"
 
-for cmd in tar mount mountpoint install cmp sed awk sync grep; do
+for cmd in tar mount mountpoint install cmp sed awk sync grep sha256sum cp rm mkdir mktemp; do
   command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
 done
 
@@ -55,9 +55,156 @@ case "${HOOK_TYPE:-}" in
     ;;
 esac
 
+# Reconcile selected /etc overlay upper files for the target slot being installed.
+reconcile_overlay_upper() {
+  local slot_mp="${RAUC_SLOT_MOUNT_POINT:-}"
+  local state_dir="/data/iotgw/overlay-reconcile"
+  local state_file="${state_dir}/state.tsv"
+  local backup_root="${state_dir}/backups"
+  local timestamp
+  local state_tmp
+  local backup_dir
+  local manifest_main
+  local manifest_dir
+  local files_found=0
+  local updated=0
+  local preserved=0
+  local -A seen_paths=()
+
+  if [ -z "$slot_mp" ] || [ ! -d "$slot_mp" ]; then
+    log_warn "RAUC_SLOT_MOUNT_POINT is missing; skipping overlay reconciliation"
+    return 0
+  fi
+
+  manifest_main="${slot_mp}/usr/share/iotgw/overlay-reconcile/managed-paths.conf"
+  manifest_dir="${slot_mp}/usr/share/iotgw/overlay-reconcile/managed-paths.d"
+  if [ ! -f "$manifest_main" ] && [ ! -d "$manifest_dir" ]; then
+    log_skip "No overlay reconcile manifest in target slot; skipping"
+    return 0
+  fi
+
+  mkdir -p "$state_dir" "$backup_root"
+  state_tmp=$(mktemp "${state_dir}/state.tsv.new.XXXXXX")
+  timestamp=$(date -u +"%Y%m%dT%H%M%SZ")
+  backup_dir="${backup_root}/${timestamp}"
+
+  state_get() {
+    local p="$1"
+    [ -f "$state_file" ] || return 0
+    awk -F'\t' -v k="$p" '$1 == k { print $2; exit }' "$state_file"
+  }
+
+  process_manifest_file() {
+    local mf="$1"
+    local policy path rel desired upper desired_hash upper_hash prev_hash
+    [ -f "$mf" ] || return 0
+    files_found=1
+    while IFS= read -r line || [ -n "$line" ]; do
+      line="${line#"${line%%[![:space:]]*}"}"
+      [ -n "$line" ] || continue
+      case "$line" in
+        \#*) continue ;;
+      esac
+
+      policy=$(printf '%s' "$line" | awk '{print $1}')
+      path=$(printf '%s' "$line" | awk '{print $2}')
+      if [ -z "$policy" ] || [ -z "$path" ]; then
+        log_warn "Invalid manifest entry in ${mf}: '$line'"
+        continue
+      fi
+      if [ -n "${seen_paths[$path]+x}" ]; then
+        log_warn "Duplicate managed path '${path}' (source: ${mf}); skipping duplicate entry"
+        continue
+      fi
+      seen_paths["$path"]=1
+      case "$policy" in
+        enforce|replace_if_unmodified|preserve) ;;
+        *)
+          log_warn "Unknown policy '${policy}' for ${path}; skipping"
+          continue
+          ;;
+      esac
+      case "$path" in
+        /etc/*) ;;
+        *)
+          log_warn "Path '${path}' is not under /etc; skipping"
+          continue
+          ;;
+      esac
+
+      rel="${path#/etc/}"
+      desired="${slot_mp}${path}"
+      upper="/data/overlays/etc/upper/${rel}"
+      if [ ! -f "$desired" ]; then
+        log_warn "Desired target file missing in slot: ${desired}"
+        continue
+      fi
+      desired_hash=$(sha256sum "$desired" | awk '{print $1}')
+      prev_hash=$(state_get "$path")
+
+      if [ -e "$upper" ] || [ -L "$upper" ]; then
+        upper_hash=""
+        if [ -f "$upper" ]; then
+          upper_hash=$(sha256sum "$upper" | awk '{print $1}')
+        fi
+
+        case "$policy" in
+          enforce)
+            if [ "${upper_hash}" != "${desired_hash}" ]; then
+              mkdir -p "${backup_dir}/$(dirname "$rel")"
+              cp -a "$upper" "${backup_dir}/${rel}" 2>/dev/null || true
+              rm -rf "$upper"
+              updated=$((updated + 1))
+              log_update "Removed stale overlay entry: ${path}"
+            fi
+            ;;
+          replace_if_unmodified)
+            if [ -n "${prev_hash}" ] && [ -n "${upper_hash}" ] && [ "${prev_hash}" = "${upper_hash}" ] && [ "${upper_hash}" != "${desired_hash}" ]; then
+              mkdir -p "${backup_dir}/$(dirname "$rel")"
+              cp -a "$upper" "${backup_dir}/${rel}" 2>/dev/null || true
+              rm -rf "$upper"
+              updated=$((updated + 1))
+              log_update "Removed unmodified stale overlay entry: ${path}"
+            else
+              preserved=$((preserved + 1))
+              log_info "Preserved local override: ${path}"
+            fi
+            ;;
+          preserve)
+            preserved=$((preserved + 1))
+            ;;
+        esac
+      fi
+
+      printf '%s\t%s\n' "$path" "$desired_hash" >> "$state_tmp"
+    done < "$mf"
+  }
+
+  process_manifest_file "$manifest_main"
+  if [ -d "$manifest_dir" ]; then
+    for mf in "$manifest_dir"/*.conf; do
+      [ -e "$mf" ] || continue
+      process_manifest_file "$mf"
+    done
+  fi
+
+  if [ "$files_found" -eq 0 ]; then
+    rm -f "$state_tmp"
+    log_skip "Overlay reconcile manifest list empty; skipping"
+    return 0
+  fi
+
+  mv "$state_tmp" "$state_file"
+  log_info "Overlay reconciliation complete: removed=${updated}, preserved=${preserved}"
+  return 0
+}
+
+reconcile_overlay_upper
+
 ARCHIVE="${BUNDLE_MNT}/bootfiles.tar.gz"
 if [ ! -r "$ARCHIVE" ]; then
   log_skip "No bootfiles.tar.gz in bundle; skipping /boot update"
+  log_success "Bundle post-install hook completed successfully"
   exit 0
 fi
 
@@ -146,8 +293,8 @@ install_if_changed() {
 }
 
 # Files we may replace in /boot
-FILES="boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb"
-for f in $FILES; do
+FILES=(boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
+for f in "${FILES[@]}"; do
   if [ -f "$tmpdir/$f" ]; then
     label="$f"
     if [ "$VERBOSE" != "1" ]; then
@@ -156,6 +303,15 @@ for f in $FILES; do
     if install_if_changed "$tmpdir/$f" "$BOOT_MP/$f" 0644 "$label"; then
       updated=1
     fi
+  fi
+done
+
+# Include any additional Raspberry Pi 5 family DTBs shipped in bundle.
+for dtb in "$tmpdir"/bcm2712-rpi-*.dtb; do
+  [ -f "$dtb" ] || continue
+  bn=$(basename "$dtb")
+  if install_if_changed "$dtb" "$BOOT_MP/$bn" 0644 "$bn"; then
+    updated=1
   fi
 done
 

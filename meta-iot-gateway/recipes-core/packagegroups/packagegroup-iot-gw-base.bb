@@ -4,6 +4,8 @@ LICENSE = "MIT"
 
 inherit packagegroup
 
+# Manual OTA workflow in use: rauc install <bundle-url>
+# Keep ota-updater excluded unless periodic polling is explicitly required.
 RDEPENDS:${PN} = " \
     packagegroup-iot-gw-utils \
     sudo \
@@ -11,7 +13,6 @@ RDEPENDS:${PN} = " \
     systemd-analyze \
     lynis \
     ota-certs \
-    ota-updater \
 "
 
 # Avoid allarch + dynamically renamed library deps (e.g., libgpiod -> libgpiod3)

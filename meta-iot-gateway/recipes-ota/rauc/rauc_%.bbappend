@@ -4,6 +4,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI:append = " \
     file://rauc-grow-data-partition.service \
     file://grow-data-partition.sh \
+    file://managed-paths.conf \
 "
 
 # grow-data-partition.sh requires bash/e2fsprogs plus util-linux (lsblk, partprobe)
@@ -20,10 +21,16 @@ do_install:append() {
     install -d ${D}${sbindir}
     install -m 0755 ${WORKDIR}/grow-data-partition.sh \
         ${D}${sbindir}/grow-data-partition.sh
+
+    # Install managed overlay reconciliation metadata consumed by bundle hooks.
+    install -d ${D}${datadir}/iotgw/overlay-reconcile
+    install -m 0644 ${WORKDIR}/managed-paths.conf \
+        ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.conf
 }
 
 # Ensure the script is placed with the grow subpackage
 FILES:rauc-grow-data-part:append = " ${sbindir}/grow-data-partition.sh"
+FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf"
 
 # Keep RAUC available for D-Bus activation, but don't start it by default
 SYSTEMD_AUTO_ENABLE:${PN}-service = "disable"

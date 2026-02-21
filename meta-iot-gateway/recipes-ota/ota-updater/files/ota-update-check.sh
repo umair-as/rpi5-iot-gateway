@@ -15,7 +15,7 @@ set -euo pipefail
 readonly CONFIG_FILE="${OTA_CONFIG:-/etc/ota/updater.conf}"
 readonly STATE_DIR="/data/ota"
 readonly STATE_FILE="${STATE_DIR}/last-check"
-readonly LOCK_FILE="/run/ota-updater.lock"
+readonly LOCK_FILE="${OTA_LOCK_FILE:-${STATE_DIR}/ota-updater.lock}"
 
 # Logging helpers (all to stderr so stdout stays clean for data)
 log_info()  { echo "[$(date -Iseconds)] [INFO]  $*" >&2; }

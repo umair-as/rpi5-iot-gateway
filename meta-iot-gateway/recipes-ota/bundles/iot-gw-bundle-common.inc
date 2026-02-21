@@ -10,6 +10,8 @@ RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 
 # Control whether to update /boot (kernel/DTBs) via bundle hook
 IOTGW_RAUC_UPDATE_BOOTFILES ?= "0"
+IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE ?= "rpi-bootfiles-archive"
+IOTGW_RAUC_BOOTFILES_HOOK_FILE ?= "bundle-hooks.sh"
 
 # Slots included in the bundle
 RAUC_BUNDLE_SLOTS = "rootfs"
@@ -17,20 +19,20 @@ RAUC_BUNDLE_SLOTS = "rootfs"
 # Use the selected image for the rootfs slot (set BUNDLE_IMAGE in variants)
 RAUC_SLOT_rootfs = "${BUNDLE_IMAGE}"
 RAUC_SLOT_rootfs[fstype] = "ext4"
-# Only run post-install hook when updating /boot
-RAUC_SLOT_rootfs[hooks] = "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1','post-install','',d)}"
+# Always run post-install hook for update-scoped reconciliation logic.
+RAUC_SLOT_rootfs[hooks] = "post-install"
 
 # Bundle format
 RAUC_BUNDLE_FORMAT = "verity"
 
 # Include bootfiles archive and a hook to update /boot (conditional)
-RAUC_BUNDLE_EXTRA_DEPENDS += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' rpi-bootfiles-archive','',d)}"
+RAUC_BUNDLE_EXTRA_DEPENDS += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' ${IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE}','',d)}"
 RAUC_BUNDLE_EXTRA_FILES += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' bootfiles.tar.gz','',d)}"
-RAUC_BUNDLE_HOOKS[file] = "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1','bundle-hooks.sh','',d)}"
+RAUC_BUNDLE_HOOKS[file] = "${IOTGW_RAUC_BOOTFILES_HOOK_FILE}"
 
 # Make RAUC cert and hooks available via FILESEXTRAPATHS
 FILESEXTRAPATHS:prepend := "${THISDIR}/../rauc/files:"
-SRC_URI += "file://bundle-hooks.sh;mode=0755"
+SRC_URI:append = " file://${IOTGW_RAUC_BOOTFILES_HOOK_FILE};mode=0755"
 
 # Key and cert paths must be provided via local.conf or kas/local.yml
 # Example in kas/local.yml.example:

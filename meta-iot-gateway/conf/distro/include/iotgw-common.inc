@@ -13,8 +13,8 @@ DISTRO_VERSION = "${VENDOR_SHORT_NAME}.0.1"
 # Default codename for this product line (override in CI if desired)
 DISTRO_CODENAME ?= "rpi5"
 
-# RAUC defaults (deterministic). CI may override RAUC_BUNDLE_VERSION.
-RAUC_BUNDLE_VERSION ?= "r0"
+# RAUC defaults. Keep local builds stable; CI should override with a git-derived value.
+RAUC_BUNDLE_VERSION ?= "${DISTRO_VERSION}+local"
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 PREFERRED_RPROVIDER_virtual-rauc-conf ?= "rauc-conf-iotgw"
 
@@ -37,7 +37,10 @@ PREFERRED_VERSION_lynis ?= "3.1.5"
 INHERIT += "sanity"
 INHERIT += "insane"
 QA_LOG ?= "1"
-ERROR_TO_WARN_QA ?= "version-going-backwards"
+# Kernel AUTOINC + git hash can appear to "go backwards" lexicographically
+# across unrelated commits. Keep this as warning to avoid false CI failures.
+ERROR_QA:remove = "version-going-backwards"
+WARN_QA:append = " version-going-backwards"
 
 
 # Init system and features (single source of truth)
@@ -66,8 +69,9 @@ ROOT_HOME ?= "/root"
 
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " RAUC_BUNDLE_VERSION"
 
 # Prune machine features that are not relevant on Raspberry Pi 5
 # Keep qemu-usermode to allow gobject-introspection typelibs generation at build time
@@ -96,3 +100,31 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
+
+# Raspberry Pi 5 DTB policy by kernel provider:
+# - meta-raspberrypi 6.6 provider supports the full CM5+Pi5 set.
+# - mainline bring-up providers currently ship only the rpi-5-b DTB.
+# This keeps WIC/boot assembly aligned with the selected kernel provider.
+IOTGW_RPI5_KERNEL_DTBS_DEFAULT ?= " \
+    broadcom/bcm2712-rpi-5-b.dtb \
+    broadcom/bcm2712-rpi-cm5-cm5io.dtb \
+    broadcom/bcm2712-rpi-cm5-cm4io.dtb \
+    broadcom/bcm2712-rpi-cm5l-cm5io.dtb \
+    broadcom/bcm2712-rpi-cm5l-cm4io.dtb \
+"
+IOTGW_RPI5_KERNEL_DTBS_MAINLINE ?= "broadcom/bcm2712-rpi-5-b.dtb"
+
+RPI_KERNEL_DEVICETREE:raspberrypi5 = "${@bb.utils.contains_any('PREFERRED_PROVIDER_virtual/kernel', \
+    'linux-iotgw-mainline linux-iotgw-mainline-fit', \
+    '${IOTGW_RPI5_KERNEL_DTBS_MAINLINE}', '${IOTGW_RPI5_KERNEL_DTBS_DEFAULT}', d)}"
+
+# Mainline providers currently do not ship the Raspberry Pi overlay dtbo set used by
+# meta-raspberrypi. Keep overlay copy enabled for the default provider, but clear it
+# for mainline variants to avoid do_image_wic failures on missing overlay artifacts.
+python () {
+    if d.getVar("MACHINE") != "raspberrypi5":
+        return
+    provider = (d.getVar("PREFERRED_PROVIDER_virtual/kernel") or "").strip()
+    if provider in ("linux-iotgw-mainline", "linux-iotgw-mainline-fit"):
+        d.setVar("RPI_KERNEL_DEVICETREE_OVERLAYS", "")
+}
