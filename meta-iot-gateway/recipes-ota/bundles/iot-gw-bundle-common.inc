@@ -28,11 +28,15 @@ RAUC_BUNDLE_FORMAT = "verity"
 # Include bootfiles archive and a hook to update /boot (conditional)
 RAUC_BUNDLE_EXTRA_DEPENDS += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' ${IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE}','',d)}"
 RAUC_BUNDLE_EXTRA_FILES += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' bootfiles.tar.gz','',d)}"
+RAUC_BUNDLE_EXTRA_FILES += " overlay-reconcile.py"
 RAUC_BUNDLE_HOOKS[file] = "${IOTGW_RAUC_BOOTFILES_HOOK_FILE}"
 
 # Make RAUC cert and hooks available via FILESEXTRAPATHS
 FILESEXTRAPATHS:prepend := "${THISDIR}/../rauc/files:"
-SRC_URI:append = " file://${IOTGW_RAUC_BOOTFILES_HOOK_FILE};mode=0755"
+SRC_URI:append = " \
+    file://${IOTGW_RAUC_BOOTFILES_HOOK_FILE};mode=0755 \
+    file://overlay-reconcile.py;mode=0755 \
+"
 
 # Key and cert paths must be provided via local.conf or kas/local.yml
 # Example in kas/local.yml.example:

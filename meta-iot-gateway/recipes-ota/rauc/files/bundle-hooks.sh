@@ -41,6 +41,7 @@ BOOT_MP="/boot"
 VERBOSE="${IOTGW_VERBOSE:-0}"
 VERBOSE_OVERLAYS="${IOTGW_VERBOSE_OVERLAYS:-0}"
 RECONCILE_TOOL="/usr/libexec/rauc/overlay-reconcile.py"
+RECONCILE_TOOL_BUNDLE="${BUNDLE_MNT}/overlay-reconcile.py"
 
 for cmd in tar mount mountpoint install cmp sed awk sync grep sha256sum cp rm mkdir mktemp; do
   command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
@@ -48,9 +49,25 @@ done
 
 run_overlay_reconcile() {
   local stage="$1"
-  [ -x "$RECONCILE_TOOL" ] || die "Missing reconcile tool: $RECONCILE_TOOL"
-  command -v python3 >/dev/null 2>&1 || die "python3 is required for overlay reconciliation"
-  python3 "$RECONCILE_TOOL" "$stage"
+  local tool=""
+
+  if [ -x "$RECONCILE_TOOL" ]; then
+    tool="$RECONCILE_TOOL"
+  elif [ -x "$RECONCILE_TOOL_BUNDLE" ]; then
+    tool="$RECONCILE_TOOL_BUNDLE"
+  fi
+
+  if [ -z "$tool" ]; then
+    log_warn "No overlay reconcile tool found; skipping reconciliation for compatibility"
+    return 0
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    log_warn "python3 not available on running system; skipping reconciliation for compatibility"
+    return 0
+  fi
+
+  python3 "$tool" "$stage"
 }
 
 case "${HOOK_TYPE:-}" in
