@@ -11,6 +11,9 @@ RDEPENDS:${PN} = " \
     packagegroup-iot-gw-utils \
     tcpdump \
     strace \
+    bpftool \
+    keyutils \
+    libseccomp \
     lsof \
     ethtool \
     vim \

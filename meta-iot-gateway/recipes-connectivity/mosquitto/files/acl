@@ -1,0 +1,11 @@
+# Mosquitto ACL baseline for IoT Gateway.
+#
+# Add explicit user blocks and least-privilege topic access rules.
+# Example:
+#   user gateway-admin
+#   topic readwrite #
+#
+#   user sensor-a
+#   topic write iotgw/sensor-a/telemetry/#
+#   topic read iotgw/sensor-a/command/#
+
