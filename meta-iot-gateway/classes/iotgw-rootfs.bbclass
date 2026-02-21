@@ -97,3 +97,12 @@ iotgw_rootfs_buildinfo() {
     echo "${IMAGE_NAME}" > ${IMAGE_ROOTFS}/etc/version
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_buildinfo;"
+
+# oe-core's rootfs_reproducible hook rewrites /etc/version from SOURCE_DATE_EPOCH
+# near the end of do_rootfs. Re-apply our image identifier after do_rootfs so
+# tools see the real image build id instead of the reproducible timestamp token.
+iotgw_rootfs_version_finalize() {
+    install -d ${IMAGE_ROOTFS}/etc
+    echo "${IMAGE_NAME}" > ${IMAGE_ROOTFS}/etc/version
+}
+do_rootfs[postfuncs] += "iotgw_rootfs_version_finalize"
