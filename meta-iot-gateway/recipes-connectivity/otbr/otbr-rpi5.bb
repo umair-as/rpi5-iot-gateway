@@ -101,7 +101,7 @@ do_install:append() {
     # Provide default env for agent and web to avoid warnings
     install -d ${D}${sysconfdir}/default
     install -m 0644 ${WORKDIR}/otbr-agent.default ${D}${sysconfdir}/default/otbr-agent
-    echo 'OTBR_WEB_OPTS=""' > ${D}${sysconfdir}/default/otbr-web
+    echo 'OTBR_WEB_OPTS="-a 0.0.0.0 -p 80"' > ${D}${sysconfdir}/default/otbr-web
 
     # Install ipset init helper
     install -d ${D}${libexecdir}/otbr
