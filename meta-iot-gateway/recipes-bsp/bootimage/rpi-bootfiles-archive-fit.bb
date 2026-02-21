@@ -1,5 +1,5 @@
-SUMMARY = "Boot files archive for RAUC post-install copy"
-DESCRIPTION = "Packs bootloader and kernel boot files from the image deploy directory into bootfiles.tar.gz for inclusion in RAUC bundles. Includes boot.scr, u-boot.bin, kernel Image, kernel_2712.img, DTBs, overlays, and optional splash.bmp."
+SUMMARY = "Boot files archive (FIT variant) for RAUC post-install copy"
+DESCRIPTION = "Packs bootloader and FIT kernel boot files into bootfiles.tar.gz for inclusion in RAUC bundles."
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
@@ -19,8 +19,8 @@ do_deploy() {
 
     # Stage from DEPLOY_DIR_IMAGE if present
     cd ${DEPLOY_DIR_IMAGE}
-    # Core boot files to attempt to stage (dereference symlinks like 'Image -> Image-<version>.bin')
-    for f in boot.scr u-boot.bin config.txt cmdline.txt splash.bmp Image kernel_2712.img; do
+    # Core boot files to attempt to stage (dereference symlinks where present)
+    for f in boot.scr u-boot.bin config.txt cmdline.txt splash.bmp fitImage Image kernel_2712.img; do
         if [ -e "$f" ]; then
             # Create destination dir if needed and copy, dereferencing symlinks
             cp -L "$f" "$workdir/" 2>/dev/null || cp -a "$f" "$workdir/"
@@ -37,7 +37,8 @@ do_deploy() {
             fi
         done
     fi
-    # If kernel_2712.img is missing but Image exists, provide a copy for firmware that expects that name
+    # For compatibility, keep kernel_2712.img as a copy of Image when available.
+    # FIT flow should boot via U-Boot script using fitImage.
     if [ ! -f "$workdir/kernel_2712.img" ] && [ -f "$workdir/Image" ]; then
         cp -a "$workdir/Image" "$workdir/kernel_2712.img"
     fi
