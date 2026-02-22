@@ -28,10 +28,8 @@ local_conf_header:
     BAD_RECOMMENDATIONS:append:otbrfast = " kernel-module-* kernel-modules linux-firmware *-firmware"
 
     # Mask linux-raspberrypi recipes to avoid scheduling kernel tasks
-    BBMASK:append:otbrfast = " \
-      |.*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi.*\\.(bb|bbappend) \
-      |.*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi-v7.*\\.(bb|bbappend) \
-    "
+    BBMASK:append:otbrfast = " .*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi.*\\.(bb|bbappend)"
+    BBMASK:append:otbrfast = " .*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi-v7.*\\.(bb|bbappend)"
 
     # Trim unrelated features for faster, more cacheable builds
     DISTRO_FEATURES:remove:otbrfast = " rauc x11 wayland vulkan opengl pulseaudio"

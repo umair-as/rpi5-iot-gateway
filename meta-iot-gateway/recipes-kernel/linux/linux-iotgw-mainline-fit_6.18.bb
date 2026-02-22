@@ -20,5 +20,4 @@ SRC_URI = " \
 
 # FIT image variant: compile normal arm64 Image payload and package as fitImage.
 KERNEL_IMAGETYPE = "fitImage"
-KERNEL_IMAGETYPES = "fitImage"
 KERNEL_CLASSES = " kernel-fitimage "
