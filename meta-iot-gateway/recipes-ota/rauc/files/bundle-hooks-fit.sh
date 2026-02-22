@@ -114,9 +114,9 @@ case "${HOOK_TYPE:-}" in
     ;;
 esac
 
-ARCHIVE="${BUNDLE_MNT}/bootfiles.tar.gz"
+ARCHIVE="${BUNDLE_MNT}/bootfiles-fit.tar.gz"
 if [ ! -r "$ARCHIVE" ]; then
-  log_skip "No bootfiles.tar.gz in bundle; skipping /boot update"
+  log_skip "No bootfiles-fit.tar.gz in bundle; skipping /boot update"
   log_success "Bundle post-install hook completed successfully"
   exit 0
 fi
