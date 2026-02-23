@@ -1,5 +1,5 @@
 .PHONY: help base dev prod desktop \
-        bundle-dev-full bundle-dev-full-fit bundle-prod-full bundle-desktop-full bundle-desktop \
+        bundle-dev-full bundle-dev-full-fit bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
         layers parse clean-lock
 
 KAS ?= kas
@@ -21,6 +21,7 @@ help:
 	@echo "  -- Bundles (rootfs + kernel/DTBs) --"
 	@echo "  make bundle-dev-full      # Bundle from dev image"
 	@echo "  make bundle-dev-full-fit  # FIT bundle from dev image"
+	@echo "  make bundle-base-full-fit-fast # FIT bundle from base image (OTBR off, faster)"
 	@echo "  make bundle-prod-full     # Bundle from prod image"
 	@echo "  make bundle-desktop-full  # Bundle from desktop image"
 	@echo "  -- Bundles (rootfs-only) --"
@@ -55,6 +56,12 @@ bundle-dev-full:
 
 bundle-dev-full-fit:
 	$(call bundle_cmd,iot-gw-image-dev,iot-gw-bundle-full-fit)
+
+bundle-base-full-fit-fast:
+	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR" \
+			   BUNDLE_IMAGE_NAME=iot-gw-image-base \
+			   IOTGW_ENABLE_OTBR=0 \
+			   bitbake iot-gw-bundle-full-fit' $(BASE)
 
 bundle-prod-full:
 	$(call bundle_cmd,iot-gw-image-prod,iot-gw-bundle-full)
