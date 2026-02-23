@@ -15,6 +15,13 @@ IMAGE_FEATURES += " \
     ssh-server-openssh \
 "
 
+# Headless-first default: avoid degraded state from static vconsole setup unit.
+# Desktop profile can override this to "0" if VT keyboard setup is required.
+IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
+
+# Use only healthcheck-based mark-good flow; disable legacy one-shot unit.
+IOTGW_DISABLE_RAUC_MARK_GOOD ?= "1"
+
 # Desktop profile can include splash
 IMAGE_FEATURES:append:desktop = " splash"
 
