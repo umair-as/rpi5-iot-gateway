@@ -18,10 +18,57 @@ do_deploy() {
     rm -rf "$workdir"
     mkdir -p "$workdir"
 
+    copy_first_existing() {
+        dst="$1"
+        shift
+        for src in "$@"; do
+            if [ -n "$src" ] && [ -e "$src" ]; then
+                cp -L "$src" "$workdir/$dst" 2>/dev/null || cp -a "$src" "$workdir/$dst"
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    require_staged_file() {
+        f="$1"
+        if [ ! -f "$workdir/$f" ]; then
+            bbfatal "Required boot artifact '$f' was not staged into ${WORKDIR}/bootfiles-stage"
+        fi
+    }
+
     # Stage from DEPLOY_DIR_IMAGE if present
     cd ${DEPLOY_DIR_IMAGE}
-    # Core boot files to attempt to stage (dereference symlinks where present)
+    bootfiles_cfg_src=""
+    bootfiles_cmd_src=""
+    if [ -n "${BOOTFILES_DIR_NAME}" ]; then
+        bootfiles_cfg_src="${BOOTFILES_DIR_NAME}/config.txt"
+        bootfiles_cmd_src="${BOOTFILES_DIR_NAME}/cmdline.txt"
+    fi
+
+    # Stage critical artifacts using stable destination names with fallback candidates.
+    # This avoids silent breakage if upstream deploy naming changes.
+    copy_first_existing boot.scr \
+        boot.scr || true
+
+    copy_first_existing u-boot.bin \
+        u-boot.bin \
+        u-boot-${MACHINE}.bin || true
+
+    copy_first_existing config.txt \
+        config.txt \
+        "$bootfiles_cfg_src" || true
+
+    copy_first_existing cmdline.txt \
+        cmdline.txt \
+        "$bootfiles_cmd_src" || true
+
+    # Stage remaining requested files (dereference symlinks where present).
     for f in ${IOTGW_BOOTFILES_STAGE_FILES}; do
+        # Already handled via stable-name staging above.
+        if [ "$f" = "boot.scr" ] || [ "$f" = "u-boot.bin" ] || [ "$f" = "config.txt" ] || [ "$f" = "cmdline.txt" ]; then
+            continue
+        fi
         if [ -e "$f" ]; then
             cp -L "$f" "$workdir/" 2>/dev/null || cp -a "$f" "$workdir/"
         fi
@@ -29,14 +76,6 @@ do_deploy() {
     # Include all Raspberry Pi 5 family DTBs present in deploy dir.
     cp -a bcm2712-rpi-*.dtb "$workdir/" 2>/dev/null || true
 
-    # Also pull firmware config files from BOOTFILES_DIR_NAME if present (meta-raspberrypi)
-    if [ -n "${BOOTFILES_DIR_NAME}" ] && [ -d "${BOOTFILES_DIR_NAME}" ]; then
-        for f in config.txt cmdline.txt; do
-            if [ -e "${BOOTFILES_DIR_NAME}/$f" ]; then
-                cp -a "${BOOTFILES_DIR_NAME}/$f" "$workdir/"
-            fi
-        done
-    fi
     # Keep kernel_2712.img as a compatibility alias where Image exists.
     if [ ! -f "$workdir/kernel_2712.img" ] && [ -f "$workdir/Image" ]; then
         cp -a "$workdir/Image" "$workdir/kernel_2712.img"
@@ -67,6 +106,40 @@ do_deploy() {
             echo "$rel" > "$workdir/kernel.release"
         fi
     fi
+
+    # Validate required baseline artifacts.
+    require_staged_file boot.scr
+    require_staged_file u-boot.bin
+    require_staged_file config.txt
+    require_staged_file cmdline.txt
+
+    # Validate kernel image presence for requested boot flow.
+    case " ${IOTGW_BOOTFILES_STAGE_FILES} " in
+        *" fitImage "*)
+            require_staged_file fitImage
+            ;;
+        *)
+            require_staged_file Image
+            ;;
+    esac
+
+    # Staleness checks: fail if we staged different bootloader/script content than
+    # the current deploy artifact symlinks.
+    if [ -f "${DEPLOY_DIR_IMAGE}/u-boot.bin" ]; then
+        staged_sha=$(sha256sum "$workdir/u-boot.bin" | awk '{print $1}')
+        deploy_sha=$(sha256sum "${DEPLOY_DIR_IMAGE}/u-boot.bin" | awk '{print $1}')
+        if [ "x$staged_sha" != "x$deploy_sha" ]; then
+            bbfatal "Staged u-boot.bin hash mismatch (staged=$staged_sha deploy=$deploy_sha). Refusing stale bootfiles archive."
+        fi
+    fi
+    if [ -f "${DEPLOY_DIR_IMAGE}/boot.scr" ]; then
+        staged_sha=$(sha256sum "$workdir/boot.scr" | awk '{print $1}')
+        deploy_sha=$(sha256sum "${DEPLOY_DIR_IMAGE}/boot.scr" | awk '{print $1}')
+        if [ "x$staged_sha" != "x$deploy_sha" ]; then
+            bbfatal "Staged boot.scr hash mismatch (staged=$staged_sha deploy=$deploy_sha). Refusing stale bootfiles archive."
+        fi
+    fi
+
     # Create the tar archive (empty tar if nothing staged)
     if [ -n "$(ls -A "$workdir" 2>/dev/null)" ]; then
         tar -czf ${DEPLOYDIR}/${IOTGW_BOOTFILES_ARCHIVE_NAME} .
@@ -77,7 +150,15 @@ do_deploy() {
 
 addtask deploy after do_install before do_build
 
-# Ensure we run after kernel deployed its artifacts to DEPLOY_DIR_IMAGE
-do_deploy[depends] += "virtual/kernel:do_deploy rpi-bootfiles:do_deploy"
+# Ensure we run after all boot artifacts are deployed to DEPLOY_DIR_IMAGE.
+# Without these task-level deploy dependencies, bootfiles archives can become
+# stale (e.g. old u-boot.bin/boot.scr) even when newer artifacts exist.
+do_deploy[depends] += " \
+    virtual/kernel:do_deploy \
+    rpi-bootfiles:do_deploy \
+    u-boot:do_deploy \
+    rpi-u-boot-scr:do_deploy \
+    iotgw-bootlogo:do_deploy \
+"
 
 PACKAGE_ARCH = "${MACHINE_ARCH}"
