@@ -17,6 +17,10 @@ IOTGW_RAUC_BOOTFILES_BUNDLE_FILE ?= "bootfiles.tar.gz"
 
 # Slots included in the bundle
 RAUC_BUNDLE_SLOTS = "rootfs"
+# Keep adaptive updates disabled by default. Current slot image/partition size
+# in this project is not 4KiB-aligned, which triggers RAUC fallback warnings:
+# "Continuing after adaptive mode error ... not a multiple of 4096 bytes".
+# Re-enable when partition geometry is aligned for block-hash-index mode.
 IOTGW_RAUC_ADAPTIVE ?= "0"
 
 # Use the selected image for the rootfs slot (set BUNDLE_IMAGE in variants)
