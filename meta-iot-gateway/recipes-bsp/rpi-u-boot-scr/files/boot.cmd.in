@@ -97,6 +97,47 @@ echo "[bootscript] Selected RAUC slot ${rauc_slot} (root=${bootpart})"
 echo "[RAUC] Loading kernel from boot partition; slot=${rauc_slot} root=${bootpart}"
 
 # Load kernel and boot
-fatload @@BOOT_MEDIA@@ 0:1 ${kernel_addr_r} @@KERNEL_IMAGETYPE@@
+if fatload @@BOOT_MEDIA@@ 0:1 ${kernel_addr_r} @@KERNEL_IMAGETYPE@@; then
+    echo "[RAUC] Loaded @@KERNEL_IMAGETYPE@@"
+else
+    echo "[RAUC] Failed to load @@KERNEL_IMAGETYPE@@ from /boot"
+    reset
+fi
 if test ! -e @@BOOT_MEDIA@@ 0:1 uboot.env; then saveenv; fi;
-@@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}
+
+# FIT-mode visibility and explicit configuration selection.
+if test "x@@KERNEL_IMAGETYPE@@" = "xfitImage"; then
+    test -n "${iotgw_fit_verify}" || setenv iotgw_fit_verify "required"
+    test -n "${iotgw_fit_algo}" || setenv iotgw_fit_algo "sha256,rsa2048"
+    test -n "${iotgw_fit_conf_default}" || setenv iotgw_fit_conf_default "conf-bcm2712-rpi-5-b.dtb"
+    test -n "${iotgw_fit_conf}" || setenv iotgw_fit_conf "${iotgw_fit_conf_default}"
+    # Raspberry Pi firmware applies runtime DT fixups/overlays before U-Boot.
+    # Use firmware-prepared DTB by default to avoid early-kernel hangs seen
+    # with static DTB from FIT config on this platform.
+    test -n "${iotgw_fit_external_fdt}" || setenv iotgw_fit_external_fdt "1"
+
+    echo "[FIT] verify=${iotgw_fit_verify} algo=${iotgw_fit_algo}"
+    echo "[FIT] config default=${iotgw_fit_conf_default} selected=${iotgw_fit_conf}"
+
+    if test -n "${iotgw_fit_conf}"; then
+        if test "x${iotgw_fit_external_fdt}" = "x1"; then
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf} - ${fdt_addr}"
+            @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf} - ${fdt_addr}
+        else
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf}"
+            @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf}
+        fi
+    else
+        if test "x${iotgw_fit_external_fdt}" = "x1"; then
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}"
+            @@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}
+        else
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r}"
+            @@KERNEL_BOOTCMD@@ ${kernel_addr_r}
+        fi
+    fi
+else
+    # Non-FIT path uses external DTB argument.
+    echo "[RAUC] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}"
+    @@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}
+fi
