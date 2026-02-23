@@ -43,7 +43,6 @@ RDEPENDS:${PN}-database = " \
 "
 
 RDEPENDS:${PN}-monitoring = " \
-    collectd \
     sysstat \
 "
 

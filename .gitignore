@@ -34,3 +34,13 @@ kas/*-local.yml
 **/dev-key.pem
 meta-iot-gateway/recipes-ota/rauc/files/dev-key.pem
 meta-iot-gateway/recipes-ota/bundles/files/dev-key.pem
+
+# Local assistant and scratch files
+AGENTS.md
+claude.md
+.agents/
+.claude/
+dev/
+docs/signature.rst
+scripts/kernel-hardening-check-build.sh
+scripts/kernel-hardening-check-target.sh
