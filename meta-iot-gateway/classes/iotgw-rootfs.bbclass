@@ -75,6 +75,24 @@ iotgw_rootfs_systemd_presets() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_systemd_presets;"
 
+###### Optional vconsole setup masking (headless/serial-focused images)
+iotgw_rootfs_mask_vconsole_setup() {
+    if [ "${IOTGW_DISABLE_VCONSOLE_SETUP}" = "1" ]; then
+        install -d ${IMAGE_ROOTFS}/etc/systemd/system
+        ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-vconsole-setup.service
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_vconsole_setup;"
+
+###### Optional legacy RAUC mark-good unit masking
+iotgw_rootfs_mask_rauc_mark_good() {
+    if [ "${IOTGW_DISABLE_RAUC_MARK_GOOD}" = "1" ]; then
+        install -d ${IMAGE_ROOTFS}/etc/systemd/system
+        ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/rauc-mark-good.service
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_rauc_mark_good;"
+
 ###### Deterministic build info (/etc/buildinfo)
 iotgw_rootfs_buildinfo() {
     install -d ${IMAGE_ROOTFS}/etc

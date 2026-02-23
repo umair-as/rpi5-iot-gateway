@@ -6,6 +6,9 @@ LICENSE = "MIT"
 # Pull in common base (RAUC, SSH, splash, baseline pkgs)
 require iot-gw-image-base.inc
 
+# Desktop images may use VT keyboard setup.
+IOTGW_DISABLE_VCONSOLE_SETUP = "0"
+
 # Desktop environment with applications and utilities
 # Includes: Weston/Wayland, Chromium browser, file manager, editors,
 #           media players, system utilities, themes, and network tools
