@@ -163,6 +163,10 @@ kas build kas/local.yml --target iot-gw-bundle-full
 kas shell kas/local.yml
 ```
 
+## OTA Reference
+
+- RAUC install/update runbook: `docs/RAUC_UPDATE.md`
+
 ---
 
 ## BitBake Shell
@@ -225,3 +229,4 @@ jobs:
 - [KAS Documentation](https://kas.readthedocs.io/)
 - [Yocto Project Documentation](https://docs.yoctoproject.org/)
 - [BitBake User Manual](https://docs.yoctoproject.org/bitbake/)
+- [FIT Setup and Signing Guide](FIT_SIGNING.md)

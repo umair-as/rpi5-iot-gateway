@@ -13,6 +13,8 @@ The distribution implements defense-in-depth security across multiple layers:
 - **Firewall**: nftables enabled by default
 - **Read-only Root**: RAUC A/B slots mounted read-only
 
+For FIT boot signing and verification chain setup, see [FIT Setup and Signing Guide](FIT_SIGNING.md).
+
 ---
 
 ## Kernel Hardening
