@@ -230,6 +230,8 @@ Detailed documentation is available in the `docs/` directory:
 - **[Build System](docs/BUILD.md)** — Performance tuning, layer management, CI/CD
 - **[OpenThread Border Router](docs/OTBR.md)** — OTBR setup, configuration, commissioning
 - **[OTA Updates](OTA_UPDATE.md)** — RAUC workflow, bundles, rollback (root level)
+- **[RAUC Update Runbook](docs/RAUC_UPDATE.md)** — Slot validation and adaptive update checks
+- **[FIT Setup and Signing](docs/FIT_SIGNING.md)** — FIT flow setup, signing, verification, tamper test
 
 ---
 

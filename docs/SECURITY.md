@@ -155,16 +155,16 @@ systemctl enable nftables
 
 Validate kernel configuration against KSPP recommendations using the `kernel-hardening-checker` tool.
 
-**During Build:**
+**During Build (host-side check using build artifacts):**
 ```bash
-make kernel-hardening-check
+scripts/kernel-hardening-check-build.sh
 ```
 
 Output: `build/reports/kernel-hardening-YYYYMMDD-HHMMSS.txt`
 
-**On Running Device:**
+**On Running Device (over SSH):**
 ```bash
-make khc-target HOST=root@192.168.1.100
+scripts/kernel-hardening-check-target.sh root@192.168.1.100
 ```
 
 Or manually on device:
@@ -235,7 +235,7 @@ Before deploying to production:
 - [ ] Generate unique RAUC signing keys (per deployment/fleet)
 - [ ] Review and customize firewall rules
 - [ ] Enable kernel security features (`igw_security_prod`)
-- [ ] Run kernel-hardening-checker
+- [ ] Run `scripts/kernel-hardening-check-build.sh` and review the report
 - [ ] Run Lynis audit and address findings
 - [ ] Disable unused network services
 - [ ] Configure audit log forwarding (if applicable)
