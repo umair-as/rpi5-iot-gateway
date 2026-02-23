@@ -10,7 +10,8 @@ StandardInput=socket
 KillMode=process
 
 # IoT Gateway hardening profile
-NoNewPrivileges=true
+# Keep privilege escalation available for authorized admin users (sudo/su).
+NoNewPrivileges=false
 ProtectSystem=full
 ProtectHome=false
 PrivateTmp=true
