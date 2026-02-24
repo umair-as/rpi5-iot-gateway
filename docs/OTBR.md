@@ -14,6 +14,28 @@ This document describes how to enable and use OpenThread Border Router on the Io
 **Deployment Mode:** Host-based (systemd services)
 **Hardware:** Raspberry Pi 5 + Thread RCP
 
+### Web UI
+
+The web management interface is provided by **otbr-webui** — a standalone
+React + Fastify application that replaces the legacy C++ `otbr-web` binary
+shipped upstream by ot-br-posix.
+
+Key differences from the legacy web UI:
+
+| | Legacy `otbr-web` | New `otbr-webui` |
+|---|---|---|
+| **Runtime** | C++ binary | Node.js + Fastify |
+| **Frontend** | Alpine.js (single HTML) | React 19 + Vite (bundled) |
+| **Real-time** | Polling only | WebSocket push + REST |
+| **Topology** | D3.js (basic) | D3.js force-directed graph |
+| **Features** | Dashboard, network, commissioner | Dashboard, topology, network, commissioner, dataset, diagnostics, energy scan |
+| **Air-gapped** | Vendored JS/fonts | Vendored (Roboto, Material Icons, all npm deps) |
+| **Security** | systemd hardening | Same hardening + CSP headers, input validation, strict ot-ctl whitelist |
+
+The `otbr-rpi5` recipe builds the OTBR agent with `-DOTBR_WEB=OFF` and
+depends on `otbr-webui` for the web interface. Source:
+[github.com/umair-uas/otbr-webui](https://github.com/umair-uas/otbr-webui)
+
 ---
 
 ## Hardware Requirements
@@ -79,9 +101,10 @@ kas build kas/local.yml --target iot-gw-image-dev
 ### What Gets Installed
 
 When enabled, the following are included:
-- `otbr-rpi5` package (otbr-agent, otbr-web)
-- systemd services (otbr-agent, otbr-web)
-- Dependencies (Avahi, radvd)
+- `otbr-rpi5` package (otbr-agent + dependencies)
+- `otbr-webui` package (React/Fastify web UI + Node.js runtime)
+- systemd services: `otbr-agent.service`, `otbr-webui.service`
+- Dependencies (Avahi, radvd, Node.js 22 LTS)
 - Firewall rules for OTBR web UI (only when `IOTGW_ENABLE_OTBR=1`)
 - Kernel features (netfilter, NAT support)
 
@@ -102,57 +125,77 @@ local_conf_header:
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│  Raspberry Pi 5 Host                        │
-│                                             │
-│  ┌──────────────────────────────────────┐  │
-│  │  otbr-agent (systemd service)        │  │
-│  │  - Thread network management         │  │
-│  │  - Border routing                    │  │
-│  │  - Commissioner                      │  │
-│  └────────┬─────────────────────────────┘  │
-│           │                                 │
-│           │ spinel+hdlc+uart                │
-│           │ (/dev/ttyUSB0, 115200)          │
-│           │                                 │
-│  ┌────────▼─────────┐                       │
-│  │  ESP32-H2 RCP    │ Thread Radio          │
-│  └──────────────────┘                       │
-│                                             │
-│  ┌──────────────────────────────────────┐  │
-│  │  otbr-web (systemd service)          │  │
-│  │  - Web UI (port 80)                  │  │
-│  │  - Network management                │  │
-│  └──────────────────────────────────────┘  │
-│                                             │
-│  ┌──────────────────────────────────────┐  │
-│  │  nftables (firewall/NAT)             │  │
-│  │  - Thread ↔ IP routing               │  │
-│  │  - Masquerade Thread traffic         │  │
-│  └──────────────────────────────────────┘  │
-│                                             │
-│  Interfaces:                                │
-│  - wpan0: Thread network interface          │
-│  - eth0: Infrastructure network (default)   │
-└─────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│  Raspberry Pi 5 Host                             │
+│                                                  │
+│  ┌───────────────────────────────────────────┐  │
+│  │  otbr-agent (systemd service)             │  │
+│  │  - Thread network management              │  │
+│  │  - Border routing                         │  │
+│  │  - Commissioner                           │  │
+│  │  - REST API on :8081                      │  │
+│  └────────┬──────────────────────────────────┘  │
+│           │                                      │
+│           │ spinel+hdlc+uart                     │
+│           │ (/dev/ttyUSB0, 460800)               │
+│           │                                      │
+│  ┌────────▼──────────┐                           │
+│  │  ESP32-H2 RCP     │ Thread Radio              │
+│  └───────────────────┘                           │
+│                                                  │
+│  ┌───────────────────────────────────────────┐  │
+│  │  otbr-webui (systemd service, port 80)    │  │
+│  │  Node.js + Fastify                        │  │
+│  │  ├── Static files (React SPA)             │  │
+│  │  ├── /api/* proxy → otbr-agent :8081      │  │
+│  │  ├── /api/ot/* → ot-ctl subprocess        │  │
+│  │  └── /ws WebSocket (real-time push)       │  │
+│  └───────────────────────────────────────────┘  │
+│                                                  │
+│  ┌───────────────────────────────────────────┐  │
+│  │  nftables (firewall/NAT)                  │  │
+│  │  - Thread ↔ IP routing                    │  │
+│  │  - Masquerade Thread traffic              │  │
+│  └───────────────────────────────────────────┘  │
+│                                                  │
+│  Interfaces:                                     │
+│  - wpan0: Thread network interface               │
+│  - eth0/wlan0: Infrastructure network            │
+└──────────────────────────────────────────────────┘
 ```
 
 ---
+
+## Web UI Configuration
+
+The web UI is configured via `/etc/default/otbr-webui`:
+
+```bash
+PORT=80                                        # Listen port
+HOST=0.0.0.0                                   # Bind address
+OTBR_AGENT_URL=http://localhost:8081           # otbr-agent REST API
+STATIC_DIR=/usr/share/otbr-webui/dist/client   # React SPA assets
+OT_CTL_PATH=/usr/sbin/ot-ctl                   # ot-ctl binary path
+```
+
+The service runs as the `otbr` user with systemd hardening (same
+`CAP_NET_BIND_SERVICE` capability as the old otbr-web, plus CSP headers
+and strict input validation on all ot-ctl operations).
 
 ## Performance Considerations
 
 ### Resource Usage
 
 **CPU:** Low (~5% idle, ~10% active)
-**Memory:** ~50MB (otbr-agent + otbr-web)
+**Memory:** ~60MB (otbr-agent + otbr-webui + Node.js)
 **Network:** Minimal (<1Mbps typical)
 
 ### Optimization
 
 **Disable web UI if not needed:**
 ```bash
-systemctl stop otbr-web
-systemctl disable otbr-web
+systemctl stop otbr-webui
+systemctl disable otbr-webui
 ```
 
 **Reduce logging:**
@@ -215,7 +258,7 @@ iotgw-otbrctl epskc-deactivate false
 
 ### Network Isolation
 
-**Firewall OTBR web interface:**
+**Firewall OTBR web interface (otbr-webui on port 80):**
 ```bash
 # Allow only local access
 nft add rule inet filter input tcp dport 80 ip saddr != 192.168.0.0/16 drop

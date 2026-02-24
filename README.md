@@ -188,12 +188,14 @@ local_conf_header:
 
 ### Optional: OpenThread Border Router (OTBR)
 
-Enable OTBR support at build time:
+Enable OTBR support at build time (includes the React-based web UI on port 80):
 ```bash
 IOTGW_ENABLE_OTBR=1 make dev
 # or
 IOTGW_ENABLE_OTBR=1 kas build kas/local.yml --target iot-gw-image-dev
 ```
+
+See [docs/OTBR.md](docs/OTBR.md) for architecture, configuration, and the web UI details.
 
 ---
 
