@@ -19,8 +19,8 @@ IMAGE_FEATURES += " \
 # Desktop profile can override this to "0" if VT keyboard setup is required.
 IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
 
-# Use only healthcheck-based mark-good flow; disable legacy one-shot unit.
-IOTGW_DISABLE_RAUC_MARK_GOOD ?= "1"
+# Keep upstream RAUC mark-good flow enabled.
+IOTGW_DISABLE_RAUC_MARK_GOOD ?= "0"
 
 # Desktop profile can include splash
 IMAGE_FEATURES:append:desktop = " splash"

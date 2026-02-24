@@ -28,7 +28,7 @@ UPPER_ROOT = Path("/data/overlays/etc/upper")
 MANIFEST_MAIN = Path("usr/share/iotgw/overlay-reconcile/managed-paths.conf")
 MANIFEST_DIR = Path("usr/share/iotgw/overlay-reconcile/managed-paths.d")
 
-POLICIES = {"enforce", "replace_if_unmodified", "preserve"}
+POLICIES = {"enforce", "replace_if_unmodified", "preserve", "absent"}
 
 
 def log(level: str, msg: str) -> None:
@@ -105,8 +105,8 @@ def sanitize_managed_path(path: str) -> str:
     return path
 
 
-def load_manifest_entries(slot_mount: Path) -> List[Tuple[str, str, Path]]:
-    entries: List[Tuple[str, str, Path]] = []
+def load_manifest_entries(slot_mount: Path) -> List[Tuple[str, str, bool, Path]]:
+    entries: List[Tuple[str, str, bool, Path]] = []
     seen = set()
 
     candidates: List[Path] = []
@@ -127,6 +127,14 @@ def load_manifest_entries(slot_mount: Path) -> List[Tuple[str, str, Path]]:
                 log("warn", f"invalid entry '{line}' in {manifest}")
                 continue
             policy, path = parts[0], parts[1]
+            optional = False
+            if len(parts) > 2:
+                extra = parts[2:]
+                unknown = [x for x in extra if x.lower() != "optional"]
+                optional = any(x.lower() == "optional" for x in extra)
+                if unknown:
+                    log("warn", f"unknown manifest flags {unknown} for {path}; skipping entry")
+                    continue
             if policy not in POLICIES:
                 log("warn", f"unknown policy '{policy}' for {path}; skipping")
                 continue
@@ -139,7 +147,7 @@ def load_manifest_entries(slot_mount: Path) -> List[Tuple[str, str, Path]]:
                 log("warn", f"duplicate managed path '{path}' in {manifest}; skipping duplicate")
                 continue
             seen.add(path)
-            entries.append((policy, path, manifest))
+            entries.append((policy, path, optional, manifest))
 
     return entries
 
@@ -213,17 +221,24 @@ def do_post() -> int:
     updated = 0
     preserved = 0
     skipped_missing = 0
+    skipped_optional_missing = 0
 
     backup_dir: Path | None = None
 
-    for policy, managed_path, _manifest in entries:
+    for policy, managed_path, optional, _manifest in entries:
         desired = slot_mount / managed_path.lstrip("/")
-        if not desired.is_file():
-            log("warn", f"desired file missing in target slot: {desired}")
-            skipped_missing += 1
+        if policy != "absent" and not desired.is_file():
+            if optional:
+                log("info", f"optional managed path absent in target slot: {desired}")
+                skipped_optional_missing += 1
+            else:
+                log("warn", f"desired file missing in target slot: {desired}")
+                skipped_missing += 1
             continue
 
-        desired_hash = sha256_file(desired)
+        desired_hash = ""
+        if policy != "absent":
+            desired_hash = sha256_file(desired)
         prev_hash = old_state.get(managed_path, "")
         upper = upper_path_for(managed_path)
         upper_exists = upper.exists() or upper.is_symlink()
@@ -247,6 +262,8 @@ def do_post() -> int:
                     preserved += 1
             elif policy == "preserve":
                 preserved += 1
+            elif policy == "absent":
+                remove_upper = True
 
         if remove_upper:
             if backup_dir is None:
@@ -255,7 +272,8 @@ def do_post() -> int:
             updated += 1
             log("info", f"removed stale overlay entry: {managed_path}")
 
-        new_state[managed_path] = desired_hash
+        if policy != "absent":
+            new_state[managed_path] = desired_hash
 
     write_state(new_state)
 
@@ -267,6 +285,7 @@ def do_post() -> int:
             "updated": updated,
             "preserved": preserved,
             "skipped_missing": skipped_missing,
+            "skipped_optional_missing": skipped_optional_missing,
             "slot_name": os.environ.get("RAUC_SLOT_NAME", txn.get("slot_name", "")),
             "slot_mount_point": slot_mp_raw,
         }
@@ -275,7 +294,9 @@ def do_post() -> int:
 
     log(
         "info",
-        f"overlay reconciliation complete: removed={updated}, preserved={preserved}, missing={skipped_missing}",
+        "overlay reconciliation complete: "
+        f"removed={updated}, preserved={preserved}, "
+        f"missing={skipped_missing}, optional_missing={skipped_optional_missing}",
     )
     return 0
 

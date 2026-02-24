@@ -1,0 +1,13 @@
+[Unit]
+Description=RAUC post-mark-good boot backup prune
+ConditionKernelCommandLine=|rauc.slot
+After=rauc-mark-good.service
+Requires=rauc-mark-good.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/boot-backup-prune
+
+[Install]
+WantedBy=multi-user.target

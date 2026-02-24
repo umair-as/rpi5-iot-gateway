@@ -8,7 +8,7 @@ disable systemd-networkd.socket
 enable avahi-daemon.service
 enable iotgw-provision.service
 enable systemd-timesyncd.service
-disable rauc-mark-good.service
-enable rauc-healthcheck.service
+enable rauc-mark-good.service
+enable boot-backup-prune.service
 enable weston.service
 enable weston.socket

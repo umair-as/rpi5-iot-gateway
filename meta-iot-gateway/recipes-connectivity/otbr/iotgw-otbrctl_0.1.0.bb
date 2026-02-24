@@ -12,6 +12,6 @@ DEPENDS = "sdbus-c++"
 inherit cmake
 
 RDEPENDS:${PN} += "sdbus-c++"
-RDEPENDS:${PN}:append = " otbr-rpi5"
+RDEPENDS:${PN}:append = "${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5','',d)}"
 
 EXTRA_OECMAKE:append = " -DIOTGW_OTBRCTL_VERSION=${PV}"
