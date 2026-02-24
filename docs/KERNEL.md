@@ -126,6 +126,28 @@ local_conf_header:
 IOTGW_KERNEL_FEATURES="igw_containers igw_networking_iot" make dev
 ```
 
+## DTB Selection
+
+For `MACHINE = "raspberrypi5"`, DTB packaging follows `RPI_KERNEL_DEVICETREE` policy:
+
+- Default: ship only `bcm2712-rpi-5-b.dtb` (Pi 5 Model B focused build)
+- Optional: include CM5 DTBs for shared/fleet images
+
+Enable CM5 DTBs in `kas/local.yml` (or product config):
+
+```yaml
+local_conf_header:
+  dtb_policy: |
+    IOTGW_RPI5_INCLUDE_CM5_DTBS = "1"
+```
+
+Runtime checks on target:
+
+```bash
+cat /proc/device-tree/model
+cat /proc/device-tree/compatible | tr '\0' '\n'
+```
+
 ---
 
 ## Recommended Configurations

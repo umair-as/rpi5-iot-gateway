@@ -2,16 +2,40 @@
 
 This runbook covers installing and validating RAUC A/B bundle updates.
 
-## Install Bundle
+## Mark-Good and Cleanup Flow
+
+This image uses upstream RAUC mark-good semantics and a separate cleanup
+oneshot for boot backup artifacts.
 
 ```bash
-rauc install <bundle>.raucb
+systemctl status rauc-mark-good.service
+systemctl status boot-backup-prune.service
+```
+
+Current defaults:
+
+- mark-good: `rauc-mark-good.service` (upstream RAUC)
+- cleanup: `boot-backup-prune.service` runs after mark-good
+- cleanup prunes old `/boot/*.bak*` artifacts and keeps recent backups
+
+## Install Bundle
+
+Manual install workflow (recommended):
+
+```bash
+iotgw-rauc-install <bundle>.raucb
 ```
 
 Track progress:
 
 ```bash
 journalctl --no-pager -fu rauc
+```
+
+Audit wrapper events (/boot rw window + restore):
+
+```bash
+journalctl --no-pager -t iotgw-rauc-install
 ```
 
 ## Check Slot State
@@ -50,6 +74,34 @@ done
 Requirement:
 
 - `mod4096=0` for all adaptive rootfs slots
+
+## Troubleshooting
+
+If install fails early with:
+
+```text
+Failed marking slot ... as bad/good: uboot backend: Failed to run fw_setenv: Child process exited with code 247
+```
+
+Check:
+
+```bash
+findmnt -no SOURCE,TARGET,FSTYPE,OPTIONS /boot
+fw_printenv
+fw_setenv iotgw_test 2
+```
+
+Typical cause: `/boot` is mounted read-only while RAUC needs to update
+`/boot/uboot.env`.
+
+Use the wrapper command for manual installs:
+
+```bash
+iotgw-rauc-install <bundle>.raucb
+```
+
+If `rauc-mark-good.service` unexpectedly appears masked after update, check for
+stale overlay masks in `/data/overlays/etc/upper/systemd/system/`.
 
 ### What To Do If Misaligned
 

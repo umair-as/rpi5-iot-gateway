@@ -73,8 +73,14 @@ do_deploy() {
             cp -L "$f" "$workdir/" 2>/dev/null || cp -a "$f" "$workdir/"
         fi
     done
-    # Include all Raspberry Pi 5 family DTBs present in deploy dir.
-    cp -a bcm2712-rpi-*.dtb "$workdir/" 2>/dev/null || true
+    # Stage only machine DTBs selected by policy (RPI_KERNEL_DEVICETREE).
+    # This avoids pulling versioned deploy artifacts (e.g. *-raspberrypi5-*.dtb).
+    for dtb in ${RPI_KERNEL_DEVICETREE}; do
+        dtb_base="${dtb##*/}"
+        if [ -e "$dtb_base" ]; then
+            cp -L "$dtb_base" "$workdir/" 2>/dev/null || cp -a "$dtb_base" "$workdir/"
+        fi
+    done
 
     # Keep kernel_2712.img as a compatibility alias where Image exists.
     if [ ! -f "$workdir/kernel_2712.img" ] && [ -f "$workdir/Image" ]; then

@@ -33,6 +33,15 @@ SDKPATH ?= "/opt/${VENDOR_SHORT_NAME}-${DISTRO}/${SDK_VERSION}"
 # Prefer Lynis 3.1.5 from our overlay
 PREFERRED_VERSION_lynis ?= "3.1.5"
 
+# Node.js binary provider/version policy
+# Keep default on 20.x until OTBR web UI migration is fully validated.
+# Override in local/product config when testing newer runtime, e.g.:
+#   IOTGW_NODEJS_BIN_VERSION = "22.22.0"
+PREFERRED_PROVIDER_nodejs ?= "nodejs-bin"
+IOTGW_NODEJS_BIN_VERSION ?= "20.12.2"
+PREFERRED_VERSION_nodejs-bin ?= "${IOTGW_NODEJS_BIN_VERSION}"
+PREFERRED_VERSION_nodejs-bin-native ?= "${IOTGW_NODEJS_BIN_VERSION}"
+
 # Policy and QA
 INHERIT += "sanity"
 INHERIT += "insane"
@@ -98,15 +107,12 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 
 # Raspberry Pi 5 DTB policy by kernel provider:
-# - meta-raspberrypi provider supports the full CM5+Pi5 set.
+# - Default to Model B only (smallest artifact set for rpi5 deployments).
+# - Enable CM5 DTBs explicitly when building a shared/fleet image.
 # - mainline bring-up providers currently ship only the rpi-5-b DTB.
-IOTGW_RPI5_KERNEL_DTBS_DEFAULT ?= " \
-    broadcom/bcm2712-rpi-5-b.dtb \
-    broadcom/bcm2712-rpi-cm5-cm5io.dtb \
-    broadcom/bcm2712-rpi-cm5-cm4io.dtb \
-    broadcom/bcm2712-rpi-cm5l-cm5io.dtb \
-    broadcom/bcm2712-rpi-cm5l-cm4io.dtb \
-"
+IOTGW_RPI5_INCLUDE_CM5_DTBS ?= "0"
+IOTGW_RPI5_KERNEL_DTBS_DEFAULT ?= "broadcom/bcm2712-rpi-5-b.dtb"
+IOTGW_RPI5_KERNEL_DTBS_DEFAULT:append = "${@bb.utils.contains('IOTGW_RPI5_INCLUDE_CM5_DTBS', '1', ' broadcom/bcm2712-rpi-cm5-cm5io.dtb broadcom/bcm2712-rpi-cm5-cm4io.dtb broadcom/bcm2712-rpi-cm5l-cm5io.dtb broadcom/bcm2712-rpi-cm5l-cm4io.dtb', '', d)}"
 IOTGW_RPI5_KERNEL_DTBS_MAINLINE ?= "broadcom/bcm2712-rpi-5-b.dtb"
 
 RPI_KERNEL_DEVICETREE:raspberrypi5 = "${@bb.utils.contains_any('PREFERRED_PROVIDER_virtual/kernel', \

@@ -16,8 +16,8 @@ RDEPENDS:${PN} = " \
     htop \
     kernel-hardening-checker \
     ota-certs-devca \
-    iotgw-otbrctl \
 "
 
 # Optional: container runtime tools (opt-in)
-RDEPENDS:${PN} += "${@bb.utils.contains('IOTGW_ENABLE_CONTAINERS','1',' packagegroup-iot-gw-containers','',d)}"
+RDEPENDS:${PN}:append = "${@bb.utils.contains('IOTGW_ENABLE_CONTAINERS','1',' packagegroup-iot-gw-containers','',d)}"
+RDEPENDS:${PN}:append = "${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' iotgw-otbrctl','',d)}"
