@@ -204,6 +204,33 @@ systemctl disable otbr-webui
 OTBR_AGENT_OPTS="... -d 3"
 ```
 
+## Troubleshooting
+
+### `otbr-agent` restarts with `InitMulticastRouterSock() ... Protocol not available`
+
+If `journalctl -u otbr-agent` shows:
+
+```text
+InitMulticastRouterSock() ... Protocol not available
+otbr-agent.service: Main process exited, status=5/NOTINSTALLED
+```
+
+the kernel is missing multicast-routing support required by OTBR backbone
+router mode (`-B <infra-if>`).
+
+This layer enables the required options in
+`networking-iot.cfg`:
+
+- `CONFIG_IPV6_MROUTE=y`
+- `CONFIG_IP_MROUTE=y`
+
+If you hit this on an older image, either:
+
+1. Boot an image with these kernel options enabled (recommended), or
+2. As a temporary workaround, remove backbone mode from
+   `/etc/default/otbr-agent` by removing `-B wlan0` from `OTBR_AGENT_OPTS`
+   and restarting `otbr-agent`.
+
 ---
 
 ## OTBR D-Bus CLI (Testing)
@@ -231,6 +258,27 @@ iotgw-otbrctl factory-reset --yes
 # Prefix and routes
 iotgw-otbrctl add-on-mesh-prefix fd00:1234::/64 --preferred true --slaac true
 iotgw-otbrctl remove-on-mesh-prefix fd00:1234::/64
+
+## OTBR REST CLI Wrappers (curl + jq)
+
+For quick API diagnostics against the local OTBR REST server (`127.0.0.1:8081`):
+
+```bash
+# Node snapshot
+scripts/ot-demo/otbr-api-node.sh
+
+# Device discovery action + polling + device summary
+scripts/ot-demo/otbr-api-discover.sh --device-count 10 --timeout 30
+
+# Energy scan action + polling + report
+scripts/ot-demo/otbr-api-energy-scan.sh --channels 11,12,13,14 --count 1 --period 32
+```
+
+You can target a remote endpoint via `BASE_URL`:
+
+```bash
+BASE_URL=http://192.168.0.82:8081 scripts/ot-demo/otbr-api-node.sh
+```
 iotgw-otbrctl add-external-route 2001:db8::/64 --stable true
 iotgw-otbrctl remove-external-route 2001:db8::/64
 
