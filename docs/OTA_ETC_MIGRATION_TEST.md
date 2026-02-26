@@ -12,7 +12,7 @@ Managed files are listed in:
 Default entries:
 
 - `/etc/nftables.conf`
-- `/etc/default/otbr-web`
+- `/etc/default/otbr-webui`
 - `/etc/version`
 
 Format:
@@ -38,7 +38,7 @@ Policies:
 
 ```bash
 findmnt -no TARGET,FSTYPE,OPTIONS /etc /data
-cat /etc/default/otbr-web
+cat /etc/default/otbr-webui
 grep -n 'dport 80\|dport 443\|dport 8081' /etc/nftables.conf || true
 cat /etc/version
 ```
@@ -74,7 +74,7 @@ find /data/iotgw/overlay-reconcile/backups -maxdepth 3 -type f | tail -n 20
 ```bash
 reboot
 # after reconnect:
-cat /etc/default/otbr-web
+cat /etc/default/otbr-webui
 grep -n 'dport 80\|dport 443\|dport 8081' /etc/nftables.conf
 cat /etc/version
 ss -lntp | grep ':80'
@@ -84,5 +84,5 @@ nft list ruleset | sed -n '1,140p'
 Expected:
 
 - Stale shadowing entries are removed from `/data/overlays/etc/upper` per policy.
-- `otbr-web` binds `0.0.0.0:80` (when OTBR enabled).
+- `otbr-webui` binds `0.0.0.0:80` (when OTBR enabled).
 - nftables contains expected OTBR ports when enabled.

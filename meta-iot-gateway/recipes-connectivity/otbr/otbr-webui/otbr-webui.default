@@ -1,0 +1,5 @@
+PORT=80
+HOST=0.0.0.0
+OTBR_AGENT_URL=http://localhost:8081
+STATIC_DIR=/usr/share/otbr-webui/dist/client
+OT_CTL_PATH=/usr/sbin/ot-ctl
