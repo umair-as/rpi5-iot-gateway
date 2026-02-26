@@ -76,7 +76,7 @@ sequenceDiagram
     participant Kernel as Kernel
     participant RootfsB as RootFS B
 
-    T->>R: rauc install bundle.raucb
+    T->>R: iotgw-rauc-install bundle.raucb
     R->>R: Verify signature + mount verity
     R->>RootfsB: Write rootfs.ext4 to inactive slot
     R->>RootfsB: Mount new slot read-only
@@ -197,8 +197,8 @@ oe-run-native rauc-native rauc info \
 scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full.raucb \
   root@device:/tmp/
 
-# Install and reboot
-ssh root@device 'rauc install /tmp/iot-gw-bundle-full.raucb && reboot'
+# Install (wrapper handles temporary /boot rw remount + restore to ro)
+ssh root@device 'iotgw-rauc-install /tmp/iot-gw-bundle-full.raucb && reboot'
 ```
 
 ### 3. Verify Update
@@ -247,7 +247,7 @@ RAUC now supports installing bundles directly over HTTPS without pre-downloading
 
 ### ✅ What This Enables
 
-- **Native streaming install**: `rauc install https://<server>:8443/bundles/....raucb`
+- **Native streaming install**: `iotgw-rauc-install https://<server>:8443/bundles/....raucb`
 - **Device tracking** via headers sent by RAUC (boot-id, machine-id, transaction-id)
 - **mTLS auth** using device certificates provisioned on the gateway
 
@@ -278,11 +278,12 @@ Server cert must include a SAN matching the OTA server IP/hostname.
 # Upload bundle to OTA server and activate it
 
 # On device (streaming)
-rauc install https://<server>:8443/bundles/<bundle>.raucb
+iotgw-rauc-install https://<server>:8443/bundles/<bundle>.raucb
 
 # Verify
 rauc status --detailed
 journalctl -u rauc -b | tail -n 200
+journalctl --no-pager -t iotgw-rauc-install -n 100
 ```
 | **Keyring** | Device keyring at `/etc/rauc/ca.cert.pem` |
 

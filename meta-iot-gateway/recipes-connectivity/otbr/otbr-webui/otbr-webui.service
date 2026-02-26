@@ -1,0 +1,35 @@
+[Unit]
+Description=OpenThread Border Router Web UI
+After=otbr-agent.service
+Wants=otbr-agent.service
+
+[Service]
+User=otbr
+Group=otbr
+EnvironmentFile=-/etc/default/otbr-webui
+ExecStart=/usr/bin/node /usr/share/otbr-webui/dist/server/index.js
+Restart=on-failure
+RestartSec=5
+RestartPreventExitStatus=SIGKILL
+
+# Bind to port 80 without root
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Node.js V8 JIT requires writable+executable memory
+MemoryDenyWriteExecute=false
+
+[Install]
+WantedBy=multi-user.target
