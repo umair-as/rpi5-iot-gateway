@@ -2,7 +2,10 @@
 # Based on Raspberry Pi 5 requirements
 
 # Boot partition (shared between slots)
-part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 512M --use-uuid
+part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boot --active --align 4096 --size 512M --use-uuid --no-fstab-update
+
+# Dedicated U-Boot environment partition (kept writable; separate from /boot)
+part /uboot-env --ondisk mmcblk0 --fstype=vfat --label ubootenv --align 4096 --size 16M --use-uuid --no-fstab-update
 
 # Root filesystem - Slot A (initially active)
 part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096 --size 8G --uuid rootA-uuid
@@ -11,10 +14,10 @@ part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096
 part --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootB --align 4096 --size 8G --uuid rootB-uuid
 
 # Data partition (persistent storage, survives updates)
-part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 10G --fsoptions "defaults"
+part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 10G --fsoptions "defaults" --no-fstab-update
 # Note: runtime mount options (noatime/commit) are set in /etc/fstab, not here.
 
 # Remaining space can be used for logs, caching, etc.
 # Or extend data partition to use full card
 
-bootloader --ptable msdos
+bootloader --ptable gpt

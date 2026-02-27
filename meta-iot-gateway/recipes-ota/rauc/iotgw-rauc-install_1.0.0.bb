@@ -1,5 +1,5 @@
 SUMMARY = "Safe RAUC install wrapper for read-only /boot setups"
-DESCRIPTION = "Runs rauc install with temporary /boot rw remount so fw_setenv-backed bootloader writes succeed, then restores original mount state."
+DESCRIPTION = "Runs rauc install and remounts /boot rw only when fw_env.config targets /boot; otherwise installs directly."
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
@@ -15,4 +15,3 @@ do_install() {
 }
 
 FILES:${PN} += " ${sbindir}/iotgw-rauc-install "
-

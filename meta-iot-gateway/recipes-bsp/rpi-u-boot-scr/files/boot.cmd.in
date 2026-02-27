@@ -39,6 +39,7 @@ echo "[RAUC] Bootchooser init (env):"
 env print BOOT_ORDER BOOT_A_LEFT BOOT_B_LEFT
 
 setenv bootpart
+setenv rootpartnum
 setenv rauc_slot
 
 for BOOT_SLOT in ${BOOT_ORDER}; do
@@ -49,7 +50,8 @@ for BOOT_SLOT in ${BOOT_ORDER}; do
             echo "[RAUC] Considering slot A; tries left before dec=${BOOT_A_LEFT}"
             setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1
             echo "[RAUC] Selected slot A; tries left now=${BOOT_A_LEFT}"
-            setenv bootpart "/dev/mmcblk0p2"
+            setenv bootpart "/dev/mmcblk0p3"
+            setenv rootpartnum "3"
             setenv rauc_slot "A"
         else
             echo "[RAUC] Skipping slot A; no tries left"
@@ -59,7 +61,8 @@ for BOOT_SLOT in ${BOOT_ORDER}; do
             echo "[RAUC] Considering slot B; tries left before dec=${BOOT_B_LEFT}"
             setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1
             echo "[RAUC] Selected slot B; tries left now=${BOOT_B_LEFT}"
-            setenv bootpart "/dev/mmcblk0p3"
+            setenv bootpart "/dev/mmcblk0p4"
+            setenv rootpartnum "4"
             setenv rauc_slot "B"
         else
             echo "[RAUC] Skipping slot B; no tries left"
@@ -70,7 +73,18 @@ done
 # Build kernel cmdline: start from firmware-provided args, then append root per slot
 fdt addr ${fdt_addr} && fdt get value bootargs /chosen bootargs
 if test -n "${bootpart}"; then
-    setenv bootargs "${bootargs} root=${bootpart} rauc.slot=${rauc_slot}"
+    if test -z "${rootpartnum}"; then
+        echo "[RAUC] Missing root partition number for slot ${rauc_slot}; resetting"
+        reset
+    fi
+    if part uuid @@BOOT_MEDIA@@ 0:${rootpartnum} rootpartuuid; then
+        setenv rootarg "root=PARTUUID=${rootpartuuid}"
+        echo "[RAUC] Using root from PARTUUID=${rootpartuuid} (slot ${rauc_slot})"
+    else
+        echo "[RAUC] PARTUUID lookup failed for slot ${rauc_slot}; resetting"
+        reset
+    fi
+    setenv bootargs "${bootargs} ${rootarg} rauc.slot=${rauc_slot}"
     # Track boot count and last selected slot
     if test -z "${iotgw_bootcount}"; then
         setenv iotgw_bootcount 0
@@ -83,7 +97,7 @@ if test -n "${bootpart}"; then
         setenv bootargs "${bootargs} ${EXTRA_KERNEL_ARGS}"
     fi
     saveenv
-    echo "[RAUC] Bootargs appended; root=${bootpart} rauc.slot=${rauc_slot}"
+    echo "[RAUC] Bootargs appended; ${rootarg} rauc.slot=${rauc_slot}"
 else
     echo "No valid RAUC slot found. Resetting tries to 3"
     setenv BOOT_A_LEFT 3
@@ -103,7 +117,7 @@ else
     echo "[RAUC] Failed to load @@KERNEL_IMAGETYPE@@ from /boot"
     reset
 fi
-if test ! -e @@BOOT_MEDIA@@ 0:1 uboot.env; then saveenv; fi;
+if test ! -e @@BOOT_MEDIA@@ 0:2 uboot.env; then saveenv; fi;
 
 # FIT-mode visibility and explicit configuration selection.
 if test "x@@KERNEL_IMAGETYPE@@" = "xfitImage"; then
