@@ -11,6 +11,7 @@ S = "${WORKDIR}"
 
 IOTGW_BOOTFILES_ARCHIVE_NAME ?= "bootfiles.tar.gz"
 IOTGW_BOOTFILES_STAGE_FILES ?= "boot.scr u-boot.bin config.txt cmdline.txt splash.bmp Image kernel_2712.img"
+IOTGW_KERNEL_CONSOLE ?= "ttyAMA10,115200"
 
 do_deploy() {
     install -d ${DEPLOYDIR}
@@ -118,6 +119,13 @@ do_deploy() {
     require_staged_file u-boot.bin
     require_staged_file config.txt
     require_staged_file cmdline.txt
+
+    # Normalize kernel console in shipped cmdline.txt.
+    # Keep only one console= token and force the platform default.
+    if [ -n "${IOTGW_KERNEL_CONSOLE}" ]; then
+        cmdline_clean=$(sed -E 's/(^|[[:space:]])console=[^[:space:]]+//g; s/[[:space:]]+/ /g; s/^ //; s/ $//' "$workdir/cmdline.txt")
+        printf '%s console=%s\n' "$cmdline_clean" "${IOTGW_KERNEL_CONSOLE}" > "$workdir/cmdline.txt"
+    fi
 
     # Validate kernel image presence for requested boot flow.
     case " ${IOTGW_BOOTFILES_STAGE_FILES} " in
