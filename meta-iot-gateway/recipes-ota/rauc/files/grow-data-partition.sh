@@ -27,6 +27,26 @@ already_done() {
     [ -f "$STAMP" ]
 }
 
+run_parted_resize() {
+    local disk="$1"
+    local part_num="$2"
+    local err_file="$3"
+
+    if parted -s "$disk" resizepart "$part_num" 100% 2>"$err_file"; then
+        return 0
+    fi
+
+    # Some platforms prompt even in script mode:
+    # 1) GPT backup header not at disk end ("Fix/Ignore")
+    # 2) partition in use ("Yes/No")
+    if printf 'Fix\nYes\n' | parted --pretend-input-tty "$disk" resizepart "$part_num" 100% \
+        > /dev/null 2>"$err_file"; then
+        return 0
+    fi
+
+    return 1
+}
+
 main() {
     if already_done; then
         log "✓ stamp present; nothing to do"
@@ -43,7 +63,7 @@ main() {
     DATA_PART=$(resolve_data_part) || die "could not resolve data partition by label 'data'"
     [ -b "$DATA_PART" ] || die "not a block device: $DATA_PART"
 
-    # Derive parent disk and partition number (handles mmcblk0p4, nvme0n1p4, sda4)
+    # Derive parent disk and partition number (handles mmcblk0p5, nvme0n1p5, sda5)
     base=$(basename "$DATA_PART")
     case "$base" in
         mmcblk*p*[0-9]) DISK="/dev/${base%p*}"; PART_NUM=${base##*p} ;;
@@ -57,12 +77,17 @@ main() {
     # Best-effort rescan before resize
     partprobe "$DISK" 2>/dev/null || true
 
+    # Best-effort GPT backup table relocation (common when image is smaller than media).
+    if command -v sgdisk >/dev/null 2>&1; then
+        sgdisk -e "$DISK" >/dev/null 2>&1 || true
+    fi
+
     # Attempt to grow the partition to 100%. If already at max, just continue.
     RESIZE_ERR=$(mktemp)
-    if parted -s "$DISK" resizepart "$PART_NUM" 100% 2>"$RESIZE_ERR"; then
+    if run_parted_resize "$DISK" "$PART_NUM" "$RESIZE_ERR"; then
         log "📏 resized partition $PART_NUM to 100%"
     else
-        if grep -qi "cannot be grown\|already at maximum size\|out of range" "$RESIZE_ERR" 2>/dev/null; then
+        if grep -qi "cannot be grown\|already at maximum size\|out of range\|is being used\|not all of the space available" "$RESIZE_ERR" 2>/dev/null; then
             log "✓ partition appears already at maximum size; continuing"
         else
             cat "$RESIZE_ERR" >&2 || true

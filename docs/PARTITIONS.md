@@ -36,9 +36,10 @@ on first boot by `rauc-grow-data-partition`.
 | # | Device | Label | Size | Type | Mount | Purpose |
 |---|--------|-------|------|------|-------|---------|
 | 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
-| 2 | `/dev/mmcblk0p2` | `rootA` | 3G | ext4 | `/` | Root filesystem Slot A |
-| 3 | `/dev/mmcblk0p3` | `rootB` | 3G | ext4 | - | Root filesystem Slot B |
-| 4 | `/dev/mmcblk0p4` | `data` | 2G | ext4 | `/data` | Persistent user data |
+| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
+| 3 | `/dev/mmcblk0p3` | `rootA` | 3G | ext4 | `/` | Root filesystem Slot A |
+| 4 | `/dev/mmcblk0p4` | `rootB` | 3G | ext4 | - | Root filesystem Slot B |
+| 5 | `/dev/mmcblk0p5` | `data` | 2G | ext4 | `/data` | Persistent user data |
 
 **Remaining Space:** ~7GB reserved for auto-grow
 **After First Boot:** `/data` expands to fill remaining free space
@@ -56,9 +57,10 @@ on first boot by `rauc-grow-data-partition`.
 | # | Device | Label | Size | Type | Mount | Purpose |
 |---|--------|-------|------|------|-------|---------|
 | 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
-| 2 | `/dev/mmcblk0p2` | `rootA` | 6G | ext4 | `/` | Root filesystem Slot A |
-| 3 | `/dev/mmcblk0p3` | `rootB` | 6G | ext4 | - | Root filesystem Slot B |
-| 4 | `/dev/mmcblk0p4` | `data` | 12G | ext4 | `/data` | Persistent user data |
+| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
+| 3 | `/dev/mmcblk0p3` | `rootA` | 6G | ext4 | `/` | Root filesystem Slot A |
+| 4 | `/dev/mmcblk0p4` | `rootB` | 6G | ext4 | - | Root filesystem Slot B |
+| 5 | `/dev/mmcblk0p5` | `data` | 12G | ext4 | `/data` | Persistent user data |
 
 **Remaining Space:** ~8GB reserved for auto-grow
 **After First Boot:** `/data` expands to fill remaining free space
@@ -76,9 +78,10 @@ on first boot by `rauc-grow-data-partition`.
 | # | Device | Label | Size | Type | Mount | Purpose |
 |---|--------|-------|------|------|-------|---------|
 | 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
-| 2 | `/dev/mmcblk0p2` | `rootA` | 8G | ext4 | `/` | Root filesystem Slot A |
-| 3 | `/dev/mmcblk0p3` | `rootB` | 8G | ext4 | - | Root filesystem Slot B |
-| 4 | `/dev/mmcblk0p4` | `data` | 36G | ext4 | `/data` | Persistent user data |
+| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
+| 3 | `/dev/mmcblk0p3` | `rootA` | 8G | ext4 | `/` | Root filesystem Slot A |
+| 4 | `/dev/mmcblk0p4` | `rootB` | 8G | ext4 | - | Root filesystem Slot B |
+| 5 | `/dev/mmcblk0p5` | `data` | 36G | ext4 | `/data` | Persistent user data |
 
 **Remaining Space:** ~12GB reserved for auto-grow
 **After First Boot:** `/data` expands to fill remaining free space
@@ -109,7 +112,7 @@ on first boot by `rauc-grow-data-partition`.
 
 ---
 
-### Partition 2 & 3: Root A/B (`rootA`, `rootB`)
+### Partition 3 & 4: Root A/B (`rootA`, `rootB`)
 
 **Format:** ext4
 **Mount:** `/` (active slot only)
@@ -195,9 +198,9 @@ mount | grep mmcblk0
 
 **Example Output:**
 ```
-/dev/mmcblk0p2 on / type ext4 (ro,relatime)
+/dev/mmcblk0p3 on / type ext4 (ro,relatime)
 /dev/mmcblk0p1 on /boot type vfat (rw,noatime,nodiratime)
-/dev/mmcblk0p4 on /data type ext4 (rw,noatime,nodiratime,commit=60)
+/dev/mmcblk0p5 on /data type ext4 (rw,noatime,nodiratime,commit=60)
 ```
 
 ### RAUC Slot Status
@@ -252,13 +255,13 @@ cp meta-iot-gateway/wic/iot-gw-rauc-16g.wks.in \
 
 2. Edit partition sizes:
 ```
-# Partition 2: rootA
+# Partition 3: rootA
 part / --source rootfs --rootfs-dir=${IMAGE_ROOTFS} --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096 --size 4G --use-uuid
 
-# Partition 3: rootB
+# Partition 4: rootB
 part --ondisk mmcblk0 --fstype=ext4 --label rootB --align 4096 --size 4G --use-uuid
 
-# Partition 4: data
+# Partition 5: data
 part --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 4G --use-uuid
 ```
 

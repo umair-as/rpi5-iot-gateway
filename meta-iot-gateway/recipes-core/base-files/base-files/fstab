@@ -1,13 +1,13 @@
-# fstab for RAUC A/B system on Raspberry Pi 5
-# This overrides the incorrect fstab from meta-rauc-raspberrypi
-# Our WKS layout has only 4 partitions: boot (p1), rootA (p2), rootB (p3), data (p4)
-#
-# Root is read-only for atomic updates
-# Writable directories (/etc, /var, /home, /root) use overlayfs mounted by overlayfs-setup.service
+# IoT Gateway fstab (Raspberry Pi 5, RAUC A/B + GPT)
+# Root filesystem is mounted read-only for atomic OTA behavior.
+# Persistent writable state is on LABEL=data (/data).
+# overlayfs-setup.service mounts writable overlays for: /etc, /var, /home, /root.
+# LABEL-based mounts are used to avoid dependency on partition numbering.
 
 /dev/root            /                    auto       ro                    1  1
-/dev/mmcblk0p1       /boot                vfat       nodev,nosuid,noexec,noatime,nodiratime   0  0
-/dev/mmcblk0p4       /data                ext4       defaults,noatime,nodiratime,commit=60    0  0
+LABEL=boot           /boot                vfat       nodev,nosuid,noexec,noatime,nodiratime   0  0
+LABEL=ubootenv       /uboot-env           vfat       rw,nodev,nosuid,noexec,noatime,nodiratime,umask=0077   0  0
+LABEL=data           /data                ext4       defaults,noatime,nodiratime,commit=60    0  0
 proc                 /proc                proc       nosuid,nodev,noexec,hidepid=2 0  0
 devpts               /dev/pts             devpts     mode=0620,ptmxmode=0666,gid=5      0  0
 tmpfs                /run                 tmpfs      mode=0755,nodev,nosuid,strictatime 0  0

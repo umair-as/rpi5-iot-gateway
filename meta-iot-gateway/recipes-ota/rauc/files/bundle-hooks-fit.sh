@@ -378,8 +378,8 @@ else
     TARGET_ROOT="${RAUC_SLOT_DEVICE}"
   elif [ -n "${RAUC_SLOT_NAME:-}" ]; then
     case "${RAUC_SLOT_NAME}" in
-      rootfs.0) TARGET_ROOT="/dev/mmcblk0p2" ;;
-      rootfs.1) TARGET_ROOT="/dev/mmcblk0p3" ;;
+      rootfs.0) TARGET_ROOT="PARTLABEL=rootA" ;;
+      rootfs.1) TARGET_ROOT="PARTLABEL=rootB" ;;
     esac
   fi
   if [ -n "$TARGET_ROOT" ] && [ -r "$BOOT_MP/cmdline.txt" ]; then

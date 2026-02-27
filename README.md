@@ -120,9 +120,10 @@ See `kas/local.yml.example` for configuration template.
 | Device | Label | Size | Mount | Purpose |
 |--------|-------|------|-------|---------|
 | `/dev/mmcblk0p1` | `boot` | 256M | `/boot` | Bootloader & kernel (shared) |
-| `/dev/mmcblk0p2` | `rootA` | 3G | `/` | Root filesystem Slot A |
-| `/dev/mmcblk0p3` | `rootB` | 3G | - | Root filesystem Slot B |
-| `/dev/mmcblk0p4` | `data` | 2G (auto-expands) | `/data` | Persistent data |
+| `/dev/mmcblk0p2` | `ubootenv` | 16M | `/uboot-env` | Dedicated U-Boot environment store |
+| `/dev/mmcblk0p3` | `rootA` | 3G | `/` | Root filesystem Slot A |
+| `/dev/mmcblk0p4` | `rootB` | 3G | - | Root filesystem Slot B |
+| `/dev/mmcblk0p5` | `data` | 2G (auto-expands) | `/data` | Persistent data |
 
 **Other sizes available:** 32GB, 64GB — see `meta-iot-gateway/wic/` for WKS files.
 **Note:** On first boot, `rauc-grow-data-partition` expands `/data` to fill remaining free space.
