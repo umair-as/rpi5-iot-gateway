@@ -26,6 +26,13 @@ Manual install workflow (recommended):
 iotgw-rauc-install <bundle>.raucb
 ```
 
+Behavior notes:
+
+- default path: wrapper dispatches through `systemd-run` to execute from system
+  manager context (recommended on hardened systems)
+- fallback path: direct execution (`--direct` or `--no-systemd-run`) for debug
+  only
+
 Track progress:
 
 ```bash
@@ -65,7 +72,7 @@ Continuing after adaptive mode error: ... image/partition size (...) is not a mu
 ### Verify Slot Alignment (target)
 
 ```bash
-for p in /dev/mmcblk0p2 /dev/mmcblk0p3; do
+for p in /dev/mmcblk0p3 /dev/mmcblk0p4; do
   s=$(blockdev --getsize64 "$p")
   echo "$p size=$s mod4096=$((s%4096))"
 done
@@ -87,17 +94,29 @@ Check:
 
 ```bash
 findmnt -no SOURCE,TARGET,FSTYPE,OPTIONS /boot
+findmnt -no SOURCE,TARGET,FSTYPE,OPTIONS /uboot-env
+head -n1 /etc/fw_env.config
 fw_printenv
 fw_setenv iotgw_test 2
 ```
 
-Typical cause: `/boot` is mounted read-only while RAUC needs to update
-`/boot/uboot.env`.
+Typical causes:
+
+- legacy layout: `/boot` is mounted read-only while RAUC needs to update
+  `/boot/uboot.env`
+- dedicated-env layout: `/uboot-env` is unavailable while RAUC needs to update
+  `/uboot-env/uboot.env`
 
 Use the wrapper command for manual installs:
 
 ```bash
 iotgw-rauc-install <bundle>.raucb
+```
+
+For low-level debugging (skip systemd-run dispatch):
+
+```bash
+iotgw-rauc-install --direct <bundle>.raucb
 ```
 
 If `rauc-mark-good.service` unexpectedly appears masked after update, check for
