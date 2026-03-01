@@ -58,11 +58,26 @@ for dir in ${OVERLAY_DIRS}; do
 done
 
 # Ensure persistent journald storage exists after /var overlay is mounted.
-if [ ! -d /var/log/journal ]; then
-    log "Creating /var/log/journal for persistent journald storage"
+# This is best-effort and must not break boot if local path shape differs.
+# Skip only when /var/log is unusable:
+# - dangling symlink (exists as symlink but does not resolve to a directory)
+# - existing non-directory node (regular file/device/etc.)
+if [ ! -d /var/log ] && { [ -L /var/log ] || [ -e /var/log ]; }; then
+    log "WARN: /var/log exists but is not a directory; skipping journald dir setup"
+else
+    if [ ! -d /var/log/journal ]; then
+        log "Creating /var/log/journal for persistent journald storage"
+    fi
+    if mkdir -p /var/log/journal; then
+        if getent group systemd-journal >/dev/null 2>&1; then
+            chown root:systemd-journal /var/log/journal || log "WARN: failed to chown /var/log/journal"
+            chmod 2755 /var/log/journal || log "WARN: failed to chmod /var/log/journal"
+        else
+            log "WARN: systemd-journal group not found; skipping ownership update"
+        fi
+    else
+        log "WARN: failed to create /var/log/journal; continuing"
+    fi
 fi
-mkdir -p /var/log/journal
-chown root:systemd-journal /var/log/journal
-chmod 2755 /var/log/journal
 
 log "Overlayfs setup complete"

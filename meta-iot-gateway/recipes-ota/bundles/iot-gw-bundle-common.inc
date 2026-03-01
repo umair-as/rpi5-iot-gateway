@@ -3,7 +3,7 @@
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-inherit bundle
+inherit bundle iotgw-rauc-adaptive-guard
 
 # Bundle identity (matches device system.conf via rauc-conf)
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
@@ -17,10 +17,8 @@ IOTGW_RAUC_BOOTFILES_BUNDLE_FILE ?= "bootfiles.tar.gz"
 
 # Slots included in the bundle
 RAUC_BUNDLE_SLOTS = "rootfs"
-# Keep adaptive updates disabled by default. Current slot image/partition size
-# in this project is not 4KiB-aligned, which triggers RAUC fallback warnings:
-# "Continuing after adaptive mode error ... not a multiple of 4096 bytes".
-# Re-enable when partition geometry is aligned for block-hash-index mode.
+# Keep adaptive updates opt-in by default. When enabled, a build-time guard
+# validates IoT GW RAUC rootA/rootB geometry is 4KiB aligned.
 IOTGW_RAUC_ADAPTIVE ?= "0"
 
 # Use the selected image for the rootfs slot (set BUNDLE_IMAGE in variants)

@@ -9,9 +9,9 @@ SRC_URI:append = " \
     file://overlay-reconcile.py \
 "
 
-# grow-data-partition.sh requires bash/e2fsprogs plus util-linux (lsblk, partprobe)
-# and udev (udevadm).
-RDEPENDS:${PN}-grow-data-part:append = " bash e2fsprogs util-linux udev"
+# grow-data-partition.sh requires bash/e2fsprogs plus util-linux (lsblk, partprobe),
+# udev (udevadm), and sgdisk for GPT backup header relocation.
+RDEPENDS:${PN}-grow-data-part:append = " bash e2fsprogs util-linux udev gptfdisk"
 
 do_install:append() {
     # Override unit with our hardened version
