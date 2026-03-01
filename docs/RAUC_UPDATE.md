@@ -26,6 +26,12 @@ Manual install workflow (recommended):
 iotgw-rauc-install <bundle>.raucb
 ```
 
+HTTPS streaming install (manual, recommended for OTA server flow):
+
+```bash
+iotgw-rauc-install https://<ota-host>:8443/bundles/<bundle>.raucb
+```
+
 Behavior notes:
 
 - default path: wrapper dispatches through `systemd-run` to execute from system
@@ -45,6 +51,26 @@ Audit wrapper events (/boot rw window + restore):
 journalctl --no-pager -t iotgw-rauc-install
 ```
 
+### Streaming Preflight (mTLS)
+
+Before remote installs, verify cert chain and manifest reachability:
+
+```bash
+openssl verify -CAfile /etc/ota/ca.crt /etc/ota/device.crt
+curl --cert /etc/ota/device.crt \
+     --key /etc/ota/device.key \
+     --cacert /etc/ota/ca.crt \
+     -fsS https://<ota-host>:8443/api/v1/manifest.json | jq .
+```
+
+Then install the exact `bundle_url` from the manifest.
+
+Notes:
+
+- If mDNS hostname (`ota-gw.local`) is not resolvable on your LAN, use the
+  server IP in the install URL for manual testing.
+- Ensure the server certificate SAN matches the URL host you use (DNS name or IP).
+
 ## Check Slot State
 
 ```bash
@@ -61,6 +87,18 @@ Expected:
 
 If enabled (`RAUC_SLOT_rootfs[adaptive] = "block-hash-index"`), RAUC requires
 target rootfs slot sizes to be 4 KiB aligned.
+
+Build-time guard:
+
+- implemented in reusable class:
+  `meta-iot-gateway/classes/iotgw-rauc-adaptive-guard.bbclass`
+- when `IOTGW_RAUC_ADAPTIVE = "1"`, the class task validates IoT Gateway RAUC
+  WKS root slot geometry (`rootA` and `rootB` `--fixed-size`) is a 4096-byte
+  multiple
+- build fails early if either adaptive root slot is missing or misaligned
+- image build also validates generated WIC partition geometry via
+  `do_iotgw_validate_wic_alignment` in
+  `meta-iot-gateway/classes/iotgw-rauc-image.bbclass`
 
 If not aligned, RAUC logs an adaptive mode error and falls back to normal full
 write, for example:
@@ -124,7 +162,7 @@ stale overlay masks in `/data/overlays/etc/upper/systemd/system/`.
 
 ### What To Do If Misaligned
 
-- Keep adaptive mode disabled (`IOTGW_RAUC_ADAPTIVE = "0"`) for current
-  deployed layout.
-- Re-enable adaptive mode only after reflashing with a 4 KiB-aligned partition
-  table.
+- Fix `WKS_FILE` so `rootA` and `rootB` use aligned `--fixed-size` values.
+- Rebuild the bundle with adaptive mode enabled and confirm the gate passes.
+- If deployed devices are already on a non-aligned partition layout, keep
+  adaptive mode disabled for those devices until they are reflashed.

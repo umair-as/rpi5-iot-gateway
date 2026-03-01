@@ -21,7 +21,7 @@ on first boot by `rauc-grow-data-partition`.
 
 | Card Size | WKS File | RootA/B Size | /data Base Size | Remaining (for auto-grow) |
 |-----------|----------|--------------|-----------------|---------------------------|
-| **16GB** (default) | `iot-gw-rauc-16g.wks.in` | 3G / 3G | 2G | ~7GB |
+| **16GB** (default) | `iot-gw-rauc-16g.wks.in` | 4G / 4G (fixed) | 2G | ~5GB |
 | **32GB** | `iot-gw-rauc-32g.wks.in` | 6G / 6G | 12G | ~8GB |
 | **64GB** | `iot-gw-rauc-64g.wks.in` | 8G / 8G | 36G | ~12GB |
 
@@ -29,7 +29,7 @@ on first boot by `rauc-grow-data-partition`.
 
 ## 16GB Layout (Default)
 
-**Total Allocated (base):** ~8.3GB
+**Total Allocated (base):** ~10.3GB
 **Target Card:** 16GB SD card
 **File:** `iot-gw-rauc-16g.wks.in`
 
@@ -37,11 +37,11 @@ on first boot by `rauc-grow-data-partition`.
 |---|--------|-------|------|------|-------|---------|
 | 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
 | 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
-| 3 | `/dev/mmcblk0p3` | `rootA` | 3G | ext4 | `/` | Root filesystem Slot A |
-| 4 | `/dev/mmcblk0p4` | `rootB` | 3G | ext4 | - | Root filesystem Slot B |
+| 3 | `/dev/mmcblk0p3` | `rootA` | 4G (fixed) | ext4 | `/` | Root filesystem Slot A |
+| 4 | `/dev/mmcblk0p4` | `rootB` | 4G (fixed) | ext4 | - | Root filesystem Slot B |
 | 5 | `/dev/mmcblk0p5` | `data` | 2G | ext4 | `/data` | Persistent user data |
 
-**Remaining Space:** ~7GB reserved for auto-grow
+**Remaining Space:** ~5GB reserved for auto-grow
 **After First Boot:** `/data` expands to fill remaining free space
 
 **Use Case:** Compact IoT gateway, minimal storage requirements
@@ -133,7 +133,7 @@ on first boot by `rauc-grow-data-partition`.
 
 ---
 
-### Partition 4: Data (`data`)
+### Partition 5: Data (`data`)
 
 **Format:** ext4
 **Mount:** `/data`
@@ -218,7 +218,7 @@ rauc status
 
 ## Data Partition Auto-resize
 
-On first boot, the `rauc-grow-data-part` service automatically expands the `/data` partition to use all available unallocated space.
+On first boot, the `rauc-grow-data-partition` service automatically expands the `/data` partition to use all available unallocated space.
 
 **Systemd Unit:** `rauc-grow-data-partition.service`
 
@@ -256,10 +256,10 @@ cp meta-iot-gateway/wic/iot-gw-rauc-16g.wks.in \
 2. Edit partition sizes:
 ```
 # Partition 3: rootA
-part / --source rootfs --rootfs-dir=${IMAGE_ROOTFS} --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096 --size 4G --use-uuid
+part / --source rootfs --rootfs-dir=${IMAGE_ROOTFS} --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096 --fixed-size 4G --use-uuid
 
 # Partition 4: rootB
-part --ondisk mmcblk0 --fstype=ext4 --label rootB --align 4096 --size 4G --use-uuid
+part --ondisk mmcblk0 --fstype=ext4 --label rootB --align 4096 --fixed-size 4G --use-uuid
 
 # Partition 5: data
 part --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 4G --use-uuid

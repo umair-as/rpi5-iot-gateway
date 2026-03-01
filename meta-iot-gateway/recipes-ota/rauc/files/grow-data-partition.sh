@@ -3,7 +3,7 @@
 
 set -Eeuo pipefail
 
-STAMP="/var/lib/rauc-grow-done"
+STAMP="/boot/.rauc-grow-done"
 LOG_TAG="rauc-grow"
 
 log() { printf '[%s] %s\n' "$LOG_TAG" "$*" >&2; }
@@ -36,11 +36,10 @@ run_parted_resize() {
         return 0
     fi
 
-    # Some platforms prompt even in script mode:
-    # 1) GPT backup header not at disk end ("Fix/Ignore")
-    # 2) partition in use ("Yes/No")
-    if printf 'Fix\nYes\n' | parted --pretend-input-tty "$disk" resizepart "$part_num" 100% \
-        > /dev/null 2>"$err_file"; then
+    # Retry once after re-reading partition table.
+    partprobe "$disk" 2>/dev/null || true
+    udevadm settle 2>/dev/null || true
+    if parted -s "$disk" resizepart "$part_num" 100% 2>"$err_file"; then
         return 0
     fi
 
@@ -59,6 +58,7 @@ main() {
     command -v lsblk >/dev/null 2>&1 || die "lsblk not installed"
     command -v partprobe >/dev/null 2>&1 || die "partprobe not installed"
     command -v udevadm >/dev/null 2>&1 || die "udevadm not installed"
+    command -v sgdisk >/dev/null 2>&1 || die "sgdisk not installed"
 
     DATA_PART=$(resolve_data_part) || die "could not resolve data partition by label 'data'"
     [ -b "$DATA_PART" ] || die "not a block device: $DATA_PART"
@@ -77,17 +77,17 @@ main() {
     # Best-effort rescan before resize
     partprobe "$DISK" 2>/dev/null || true
 
-    # Best-effort GPT backup table relocation (common when image is smaller than media).
-    if command -v sgdisk >/dev/null 2>&1; then
-        sgdisk -e "$DISK" >/dev/null 2>&1 || true
-    fi
+    # Relocate GPT backup table to disk end (required for larger media than image).
+    sgdisk -e "$DISK" >/dev/null 2>&1 || die "failed to relocate GPT backup header on $DISK"
+    partprobe "$DISK" 2>/dev/null || true
+    udevadm settle 2>/dev/null || true
 
     # Attempt to grow the partition to 100%. If already at max, just continue.
     RESIZE_ERR=$(mktemp)
     if run_parted_resize "$DISK" "$PART_NUM" "$RESIZE_ERR"; then
         log "📏 resized partition $PART_NUM to 100%"
     else
-        if grep -qi "cannot be grown\|already at maximum size\|out of range\|is being used\|not all of the space available" "$RESIZE_ERR" 2>/dev/null; then
+        if grep -qi "cannot be grown\|already at maximum size\|out of range" "$RESIZE_ERR" 2>/dev/null; then
             log "✓ partition appears already at maximum size; continuing"
         else
             cat "$RESIZE_ERR" >&2 || true
