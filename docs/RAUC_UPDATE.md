@@ -160,6 +160,25 @@ iotgw-rauc-install --direct <bundle>.raucb
 If `rauc-mark-good.service` unexpectedly appears masked after update, check for
 stale overlay masks in `/data/overlays/etc/upper/systemd/system/`.
 
+### OTA mTLS CA Consistency
+
+If streaming installs fail with TLS issuer/chain errors, verify the OTA CA used
+by the server matches the device trust chain:
+
+```bash
+openssl verify -CAfile /etc/ota/ca.crt /etc/ota/device.crt
+openssl x509 -in /etc/ota/ca.crt -noout -subject -fingerprint -sha256
+```
+
+For build-time alignment, set:
+
+```bash
+RAUC_OTA_CA_DIR = "/path/to/ota-dev-ca"
+```
+
+The `ota-certs` recipe accepts either `ca.crt/ca.key` or
+`dev-ca.crt/dev-ca.key` in `RAUC_OTA_CA_DIR` and seeds `/etc/ota/ca.crt`.
+
 ### What To Do If Misaligned
 
 - Fix `WKS_FILE` so `rootA` and `rootB` use aligned `--fixed-size` values.
