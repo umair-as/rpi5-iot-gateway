@@ -14,6 +14,8 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 inherit systemd
 
+DEPENDS += "openssl-native"
+
 SRC_URI = " \
     file://ota-certs-provision.sh \
     file://ota-certs-provision.service \
@@ -23,6 +25,8 @@ SRC_URI = " \
 S = "${WORKDIR}"
 
 PACKAGES =+ "${PN}-devca"
+
+RAUC_OTA_CA_DIR ?= ""
 
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "ota-certs-provision.service"
@@ -40,6 +44,36 @@ do_install() {
 
     # Create certificate directory structure
     install -d ${D}${sysconfdir}/ota
+
+    # Optional build-time CA seed: keeps image trust anchor aligned with the
+    # authoritative OTA CA directory while runtime provisioning remains in
+    # charge of device cert/key.
+    if [ -n "${RAUC_OTA_CA_DIR}" ]; then
+        ca_crt=""
+        ca_key=""
+        for c in "${RAUC_OTA_CA_DIR}/ca.crt" "${RAUC_OTA_CA_DIR}/dev-ca.crt"; do
+            if [ -f "$c" ]; then
+                ca_crt="$c"
+                break
+            fi
+        done
+        for k in "${RAUC_OTA_CA_DIR}/ca.key" "${RAUC_OTA_CA_DIR}/dev-ca.key"; do
+            if [ -f "$k" ]; then
+                ca_key="$k"
+                break
+            fi
+        done
+
+        if [ -z "$ca_crt" ] || [ -z "$ca_key" ]; then
+            bbfatal "RAUC_OTA_CA_DIR is set (${RAUC_OTA_CA_DIR}) but CA files were not found (expected ca.crt/ca.key or dev-ca.crt/dev-ca.key)"
+        fi
+
+        if ! openssl x509 -in "$ca_crt" -noout >/dev/null 2>&1; then
+            bbfatal "Invalid CA certificate in RAUC_OTA_CA_DIR: $ca_crt"
+        fi
+
+        install -m 0644 "$ca_crt" ${D}${sysconfdir}/ota/ca.crt
+    fi
 }
 
 FILES:${PN} = " \
