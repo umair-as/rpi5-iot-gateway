@@ -27,3 +27,11 @@ local_conf_header:
     # Public key (certificate) installed on devices to verify bundles
     # Typically the CA certificate created by generate-rauc-certs.sh
     RAUC_DEVICE_KEYRING = "${IOTGW_RAUC_KEY_DIR}/ca.cert.pem"
+  ota_ca_source: |
+    # Optional: authoritative OTA mTLS CA source for ota-certs recipe.
+    # Used to seed /etc/ota/ca.crt at build time and validate CA consistency.
+    # Supported filenames in this directory:
+    #   - ca.crt / ca.key
+    #   - dev-ca.crt / dev-ca.key
+    # Keep this aligned with simple-ota-server CA used to sign server/device certs.
+    RAUC_OTA_CA_DIR = "${IOTGW_RAUC_KEY_DIR}/ota-dev-ca"

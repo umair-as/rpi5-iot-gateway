@@ -15,10 +15,16 @@ device_id="${1:-$(head -c 8 /etc/machine-id 2>/dev/null || echo 'dev-device')}"
 
 echo "Generating development certificate for device: $device_id"
 
-DEV_CA_DIR="${IOTGW_OTA_CA_DIR:-$DEV_CA_DIR_DEFAULT}"
-if [[ ! -f "$DEV_CA_DIR/dev-ca.crt" || ! -f "$DEV_CA_DIR/dev-ca.key" ]]; then
+DEV_CA_DIR="${RAUC_OTA_CA_DIR:-${IOTGW_OTA_CA_DIR:-$DEV_CA_DIR_DEFAULT}}"
+if [[ -f "$DEV_CA_DIR/dev-ca.crt" && -f "$DEV_CA_DIR/dev-ca.key" ]]; then
+    CA_CRT="$DEV_CA_DIR/dev-ca.crt"
+    CA_KEY="$DEV_CA_DIR/dev-ca.key"
+elif [[ -f "$DEV_CA_DIR/ca.crt" && -f "$DEV_CA_DIR/ca.key" ]]; then
+    CA_CRT="$DEV_CA_DIR/ca.crt"
+    CA_KEY="$DEV_CA_DIR/ca.key"
+else
     echo "ERROR: Development CA not found in $DEV_CA_DIR" >&2
-    echo "Set IOTGW_OTA_CA_DIR or run ota-certs-provision to generate a local dev CA." >&2
+    echo "Set RAUC_OTA_CA_DIR/IOTGW_OTA_CA_DIR or run ota-certs-provision to generate a local dev CA." >&2
     exit 1
 fi
 
@@ -32,20 +38,25 @@ openssl req -new \
     -key "$CERT_DIR/device.key" \
     -subj "/CN=iot-device-${device_id}/O=Development/OU=OTA" \
     | openssl x509 -req \
-        -CA "$DEV_CA_DIR/dev-ca.crt" \
-        -CAkey "$DEV_CA_DIR/dev-ca.key" \
+        -CA "$CA_CRT" \
+        -CAkey "$CA_KEY" \
         -CAcreateserial \
         -out "$CERT_DIR/device.crt" \
         -days 365 \
         -sha256 2>/dev/null
 
 # Copy CA
-cp "$DEV_CA_DIR/dev-ca.crt" "$CERT_DIR/ca.crt"
+cp "$CA_CRT" "$CERT_DIR/ca.crt"
 
 # Set permissions
 chmod 0644 "$CERT_DIR/device.crt" "$CERT_DIR/ca.crt"
 chmod 0640 "$CERT_DIR/device.key"
 chown root:ota "$CERT_DIR"/*.crt "$CERT_DIR"/*.key 2>/dev/null || true
+
+if ! openssl verify -CAfile "$CERT_DIR/ca.crt" "$CERT_DIR/device.crt" >/dev/null 2>&1; then
+    echo "ERROR: Device cert does not chain to installed CA" >&2
+    exit 1
+fi
 
 echo "Certificate generated:"
 openssl x509 -in "$CERT_DIR/device.crt" -noout -subject -enddate

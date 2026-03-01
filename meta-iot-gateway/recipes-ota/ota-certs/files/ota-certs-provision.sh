@@ -22,12 +22,30 @@ log_info()  { echo "[$(date -Iseconds)] [INFO]  $*"; }
 log_warn()  { echo "[$(date -Iseconds)] [WARN]  $*" >&2; }
 log_error() { echo "[$(date -Iseconds)] [ERROR] $*" >&2; }
 
+resolve_dev_ca_files() {
+    local src_dir="$1"
+    if [[ -f "$src_dir/dev-ca.crt" && -f "$src_dir/dev-ca.key" ]]; then
+        echo "$src_dir/dev-ca.crt|$src_dir/dev-ca.key"
+        return 0
+    fi
+    if [[ -f "$src_dir/ca.crt" && -f "$src_dir/ca.key" ]]; then
+        echo "$src_dir/ca.crt|$src_dir/ca.key"
+        return 0
+    fi
+    return 1
+}
+
+cert_chain_valid() {
+    openssl verify -CAfile "$CERT_DIR/ca.crt" "$CERT_DIR/device.crt" >/dev/null 2>&1
+}
+
 # Check if valid certs already exist
 certs_valid() {
     [[ -f "$CERT_DIR/device.crt" ]] && \
     [[ -f "$CERT_DIR/device.key" ]] && \
     [[ -f "$CERT_DIR/ca.crt" ]] && \
-    openssl x509 -in "$CERT_DIR/device.crt" -noout -checkend 86400 2>/dev/null
+    openssl x509 -in "$CERT_DIR/device.crt" -noout -checkend 86400 2>/dev/null && \
+    cert_chain_valid
 }
 
 # Copy certs from source directory
@@ -49,6 +67,10 @@ copy_certs() {
         chmod 0750 "$CERT_DIR"
         chmod 0640 "$CERT_DIR/device.key"
         chmod 0644 "$CERT_DIR/device.crt" "$CERT_DIR/ca.crt"
+        if ! cert_chain_valid; then
+            log_error "Provisioned certificates from $desc do not chain to $CERT_DIR/ca.crt"
+            return 1
+        fi
         return 0
     fi
     return 1
@@ -58,13 +80,14 @@ copy_certs() {
 ensure_dev_ca() {
     local src_dir="$1"
     local external="$2"
+    local ca_pair=""
 
-    if [[ -f "$src_dir/dev-ca.crt" && -f "$src_dir/dev-ca.key" ]]; then
+    if ca_pair=$(resolve_dev_ca_files "$src_dir"); then
         return 0
     fi
 
     if [[ "$external" -eq 1 ]]; then
-        log_error "Development CA missing in $src_dir (set IOTGW_OTA_CA_DIR correctly)"
+        log_error "Development CA missing in $src_dir (set RAUC_OTA_CA_DIR/IOTGW_OTA_CA_DIR correctly)"
         return 1
     fi
 
@@ -94,15 +117,25 @@ ensure_dev_ca() {
 generate_dev_certs() {
     log_warn "Generating DEVELOPMENT certificates - DO NOT use in production!"
 
-    local dev_ca_dir="${IOTGW_OTA_CA_DIR:-$DEV_CA_DIR_DEFAULT}"
+    local configured_ca_dir="${RAUC_OTA_CA_DIR:-${IOTGW_OTA_CA_DIR:-}}"
+    local dev_ca_dir="${configured_ca_dir:-$DEV_CA_DIR_DEFAULT}"
     local external_ca=0
-    if [[ -n "${IOTGW_OTA_CA_DIR:-}" ]]; then
+    if [[ -n "${configured_ca_dir}" ]]; then
         external_ca=1
     fi
+    local ca_crt=""
+    local ca_key=""
+    local ca_pair=""
 
     if ! ensure_dev_ca "$dev_ca_dir" "$external_ca"; then
         return 1
     fi
+    if ! ca_pair=$(resolve_dev_ca_files "$dev_ca_dir"); then
+        log_error "Failed to resolve CA pair in $dev_ca_dir"
+        return 1
+    fi
+    ca_crt="${ca_pair%%|*}"
+    ca_key="${ca_pair##*|}"
 
     # Get a unique device ID (prefer machine-id, fallback to MAC)
     local device_id
@@ -141,8 +174,8 @@ generate_dev_certs() {
 
     if ! openssl x509 -req \
         -in "${tmp_csr}" \
-        -CA "$dev_ca_dir/dev-ca.crt" \
-        -CAkey "$dev_ca_dir/dev-ca.key" \
+        -CA "${ca_crt}" \
+        -CAkey "${ca_key}" \
         -CAserial "${DEV_CA_SERIAL}" \
         -CAcreateserial \
         -out "${tmp_crt}" \
@@ -163,7 +196,7 @@ generate_dev_certs() {
     install -m 0644 "${tmp_crt}" "$CERT_DIR/device.crt"
 
     # Copy CA cert
-    install -m 0644 "$dev_ca_dir/dev-ca.crt" "$CERT_DIR/ca.crt"
+    install -m 0644 "${ca_crt}" "$CERT_DIR/ca.crt"
 
     # Set permissions
     chmod 0750 "$CERT_DIR"
@@ -181,6 +214,10 @@ generate_dev_certs() {
     cp "$CERT_DIR/device.key" "$DATA_SRC/"
     cp "$CERT_DIR/ca.crt" "$DATA_SRC/"
     chmod 0640 "$DATA_SRC/device.key"
+    if ! cert_chain_valid; then
+        log_error "Generated development certificate does not chain to $CERT_DIR/ca.crt"
+        return 1
+    fi
 
     log_info "Development certificates generated and backed up to $DATA_SRC"
     return 0
