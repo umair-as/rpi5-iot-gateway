@@ -6,8 +6,20 @@
 DISTRO_NAME="@DISTRO_NAME@"
 DISTRO_VERSION="@DISTRO_VERSION@"
 MACHINE="@MACHINE@"
+ISSUE_FILE="${IOTGW_BANNER_ISSUE_FILE:-/etc/issue}"
+ISSUE_NET_FILE="${IOTGW_BANNER_ISSUE_NET_FILE:-/etc/issue.net}"
+MOTD_FILE="${IOTGW_BANNER_MOTD_FILE:-/etc/motd}"
 
 # Dynamic system info
+rauc_dbus_get_string_property() {
+    local prop="$1"
+    busctl --system get-property \
+        de.pengutronix.rauc \
+        / \
+        de.pengutronix.rauc.Installer \
+        "$prop" 2>/dev/null | sed -nE 's/^[^ ]+ "(.*)"$/\1/p'
+}
+
 get_system_info() {
     KERNEL=$(uname -r 2>/dev/null || echo "unknown")
     UPTIME=$(uptime -p 2>/dev/null | sed 's/up //' || echo "unknown")
@@ -25,7 +37,14 @@ get_system_info() {
     fi
     [ -n "$IP_ADDR" ] || IP_ADDR="N/A"
 
-    RAUC_SLOT=$(rauc status 2>/dev/null | grep "Booted from:" | awk '{print $3}' || echo "unknown")
+    if command -v busctl >/dev/null 2>&1; then
+        RAUC_SLOT="$(rauc_dbus_get_string_property BootSlot || true)"
+        RAUC_OP="$(rauc_dbus_get_string_property Operation || true)"
+        RAUC_LAST_ERROR="$(rauc_dbus_get_string_property LastError || true)"
+    fi
+    [ -n "${RAUC_SLOT:-}" ] || RAUC_SLOT=$(rauc status 2>/dev/null | grep "Booted from:" | awk '{print $3}' || echo "unknown")
+    [ -n "${RAUC_OP:-}" ] || RAUC_OP="unknown"
+    [ -n "${RAUC_LAST_ERROR:-}" ] || RAUC_LAST_ERROR="none"
 }
 
 # Generate /etc/issue (login screen) - simple version with legal warning
@@ -45,7 +64,7 @@ generate_issue() {
         printf "\033[1;36m%s\033[0m \033[0;37m%s\033[0m\n" "${DISTRO_NAME}" "${DISTRO_VERSION}"
         printf "\033[0;33mMachine:\033[0m %s | \033[0;33mTTY:\033[0m \\l\n" "${MACHINE}"
         printf "\n"
-    } > /etc/issue
+    } > "${ISSUE_FILE}"
 }
 
 # Generate /etc/issue.net (SSH/network pre-login banner)
@@ -64,7 +83,7 @@ generate_issue_net() {
         printf "%s %s\n" "${DISTRO_NAME}" "${DISTRO_VERSION}"
         printf "Machine: %s\n" "${MACHINE}"
         printf "\n"
-    } > /etc/issue.net
+    } > "${ISSUE_NET_FILE}"
 }
 
 # Generate /etc/motd (post-login message)
@@ -91,6 +110,10 @@ generate_motd() {
         printf "    \033[0;33mUptime:\033[0m       %s\n" "${UPTIME}"
         printf "    \033[0;33mIP Address:\033[0m   %s\n" "${IP_ADDR}"
         printf "    \033[0;33mActive Slot:\033[0m  %s\n" "${RAUC_SLOT}"
+        printf "    \033[0;33mOTA State:\033[0m    %s\n" "${RAUC_OP}"
+        if [ "${RAUC_LAST_ERROR}" != "none" ] && [ -n "${RAUC_LAST_ERROR}" ]; then
+            printf "    \033[0;33mOTA LastError:\033[0m %s\n" "${RAUC_LAST_ERROR}"
+        fi
         printf "    \033[0;36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n"
         printf "\n"
 
@@ -98,7 +121,7 @@ generate_motd() {
         printf "    \033[0;36m📚 Documentation:\033[0m https://github.com/umair-uas/rpi5-iot-gateway\n"
         printf "    \033[0;36m💬 Support:\033[0m Umair A.S. \n"
         printf "\033[0m\n"
-    } > /etc/motd
+    } > "${MOTD_FILE}"
 }
 
 # Main execution

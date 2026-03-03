@@ -16,6 +16,9 @@ readonly CONFIG_FILE="${OTA_CONFIG:-/etc/ota/updater.conf}"
 readonly STATE_DIR="/data/ota"
 readonly STATE_FILE="${STATE_DIR}/last-check"
 readonly LOCK_FILE="/run/ota-updater.lock"
+readonly RAUC_DBUS_SERVICE="de.pengutronix.rauc"
+readonly RAUC_DBUS_PATH="/"
+readonly RAUC_DBUS_IFACE="de.pengutronix.rauc.Installer"
 
 # Logging helpers (all to stderr so stdout stays clean for data)
 log_info()  { echo "[$(date -Iseconds)] [INFO]  $*" >&2; }
@@ -25,6 +28,54 @@ die()       { log_error "$*"; exit 1; }
 
 on_err() { log_error "failed at line ${1:-?} (cmd: ${BASH_COMMAND:-sh})"; }
 trap 'on_err $LINENO' ERR
+
+rauc_dbus_available() {
+    command -v busctl >/dev/null 2>&1 || return 1
+    busctl --system call \
+        "$RAUC_DBUS_SERVICE" \
+        "$RAUC_DBUS_PATH" \
+        org.freedesktop.DBus.Peer \
+        Ping >/dev/null 2>&1
+}
+
+rauc_dbus_get_property_raw() {
+    local prop="$1"
+    busctl --system get-property \
+        "$RAUC_DBUS_SERVICE" \
+        "$RAUC_DBUS_PATH" \
+        "$RAUC_DBUS_IFACE" \
+        "$prop" 2>/dev/null
+}
+
+rauc_dbus_get_string_property() {
+    local prop="$1"
+    local raw
+    raw="$(rauc_dbus_get_property_raw "$prop")" || return 1
+    echo "$raw" | sed -nE 's/^[^ ]+ "(.*)"$/\1/p'
+}
+
+parse_rauc_progress() {
+    local raw="$1"
+    local pct msg depth
+    pct="$(echo "$raw" | awk '{print $2}')"
+    depth="$(echo "$raw" | awk '{print $NF}')"
+    msg="$(echo "$raw" | sed -nE 's/^\(isi\) [0-9-]+ "(.*)" [0-9-]+$/\1/p')"
+    [ -n "$pct" ] || pct=0
+    [ -n "$msg" ] || msg="unknown"
+    [ -n "$depth" ] || depth=0
+    echo "$pct|$msg|$depth"
+}
+
+get_system_compatible() {
+    local compat=""
+    if rauc_dbus_available; then
+        compat="$(rauc_dbus_get_string_property Compatible || true)"
+    fi
+    if [[ -z "$compat" ]]; then
+        compat=$(rauc status --output-format=json | jq -r '.compatible // empty')
+    fi
+    echo "$compat"
+}
 
 # Load configuration
 load_config() {
@@ -192,6 +243,17 @@ is_update_available() {
 install_update() {
     local bundle_url="$1"
     local version="$2"
+    local pre_last_error=""
+    local op=""
+    local progress_raw=""
+    local progress_parsed=""
+    local progress_pct=0
+    local progress_msg="unknown"
+    local progress_depth=0
+    local progress_msg_lc=""
+    local last_error=""
+    local timeout_sec=3600
+    local start_ts now_ts elapsed
 
     log_info "Installing update: version=$version url=$bundle_url"
 
@@ -200,23 +262,141 @@ install_update() {
         return 0
     fi
 
-    # RAUC handles download, verification, and installation
+    if rauc_dbus_available; then
+        log_info "Using RAUC D-Bus install path"
+        pre_last_error="$(rauc_dbus_get_string_property LastError || true)"
+        if ! busctl --system call \
+            "$RAUC_DBUS_SERVICE" \
+            "$RAUC_DBUS_PATH" \
+            "$RAUC_DBUS_IFACE" \
+            Install s "$bundle_url" >/dev/null 2>&1; then
+            log_warn "RAUC D-Bus Install call failed, falling back to CLI"
+        else
+            start_ts="$(date +%s)"
+            while true; do
+                op="$(rauc_dbus_get_string_property Operation || true)"
+                progress_raw="$(rauc_dbus_get_property_raw Progress || true)"
+                progress_parsed="$(parse_rauc_progress "$progress_raw")"
+                progress_pct="${progress_parsed%%|*}"
+                progress_msg="${progress_parsed#*|}"
+                progress_depth="${progress_msg##*|}"
+                progress_msg="${progress_msg%|*}"
+
+                log_info "RAUC D-Bus status: operation=${op:-unknown} progress=${progress_pct}% msg='${progress_msg}' depth=${progress_depth}"
+
+                if [[ "$op" == "idle" ]]; then
+                    last_error="$(rauc_dbus_get_string_property LastError || true)"
+                    progress_msg_lc="$(echo "$progress_msg" | tr '[:upper:]' '[:lower:]')"
+                    if [[ -n "$last_error" && "$last_error" != "$pre_last_error" ]]; then
+                        log_error "RAUC D-Bus install failed: $last_error"
+                        mkdir -p "$STATE_DIR"
+                        jq -n \
+                            --arg version "$version" \
+                            --arg timestamp "$(date -Iseconds)" \
+                            --arg error "$last_error" \
+                            --arg progress "$progress_msg" \
+                            '{version:$version,timestamp:$timestamp,status:"failed",method:"dbus",error:$error,progress:$progress}' \
+                            > "${STATE_DIR}/last-update"
+                        return 1
+                    fi
+                    if [[ "$progress_msg_lc" == *failed* || "$progress_msg_lc" == *error* ]]; then
+                        log_error "RAUC D-Bus install failed: progress='${progress_msg}'"
+                        mkdir -p "$STATE_DIR"
+                        jq -n \
+                            --arg version "$version" \
+                            --arg timestamp "$(date -Iseconds)" \
+                            --arg error "RAUC progress indicates failure: ${progress_msg}" \
+                            --arg progress "$progress_msg" \
+                            '{version:$version,timestamp:$timestamp,status:"failed",method:"dbus",error:$error,progress:$progress}' \
+                            > "${STATE_DIR}/last-update"
+                        return 1
+                    fi
+
+                    if [[ "$progress_msg_lc" == *done* || "$progress_msg_lc" == *complete* || "$progress_pct" == "100" ]]; then
+                        log_info "Update installed successfully. Reboot required."
+                        mkdir -p "$STATE_DIR"
+                        jq -n \
+                            --arg version "$version" \
+                            --arg timestamp "$(date -Iseconds)" \
+                            --arg progress "$progress_msg" \
+                            '{version:$version,timestamp:$timestamp,status:"installed",method:"dbus",progress:$progress}' \
+                            > "${STATE_DIR}/last-update"
+                        return 0
+                    fi
+
+                    log_warn "RAUC D-Bus idle without explicit completion marker; treating as success"
+                    mkdir -p "$STATE_DIR"
+                    jq -n \
+                        --arg version "$version" \
+                        --arg timestamp "$(date -Iseconds)" \
+                        --arg progress "$progress_msg" \
+                        '{version:$version,timestamp:$timestamp,status:"installed",method:"dbus",progress:$progress}' \
+                        > "${STATE_DIR}/last-update"
+                    return 0
+                fi
+
+                now_ts="$(date +%s)"
+                elapsed=$((now_ts - start_ts))
+                if [[ "$elapsed" -ge "$timeout_sec" ]]; then
+                    log_error "RAUC D-Bus install timed out after ${timeout_sec}s"
+                    return 1
+                fi
+
+                sleep 2
+            done
+        fi
+    fi
+
+    log_info "Using RAUC CLI install path"
     if rauc install "$bundle_url"; then
         log_info "Update installed successfully. Reboot required."
-        # Record successful update
-        echo "{\"version\":\"$version\",\"timestamp\":\"$(date -Iseconds)\",\"status\":\"installed\"}" \
+        mkdir -p "$STATE_DIR"
+        jq -n \
+            --arg version "$version" \
+            --arg timestamp "$(date -Iseconds)" \
+            '{version:$version,timestamp:$timestamp,status:"installed",method:"cli"}' \
             > "${STATE_DIR}/last-update"
         return 0
-    else
-        log_error "RAUC installation failed"
-        return 1
     fi
+    log_error "RAUC installation failed"
+    return 1
 }
 
 # Record check timestamp
 record_check() {
     mkdir -p "$STATE_DIR"
     echo "{\"timestamp\":\"$(date -Iseconds)\",\"server\":\"$SERVER_URL\"}" > "$STATE_FILE"
+}
+
+derive_manifest_version() {
+    local manifest_json="$1"
+    local v=""
+
+    v=$(echo "$manifest_json" | jq -r '.version // empty')
+    if [[ -n "$v" ]]; then
+        echo "$v"
+        return 0
+    fi
+
+    v=$(echo "$manifest_json" | jq -r '.released_at // empty')
+    if [[ -n "$v" ]]; then
+        echo "$v"
+        return 0
+    fi
+
+    v=$(echo "$manifest_json" | jq -r '.filename // empty')
+    if [[ -n "$v" ]]; then
+        echo "$v"
+        return 0
+    fi
+
+    v=$(echo "$manifest_json" | jq -r '.sha256 // empty')
+    if [[ -n "$v" ]]; then
+        echo "$v"
+        return 0
+    fi
+
+    echo "unknown"
 }
 
 # Main
@@ -241,20 +421,20 @@ main() {
 
     # Parse manifest
     local available_version bundle_url compatible
-    available_version=$(echo "$manifest" | jq -r '.version // empty')
+    available_version="$(derive_manifest_version "$manifest")"
     bundle_url=$(echo "$manifest" | jq -r '.bundle_url // empty')
     compatible=$(echo "$manifest" | jq -r '.compatible // empty')
 
-    if [[ -z "$available_version" || -z "$bundle_url" ]]; then
-        die "Invalid manifest: missing version or bundle_url"
+    if [[ -z "$bundle_url" ]]; then
+        die "Invalid manifest: missing bundle_url"
     fi
 
-    log_info "Available version: $available_version"
+    log_info "Available version/token: $available_version"
 
     # Check compatibility if specified in manifest
     if [[ -n "$compatible" ]]; then
         local system_compatible
-        system_compatible=$(rauc status --output-format=json | jq -r '.compatible // empty')
+        system_compatible="$(get_system_compatible)"
         if [[ "$compatible" != "$system_compatible" ]]; then
             die "Bundle not compatible: expected=$system_compatible got=$compatible"
         fi

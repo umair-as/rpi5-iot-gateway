@@ -94,5 +94,6 @@ RDEPENDS:${PN} = " \
     curl \
     jq \
     rauc \
+    systemd \
     ca-certificates \
 "
