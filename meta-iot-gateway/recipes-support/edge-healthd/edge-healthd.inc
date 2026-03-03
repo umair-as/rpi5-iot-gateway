@@ -6,14 +6,14 @@
 SUMMARY = "Edge device health monitoring daemon"
 DESCRIPTION = "Continuously monitors device health (boot, services, resources, \
 time sync, updates) and writes structured JSON status for fleet management integration."
-HOMEPAGE = "https://github.com/umair-uas/edge-healthd"
+HOMEPAGE = "https://github.com/umair-as/edge-healthd"
 RECIPE_MAINTAINER = "Umair A.S <umair-uas@users.noreply.github.com>"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=291c1ca2c1503b0e42022cd4bff87df5"
 
-#SRC_URI = "git://github.com/umair-uas/edge-healthd.git;branch=main;protocol=ssh"
-#SRCREV = "${AUTOREV}"
-#S = "${WORKDIR}/git"
+BRANCH ?= "main"
+SRC_URI = "git://github.com/umair-as/edge-healthd.git;branch=${BRANCH};protocol=https"
+S = "${WORKDIR}/git"
 
 # Platform-specific configuration and tmpfiles
 SRC_URI += " \
@@ -21,12 +21,13 @@ SRC_URI += " \
     file://edge-healthd.tmpfiles.conf \
 "
 
-inherit cmake systemd useradd  pkgconfig externalsrc
+inherit cmake systemd useradd pkgconfig externalsrc
 EXTERNALSRC ?= ""
 EXTERNALSRC_BUILD ?= "${WORKDIR}/build"
 PACKAGECONFIG ??= "systemd"
 PACKAGECONFIG[systemd] = "-DEDGE_HAS_SYSTEMD=ON,,systemd"
 PACKAGECONFIG[tests] = "-DEDGE_BUILD_TESTS=ON,-DEDGE_BUILD_TESTS=OFF"
+PACKAGECONFIG[web-ui] = "-DEDGE_WEB_UI=ON,-DEDGE_WEB_UI=OFF,go-native"
 DEPENDS += " \
     systemd \
     nlohmann-json \
@@ -66,6 +67,8 @@ EXTRA_OECMAKE = " \
     -DEDGE_BUILD_TESTS=OFF \
     -DEDGE_ENABLE_SANITIZERS=OFF \
     -DEDGE_ENABLE_LTO=ON \
+    -DEDGE_WEB_UI=OFF \
+    -DEDGE_FETCH_SDBUSCPP=OFF \
     -DEDGE_STATIC_LINK=OFF \
 "
 
