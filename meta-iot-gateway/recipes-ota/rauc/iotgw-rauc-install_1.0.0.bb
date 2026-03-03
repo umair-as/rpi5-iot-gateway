@@ -7,7 +7,7 @@ SRC_URI = "file://iotgw-rauc-install.sh"
 
 S = "${WORKDIR}"
 
-RDEPENDS:${PN} = "bash curl rauc util-linux"
+RDEPENDS:${PN} = "bash curl rauc systemd util-linux"
 
 do_install() {
     install -d ${D}${sbindir}
