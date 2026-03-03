@@ -32,12 +32,28 @@ HTTPS streaming install (manual, recommended for OTA server flow):
 iotgw-rauc-install https://<ota-host>:8443/bundles/<bundle>.raucb
 ```
 
+HTTPS streaming install with explicit TLS profile selection:
+
+```bash
+iotgw-rauc-install --tls-profile system https://<ota-host>:8443/bundles/<bundle>.raucb
+iotgw-rauc-install --tls-profile data https://<ota-host>:8443/bundles/<bundle>.raucb
+```
+
+Optional preflight fallback (download first, then local install):
+
+```bash
+iotgw-rauc-install --fallback-download https://<ota-host>:8443/bundles/<bundle>.raucb
+```
+
 Behavior notes:
 
 - default path: wrapper dispatches through `systemd-run` to execute from system
   manager context (recommended on hardened systems)
 - fallback path: direct execution (`--direct` or `--no-systemd-run`) for debug
   only
+- wrapper preflight stages for HTTPS URLs: `resolve`, `user-check`, `tls-files`,
+  `connect`, `tls-verify`
+- unsafe debug flags are gated by `--debug-unsafe` and are audit-logged
 
 Track progress:
 
