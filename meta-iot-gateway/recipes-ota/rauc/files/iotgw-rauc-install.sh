@@ -42,6 +42,17 @@ audit() {
     fi
 }
 
+rauc_dbus_get_last_error() {
+    if ! command -v busctl >/dev/null 2>&1; then
+        return 1
+    fi
+    busctl --system get-property \
+        de.pengutronix.rauc \
+        / \
+        de.pengutronix.rauc.Installer \
+        LastError 2>/dev/null | sed -nE 's/^[^ ]+ "(.*)"$/\1/p'
+}
+
 usage() {
     cat >&2 <<'EOF'
 Usage: iotgw-rauc-install [wrapper options] <bundle|url> [rauc install args...]
@@ -503,6 +514,11 @@ if "${rauc_cmd[@]}"; then
     audit "rauc install succeeded"
 else
     INSTALL_RC=$?
+    if rauc_last_error="$(rauc_dbus_get_last_error || true)"; then
+        if [ -n "${rauc_last_error}" ]; then
+            audit "rauc dbus LastError='${rauc_last_error}'"
+        fi
+    fi
     audit "rauc install failed rc=${INSTALL_RC}"
     exit "${INSTALL_RC}"
 fi

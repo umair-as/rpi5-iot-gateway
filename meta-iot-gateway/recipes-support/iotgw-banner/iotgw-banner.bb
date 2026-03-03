@@ -35,4 +35,4 @@ FILES:${PN} += " \
 "
 
 # Ensure this runs after base-files to override static issue/motd
-RDEPENDS:${PN} = "bash iproute2"
+RDEPENDS:${PN} = "bash iproute2 rauc systemd"
