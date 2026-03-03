@@ -1,0 +1,16 @@
+[Unit]
+Description=Persist and bind machine-id for immutable rootfs
+DefaultDependencies=no
+After=data.mount overlayfs-setup.service
+Before=sysinit.target
+Wants=data.mount overlayfs-setup.service
+RequiresMountsFor=/data
+ConditionPathIsMountPoint=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iotgw-machine-id
+
+[Install]
+WantedBy=sysinit.target

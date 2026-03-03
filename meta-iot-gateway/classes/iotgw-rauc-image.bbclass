@@ -16,6 +16,7 @@ IMAGE_INSTALL += " \
     rauc-service \
     virtual-rauc-conf \
     iotgw-rauc-install \
+    iotgw-machine-id \
     boot-backup-prune \
     overlayfs-setup \
     rauc-grow-data-part \

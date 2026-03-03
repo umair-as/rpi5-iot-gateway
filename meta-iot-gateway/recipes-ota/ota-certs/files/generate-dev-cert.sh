@@ -11,7 +11,21 @@ set -euo pipefail
 readonly DEV_CA_DIR_DEFAULT="/data/ota/dev-ca"
 readonly CERT_DIR="/etc/ota"
 
-device_id="${1:-$(head -c 8 /etc/machine-id 2>/dev/null || echo 'dev-device')}"
+detect_device_id() {
+    local mid=""
+    if [[ -s /etc/machine-id ]]; then
+        mid="$(head -c 8 /etc/machine-id 2>/dev/null || true)"
+    fi
+    if [[ -z "${mid}" && -s /run/machine-id ]]; then
+        mid="$(head -c 8 /run/machine-id 2>/dev/null || true)"
+    fi
+    if [[ -z "${mid}" ]]; then
+        mid="dev-device"
+    fi
+    printf '%s' "${mid}"
+}
+
+device_id="${1:-$(detect_device_id)}"
 
 echo "Generating development certificate for device: $device_id"
 
