@@ -16,6 +16,31 @@ readonly BOOT_SRC="/boot/iotgw/ota"
 readonly DATA_SRC="/data/ota/certs"
 readonly DEV_CA_DIR_DEFAULT="/data/ota/dev-ca"
 readonly DEV_CA_SERIAL="/data/ota/dev-ca/dev-ca.srl"
+
+get_device_id() {
+    local mid=""
+    local mac=""
+
+    if [[ -s /etc/machine-id ]]; then
+        mid=$(head -c 8 /etc/machine-id 2>/dev/null || true)
+    fi
+    if [[ -z "${mid}" && -s /run/machine-id ]]; then
+        mid=$(head -c 8 /run/machine-id 2>/dev/null || true)
+    fi
+    if [[ -n "${mid}" ]]; then
+        printf '%s' "${mid}"
+        return 0
+    fi
+
+    mac=$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | head -c 8 || true)
+    if [[ -n "${mac}" ]]; then
+        printf '%s' "${mac}"
+        return 0
+    fi
+
+    printf 'unknown'
+    return 0
+}
 readonly STAMP="/var/lib/ota-certs-provision.done"
 
 log_info()  { echo "[$(date -Iseconds)] [INFO]  $*"; }
@@ -139,11 +164,7 @@ generate_dev_certs() {
 
     # Get a unique device ID (prefer machine-id, fallback to MAC)
     local device_id
-    if [[ -f /etc/machine-id ]]; then
-        device_id=$(head -c 8 /etc/machine-id)
-    else
-        device_id=$(cat /sys/class/net/eth0/address 2>/dev/null | tr -d ':' | head -c 8 || echo "unknown")
-    fi
+    device_id="$(get_device_id)"
 
     log_info "Generating cert for device: $device_id"
 

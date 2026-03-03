@@ -15,9 +15,8 @@ do_install:append() {
     install -m 0644 ${WORKDIR}/skel/.bashrc ${D}/etc/skel/.bashrc
     install -d ${D}/uboot-env
 
-    # Create uninitialized machine-id file
-    # This signals systemd to generate a unique ID on first boot
-    # The ID will be persisted via overlayfs on /data
+    # Create uninitialized machine-id file.
+    # Runtime persistence/bind behavior is handled by iotgw-machine-id service.
     touch ${D}${sysconfdir}/machine-id
     chmod 0444 ${D}${sysconfdir}/machine-id
 }
