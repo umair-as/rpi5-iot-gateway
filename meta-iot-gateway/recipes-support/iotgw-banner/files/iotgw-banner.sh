@@ -24,12 +24,9 @@ get_system_info() {
     KERNEL=$(uname -r 2>/dev/null || echo "unknown")
     UPTIME=$(uptime -p 2>/dev/null | sed 's/up //' || echo "unknown")
 
-    # Resolve primary IP address with robust fallbacks
+    # Resolve primary IPv4 address using iproute2 (portable across our images).
     IP_ADDR=""
-    if command -v hostname >/dev/null 2>&1; then
-        IP_ADDR=$(hostname -I 2>/dev/null | awk '{print $1}') || true
-    fi
-    if [ -z "$IP_ADDR" ] && command -v ip >/dev/null 2>&1; then
+    if command -v ip >/dev/null 2>&1; then
         IP_ADDR=$(ip -4 route get 1.1.1.1 2>/dev/null | awk 'match($0,/src ([0-9.]+)/,m){print m[1]}') || true
     fi
     if [ -z "$IP_ADDR" ] && command -v ip >/dev/null 2>&1; then

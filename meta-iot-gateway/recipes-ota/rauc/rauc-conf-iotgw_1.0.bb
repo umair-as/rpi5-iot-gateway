@@ -6,8 +6,6 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 inherit allarch
 
-PN = "rauc-conf-iotgw"
-
 # Provide the virtual config RAUC expects
 RPROVIDES:${PN} += "virtual-rauc-conf"
 INHIBIT_DEFAULT_DEPS = "1"
@@ -15,18 +13,16 @@ INHIBIT_DEFAULT_DEPS = "1"
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 SRC_URI += " \
-    file://system.conf \
+    file://iotgw-system.conf \
 "
 
 S = "${WORKDIR}"
 
 do_install() {
-    # Force our template to win over any bbappend-provided system.conf.
-    cp ${THISDIR}/files/system.conf ${WORKDIR}/system.conf
     install -d ${D}${sysconfdir}/rauc
     # Render system.conf from template using bundle-compatible
     sed "s|@COMPATIBLE@|${RAUC_BUNDLE_COMPATIBLE}|g" \
-        ${WORKDIR}/system.conf > ${D}${sysconfdir}/rauc/system.conf
+        ${WORKDIR}/iotgw-system.conf > ${D}${sysconfdir}/rauc/system.conf
     # Install device keyring (public cert).
     # Prefer RAUC_DEVICE_KEYRING; fallback to RAUC_CERT_FILE (dev setups often reuse it).
     keyring="${RAUC_DEVICE_KEYRING}"
