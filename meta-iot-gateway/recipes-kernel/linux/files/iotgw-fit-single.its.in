@@ -6,12 +6,26 @@
 
     images {
         kernel-1 {
-            description = "Linux kernel";
-            data = /incbin/("@@KERNEL_PATH@@");
+            description = "Linux kernel (primary)";
+            data = /incbin/("@@KERNEL1_PATH@@");
             type = "@@UBOOT_MKIMAGE_KERNEL_TYPE@@";
             arch = "@@UBOOT_ARCH@@";
             os = "linux";
-            compression = "@@KERNEL_COMPRESSION@@";
+            compression = "@@KERNEL1_COMPRESSION@@";
+            load = <@@UBOOT_LOADADDRESS@@>;
+            entry = <@@UBOOT_ENTRYPOINT@@>;
+            hash-1 {
+                algo = "@@FIT_HASH_ALG@@";
+            };
+        };
+
+        kernel-2 {
+            description = "Linux kernel (secondary)";
+            data = /incbin/("@@KERNEL2_PATH@@");
+            type = "@@UBOOT_MKIMAGE_KERNEL_TYPE@@";
+            arch = "@@UBOOT_ARCH@@";
+            os = "linux";
+            compression = "@@KERNEL2_COMPRESSION@@";
             load = <@@UBOOT_LOADADDRESS@@>;
             entry = <@@UBOOT_ENTRYPOINT@@>;
             hash-1 {
@@ -32,15 +46,25 @@
     };
 
     configurations {
-        default = "@@CONF_NAME@@";
-        @@CONF_NAME@@ {
-            description = "Boot Linux kernel + FDT";
+        default = "@@DEFAULT_CONF@@";
+        @@CONF_PRIMARY@@ {
+            description = "Primary config (kernel-1 + FDT)";
             kernel = "kernel-1";
             fdt = "@@FDT_NAME@@";
             hash-1 {
                 algo = "@@FIT_HASH_ALG@@";
             };
-__IOTGW_CONF_SIGNATURE__
+__IOTGW_CONF1_SIGNATURE__
+        };
+
+        @@CONF_SECONDARY@@ {
+            description = "Secondary config (kernel-2 + FDT)";
+            kernel = "kernel-2";
+            fdt = "@@FDT_NAME@@";
+            hash-1 {
+                algo = "@@FIT_HASH_ALG@@";
+            };
+__IOTGW_CONF2_SIGNATURE__
         };
     };
 };
