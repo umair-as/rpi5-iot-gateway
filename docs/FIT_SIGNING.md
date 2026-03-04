@@ -29,6 +29,22 @@ Expected FIT overrides (already in this project):
 - `KERNEL_CLASSES:fitflow = " kernel-fitimage "`
 - `KERNEL_BOOTCMD:fitflow = "bootm"`
 
+### Optional: Enable Project-Owned Custom ITS (Phase A)
+Default behavior remains Yocto auto-generated ITS. To opt in to project-owned
+single-config ITS parity mode:
+
+```yaml
+local_conf_header:
+  fit_custom_its: |
+    IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
+```
+
+Notes:
+- Default is `0` (OFF).
+- Phase A template path:
+  `meta-iot-gateway/recipes-kernel/linux/files/iotgw-fit-single.its.in`
+- Current template targets `broadcom/bcm2712-rpi-5-b.dtb` by default.
+
 ## 2. Generate FIT Signing Keys (Manual)
 Use a dedicated keypair (do not reuse RAUC or mTLS keys):
 
@@ -120,6 +136,14 @@ Expected:
 - kernel and FDT entries present
 - hash nodes present (sha256)
 - signature-related fields present when signing is enabled
+
+If custom ITS mode is enabled, also inspect deployed ITS source:
+
+```bash
+ls build/tmp-glibc/deploy/images/raspberrypi5/fitImage-its-*.its
+grep -nE 'configurations|default =|conf-bcm2712-rpi-5-b.dtb' \
+  build/tmp-glibc/deploy/images/raspberrypi5/fitImage-its-*.its
+```
 
 Verify FIT bundle payload uses FIT bootfiles:
 
