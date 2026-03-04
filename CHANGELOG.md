@@ -10,33 +10,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-03-04
 
 ### Added
-- Mainline kernel/FIT flow for Raspberry Pi 5 with signed FIT boot path and verification.
-- RAUC OTA stack with A/B slots, HTTPS streaming support, bundle hooks, updater/cert provisioning, and adaptive slot alignment guardrails.
-- OTBR integration with hardened services, firewall gating, and web UI integration.
-- Edge monitoring foundation via `edge-healthd` recipe integration and packaging alignment.
-- RAUC wrapper hardening under systemd-run with explicit namespace/write-path assumptions and audit markers.
+- Mainline Linux `6.18` integration and FIT bundle flow for Raspberry Pi 5.
+- Signed FIT boot path support with runtime verification plumbing and key injection flow.
+- RAUC bundle-hook bootfiles update path with U-Boot environment tracking.
+- RAUC HTTPS streaming support in system config, including TLS paths and operator runbook coverage.
+- OTA updater service/timer and OTA certificate provisioning pipeline with dev-CA support.
+- Dedicated `uboot-env` partition support and RAUC slot/layout handling updates.
+- Adaptive OTA slot-alignment build validation gate for rootfs slots.
+- Deterministic RAUC streaming preflight stages with TLS profile selection (`system`/`data`).
+- RAUC D-Bus integration across updater, manual wrapper, and banner observability.
+- Persistent machine-id flow for immutable rootfs (`/data/machine-id` -> `/etc/machine-id`) with consumer fallbacks.
+- OTBR host integration improvements, including hardened services, system user setup, telemetry flags, and `iotgw-otbrctl`.
+- OTBR web UI integration and default/network policy gating by `IOTGW_ENABLE_OTBR`.
+- Edge monitoring integration (`edge-healthd`) with packagegroup gating and refactor to `.inc + versioned .bb`.
+- Platform support additions for container-host tuning and mosquitto security integration.
 
 ### Changed
-- RAUC update behavior hardened across preflight, TLS profile selection, and D-Bus observability paths.
-- Machine identity handling updated for immutable rootfs: persistent `/data/machine-id` bound into `/etc/machine-id` with runtime fallbacks.
-- RAUC config recipe resolution hardened to avoid filename/FILESPATH collisions.
-- Build workflow expanded with FIT-focused bundle targets (`bundle-dev-full-fit`, fast base FIT bundle target).
+- Build workflow expanded with FIT-focused bundle targets (`bundle-dev-full-fit`, `bundle-base-full-fit-fast`).
+- OTA cert trust source aligned to a single CA source-of-truth with runtime chain validation.
+- RAUC config recipe selection hardened to avoid filename and `FILESPATH` collisions.
+- `iotgw-rauc-install` execution model hardened under `systemd-run` with explicit transient unit controls.
+- Wrapper audit behavior improved with dispatch profile and writable-path assumption logs.
+- Image defaults updated to mask legacy `vconsole` and legacy `rauc-mark-good` behavior in favor of updated flow.
+- Packagegroups and image composition updated for OTA dependencies and developer tooling.
 
 ### Fixed
-- First-boot bootargs regression and adaptive slot geometry misalignment handling.
-- OTA certificate CA source-of-truth and chain validation behavior.
-- Post-update service/image integration issues around U-Boot env follow-up paths.
-- Bootfiles/FIT payload consistency issues affecting runtime boot reliability.
-- SSH hardening interaction that blocked expected sudo behavior under per-connection service mode.
+- First-boot bootargs regression that could carry stale static root arguments.
+- Post-`uboot-env` follow-up service/image integration issues.
+- FIT boot reliability issues around stale bootfiles payload and signed image/runtime DTB consistency.
+- U-Boot FIT hash verification compatibility (`sha256`) path.
+- OTA overlay reconciliation reliability in slot hooks (`pre-install`/`post-install`) and migration behavior.
+- OTBR web UI regressions (missing frontend assets, tested defaults, nft init behavior).
+- SSH per-connection hardening side effect that blocked expected sudo usage.
+- Build/QA issues in OTBR path (including buildpath QA and telemetry enablement).
 
 ### Security
 - Broader service hardening and sandboxing coverage (systemd hardening drop-ins, namespace controls).
-- NVMe module loading restrictions and platform hardening updates.
+- NVMe module loading restrictions and related hardening updates.
+- RAUC/manual install-path hardening for namespace-constrained contexts.
 - OTA/update-path reliability hardening to reduce unsafe manual recovery scenarios.
+- Firewall rule gating improvements for OTBR-enabled deployments.
 
 ### Documentation
 - Expanded runbooks for build, security, partitions, RAUC OTA, FIT signing, and OTBR operation.
 - Added adaptive OTA benchmark and troubleshooting guidance for field validation.
+- Added HTTPS streaming OTA notes and refreshed operational docs for build/partition/security flows.
 
 [Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/umair-as/rpi5-iot-gateway/releases/tag/v0.1.0
