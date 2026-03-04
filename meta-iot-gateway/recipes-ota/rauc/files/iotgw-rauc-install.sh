@@ -31,6 +31,7 @@ URL_SCHEME=""
 URL_PATH=""
 BUNDLE_INPUT=""
 EXTRA_ARGS=()
+SYSTEMD_DISPATCH_RW_PATHS=()
 
 log() { printf '[iotgw-rauc-install] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
@@ -75,6 +76,40 @@ Wrapper options:
   --allow-missing-ota-user  Continue if streaming sandbox-user does not exist (requires --debug-unsafe)
 EOF
     exit 2
+}
+
+append_dispatch_rw_path() {
+    local path="$1"
+    local existing
+    [ -n "${path}" ] || return 0
+    for existing in "${SYSTEMD_DISPATCH_RW_PATHS[@]}"; do
+        [ "${existing}" = "${path}" ] && return 0
+    done
+    SYSTEMD_DISPATCH_RW_PATHS+=("${path}")
+}
+
+build_dispatch_rw_paths() {
+    local fw_env_dir=""
+    SYSTEMD_DISPATCH_RW_PATHS=()
+
+    # RAUC/runtime state and journald IPC can touch /run.
+    append_dispatch_rw_path "/run"
+
+    # Fallback download stores bundle in /tmp before local install.
+    if [ "${FALLBACK_DOWNLOAD}" -eq 1 ]; then
+        append_dispatch_rw_path "/tmp"
+    fi
+
+    if [ "${BOOT_RW_REQUIRED}" -eq 1 ]; then
+        append_dispatch_rw_path "${BOOT_MP}"
+    fi
+
+    case "${fw_env_target:-}" in
+        /boot/*|/uboot-env/*)
+            fw_env_dir="$(dirname "${fw_env_target}")"
+            append_dispatch_rw_path "${fw_env_dir}"
+            ;;
+    esac
 }
 
 detect_streaming_sandbox_user() {
@@ -399,12 +434,44 @@ if [ -r /etc/fw_env.config ]; then
     esac
 fi
 
+if [ "${DIRECT_MODE}" -eq 1 ]; then
+    audit "systemd-run dispatch bypassed: --direct"
+elif [ "${DISPATCHED_MODE}" -eq 1 ]; then
+    audit "systemd-run dispatch bypassed: --no-systemd-run"
+fi
+
 # Prefer executing from systemd manager context to avoid hardened SSH session
 # namespace/capability differences from rauc.service.
 if [ "${DIRECT_MODE}" -eq 0 ] && [ "${DISPATCHED_MODE}" -eq 0 ]; then
     if command -v systemd-run >/dev/null 2>&1; then
+        local_rw_paths=""
+        systemd_props=()
         unit="iotgw-rauc-install-${RUN_ID}"
         reexec=(/usr/sbin/iotgw-rauc-install --direct)
+        build_dispatch_rw_paths
+        for path in "${SYSTEMD_DISPATCH_RW_PATHS[@]}"; do
+            local_rw_paths="${local_rw_paths:+${local_rw_paths} }${path}"
+        done
+        systemd_props=(
+            "--property=NoNewPrivileges=yes"
+            "--property=PrivateTmp=yes"
+            "--property=PrivateMounts=no"
+            "--property=ProtectSystem=full"
+            "--property=ProtectHome=yes"
+            "--property=ProtectKernelTunables=yes"
+            "--property=ProtectKernelModules=yes"
+            "--property=ProtectKernelLogs=yes"
+            "--property=ProtectControlGroups=yes"
+            "--property=RestrictNamespaces=yes"
+            "--property=RestrictSUIDSGID=yes"
+            "--property=LockPersonality=yes"
+            "--property=MemoryDenyWriteExecute=yes"
+            "--property=PrivateUsers=no"
+            "--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
+        )
+        for path in "${SYSTEMD_DISPATCH_RW_PATHS[@]}"; do
+            systemd_props+=("--property=ReadWritePaths=${path}")
+        done
         [ "${DRY_RUN}" -eq 1 ] && reexec+=(--dry-run)
         [ "${TLS_PROFILE}" != "system" ] && reexec+=(--tls-profile "${TLS_PROFILE}")
         [ "${FALLBACK_DOWNLOAD}" -eq 1 ] && reexec+=(--fallback-download)
@@ -412,13 +479,14 @@ if [ "${DIRECT_MODE}" -eq 0 ] && [ "${DISPATCHED_MODE}" -eq 0 ]; then
         [ "${TLS_INSECURE}" -eq 1 ] && reexec+=(--tls-insecure)
         [ "${ALLOW_MISSING_OTA_USER}" -eq 1 ] && reexec+=(--allow-missing-ota-user)
         reexec+=("${BUNDLE_INPUT}" "${EXTRA_ARGS[@]}")
-        audit "dispatching via systemd-run unit=${unit}"
+        audit "dispatching via systemd-run unit=${unit} profile=namespace-hardened rw_paths='${local_rw_paths}'"
         if systemd-run \
             --quiet \
             --wait \
             --collect \
             --pipe \
             --unit "${unit}" \
+            "${systemd_props[@]}" \
             "${reexec[@]}"; then
             INSTALL_RC=0
             audit "systemd-run install succeeded"
