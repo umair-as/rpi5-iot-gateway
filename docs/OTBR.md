@@ -34,7 +34,7 @@ Key differences from the legacy web UI:
 
 The `otbr-rpi5` recipe builds the OTBR agent with `-DOTBR_WEB=OFF` and
 depends on `otbr-webui` for the web interface. Source:
-[github.com/umair-uas/otbr-webui](https://github.com/umair-uas/otbr-webui)
+[github.com/umair-as/otbr-webui](https://github.com/umair-as/otbr-webui)
 
 ---
 

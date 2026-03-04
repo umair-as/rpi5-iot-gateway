@@ -88,7 +88,7 @@ bitbake iot-gw-image-dev
 
 ## 👤 Maintainer
 
-**Umair A.S** • [@umair-uas](https://github.com/umair-uas)
+**Umair A.S** • [@umair-as](https://github.com/umair-as)
 
 ---
 

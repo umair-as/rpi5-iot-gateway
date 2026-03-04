@@ -115,7 +115,7 @@ generate_motd() {
         printf "\n"
 
         # Footer
-        printf "    \033[0;36m📚 Documentation:\033[0m https://github.com/umair-uas/rpi5-iot-gateway\n"
+        printf "    \033[0;36m📚 Documentation:\033[0m https://github.com/umair-as/rpi5-iot-gateway\n"
         printf "    \033[0;36m💬 Support:\033[0m Umair A.S. \n"
         printf "\033[0m\n"
     } > "${MOTD_FILE}"

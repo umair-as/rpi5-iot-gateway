@@ -1,11 +1,11 @@
 SUMMARY = "OpenThread Border Router Web UI"
 DESCRIPTION = "Modern React + Fastify web interface for OTBR, replacing legacy otbr-web"
-HOMEPAGE = "https://github.com/umair-uas/otbr-webui"
+HOMEPAGE = "https://github.com/umair-as/otbr-webui"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=c0dee9c78b5e03982b9654da19cfa433"
 
 SRC_URI = " \
-    gitsm://github.com/umair-uas/otbr-webui.git;branch=main;protocol=https \
+    gitsm://github.com/umair-as/otbr-webui.git;branch=main;protocol=https \
     file://otbr-webui.service \
     file://otbr-webui.default \
 "

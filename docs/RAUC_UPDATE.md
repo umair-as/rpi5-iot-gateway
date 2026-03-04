@@ -55,6 +55,17 @@ Behavior notes:
   `connect`, `tls-verify`
 - unsafe debug flags are gated by `--debug-unsafe` and are audit-logged
 
+Security follow-up (open):
+
+- current target D-Bus policy installed by RAUC allows any local client to send
+  messages to `de.pengutronix.rauc`:
+  `/usr/share/dbus-1/system.d/de.pengutronix.rauc.conf`
+- service activation remains root-owned via:
+  `/usr/share/dbus-1/system-services/de.pengutronix.rauc.service`
+- track as hardening follow-up: tighten D-Bus policy to an explicit allow-list
+  (root/system group/service account) and verify wrapper workflows still work
+  (`iotgw-rauc-install`, `rauc status`, mark-good path)
+
 Track progress:
 
 ```bash
