@@ -110,8 +110,17 @@ echo "[bootscript] Selected RAUC slot ${rauc_slot} (root=${bootpart})"
 
 echo "[RAUC] Loading kernel from boot partition; slot=${rauc_slot} root=${bootpart}"
 
+# Avoid source/destination overlap for large FIT images: load fitImage at a
+# dedicated high address instead of ${kernel_addr_r}.
+if test "x@@KERNEL_IMAGETYPE@@" = "xfitImage"; then
+    test -n "${iotgw_fit_addr_r}" || setenv iotgw_fit_addr_r 0x08000000
+    setenv iotgw_kernel_load_addr ${iotgw_fit_addr_r}
+else
+    setenv iotgw_kernel_load_addr ${kernel_addr_r}
+fi
+
 # Load kernel and boot
-if fatload @@BOOT_MEDIA@@ 0:1 ${kernel_addr_r} @@KERNEL_IMAGETYPE@@; then
+if fatload @@BOOT_MEDIA@@ 0:1 ${iotgw_kernel_load_addr} @@KERNEL_IMAGETYPE@@; then
     echo "[RAUC] Loaded @@KERNEL_IMAGETYPE@@"
 else
     echo "[RAUC] Failed to load @@KERNEL_IMAGETYPE@@ from /boot"
@@ -123,31 +132,45 @@ if test ! -e @@BOOT_MEDIA@@ 0:2 uboot.env; then saveenv; fi;
 if test "x@@KERNEL_IMAGETYPE@@" = "xfitImage"; then
     test -n "${iotgw_fit_verify}" || setenv iotgw_fit_verify "required"
     test -n "${iotgw_fit_algo}" || setenv iotgw_fit_algo "sha256,rsa2048"
-    test -n "${iotgw_fit_conf_default}" || setenv iotgw_fit_conf_default "conf-bcm2712-rpi-5-b.dtb"
+    test -n "${iotgw_fit_conf_default}" || setenv iotgw_fit_conf_default "conf-primary"
     test -n "${iotgw_fit_conf}" || setenv iotgw_fit_conf "${iotgw_fit_conf_default}"
     # Raspberry Pi firmware applies runtime DT fixups/overlays before U-Boot.
     # Use firmware-prepared DTB by default to avoid early-kernel hangs seen
     # with static DTB from FIT config on this platform.
     test -n "${iotgw_fit_external_fdt}" || setenv iotgw_fit_external_fdt "1"
 
+    # Migration for older builds that used DTB-derived config names.
+    if test "x${iotgw_fit_conf}" = "xconf-bcm2712-rpi-5-b.dtb"; then
+        setenv iotgw_fit_conf "conf-primary"
+        setenv iotgw_fit_conf_default "conf-primary"
+        saveenv
+    fi
+
+    # Guard against stale/unknown config values.
+    if test "x${iotgw_fit_conf}" != "x${iotgw_fit_conf_default}" && test "x${iotgw_fit_conf}" != "xconf-recovery"; then
+        echo "[FIT] Invalid config '${iotgw_fit_conf}', resetting to default"
+        setenv iotgw_fit_conf "${iotgw_fit_conf_default}"
+        saveenv
+    fi
+
     echo "[FIT] verify=${iotgw_fit_verify} algo=${iotgw_fit_algo}"
     echo "[FIT] config default=${iotgw_fit_conf_default} selected=${iotgw_fit_conf}"
 
     if test -n "${iotgw_fit_conf}"; then
         if test "x${iotgw_fit_external_fdt}" = "x1"; then
-            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf} - ${fdt_addr}"
-            @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf} - ${fdt_addr}
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr}#${iotgw_fit_conf} - ${fdt_addr}"
+            @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr}#${iotgw_fit_conf} - ${fdt_addr}
         else
-            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf}"
-            @@KERNEL_BOOTCMD@@ ${kernel_addr_r}#${iotgw_fit_conf}
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr}#${iotgw_fit_conf}"
+            @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr}#${iotgw_fit_conf}
         fi
     else
         if test "x${iotgw_fit_external_fdt}" = "x1"; then
-            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}"
-            @@KERNEL_BOOTCMD@@ ${kernel_addr_r} - ${fdt_addr}
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr} - ${fdt_addr}"
+            @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr} - ${fdt_addr}
         else
-            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${kernel_addr_r}"
-            @@KERNEL_BOOTCMD@@ ${kernel_addr_r}
+            echo "[FIT] Boot command: @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr}"
+            @@KERNEL_BOOTCMD@@ ${iotgw_kernel_load_addr}
         fi
     fi
 else

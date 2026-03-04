@@ -31,7 +31,7 @@ Expected FIT overrides (already in this project):
 
 ### Optional: Enable Project-Owned Custom ITS (Phase A)
 Default behavior remains Yocto auto-generated ITS. To opt in to project-owned
-single-config ITS parity mode:
+custom ITS mode:
 
 ```yaml
 local_conf_header:
@@ -44,6 +44,23 @@ Notes:
 - Phase A template path:
   `meta-iot-gateway/recipes-kernel/linux/files/iotgw-fit-single.its.in`
 - Current template targets `broadcom/bcm2712-rpi-5-b.dtb` by default.
+- Current template supports multi-config layout:
+  - kernels: `kernel-1`, `kernel-2`
+  - configs: `conf-primary` (primary), `conf-recovery` (secondary)
+
+Optional Phase B selection policy overrides:
+
+```yaml
+local_conf_header:
+  fit_custom_its: |
+    IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
+    IOTGW_FIT_CUSTOM_ITS_DEFAULT_CONF:fitflow = "conf-primary"
+    # By default kernel-2 is auto-generated with gzip compression.
+    IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG:fitflow = "gzip"
+    IOTGW_FIT_CUSTOM_ITS_REQUIRE_DISTINCT_KERNELS:fitflow = "1"
+    # Optional: alternate kernel payload for kernel-2 node
+    # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH:fitflow = "/abs/path/to/linux-alt.bin"
+```
 
 ## 2. Generate FIT Signing Keys (Manual)
 Use a dedicated keypair (do not reuse RAUC or mTLS keys):
@@ -141,8 +158,23 @@ If custom ITS mode is enabled, also inspect deployed ITS source:
 
 ```bash
 ls build/tmp-glibc/deploy/images/raspberrypi5/fitImage-its-*.its
-grep -nE 'configurations|default =|conf-bcm2712-rpi-5-b.dtb' \
+grep -nE 'kernel-1|kernel-2|configurations|default =|conf-primary|conf-recovery' \
   build/tmp-glibc/deploy/images/raspberrypi5/fitImage-its-*.its
+```
+
+Confirm kernel variants are distinct:
+
+```bash
+dumpimage -l build/tmp-glibc/deploy/images/raspberrypi5/fitImage | \
+  grep -E 'Image [0-9] \\(kernel-|Compression:|Hash value:'
+```
+
+To test runtime config selection on target (U-Boot env):
+
+```bash
+fw_printenv iotgw_fit_conf iotgw_fit_conf_default
+fw_setenv iotgw_fit_conf conf-recovery
+reboot
 ```
 
 Verify FIT bundle payload uses FIT bootfiles:
