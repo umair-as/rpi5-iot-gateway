@@ -7,8 +7,8 @@ SUMMARY = "OTA mTLS certificate provisioning"
 DESCRIPTION = "Provisions device certificates for OTA update authentication. \
 Supports per-device certs from /boot/iotgw/ota/ or generates development \
 certificates for testing."
-HOMEPAGE = "https://github.com/umair-uas/rpi5-iot-gateway"
-RECIPE_MAINTAINER = "Umair A.S <umair-uas@users.noreply.github.com>"
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
+RECIPE_MAINTAINER = "Umair A.S <umair-as@users.noreply.github.com>"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 

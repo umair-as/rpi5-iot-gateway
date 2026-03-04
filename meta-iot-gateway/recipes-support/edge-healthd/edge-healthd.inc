@@ -7,7 +7,7 @@ SUMMARY = "Edge device health monitoring daemon"
 DESCRIPTION = "Continuously monitors device health (boot, services, resources, \
 time sync, updates) and writes structured JSON status for fleet management integration."
 HOMEPAGE = "https://github.com/umair-as/edge-healthd"
-RECIPE_MAINTAINER = "Umair A.S <umair-uas@users.noreply.github.com>"
+RECIPE_MAINTAINER = "Umair A.S <umair-as@users.noreply.github.com>"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=291c1ca2c1503b0e42022cd4bff87df5"
 

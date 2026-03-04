@@ -2,8 +2,8 @@ SUMMARY = "IoT Gateway OTBR D-Bus CLI (iotgw-otbrctl) for testing"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-SRC_URI = "git://github.com/umair-uas/iotgw-otbrctl.git;protocol=https;branch=main"
-SRCREV = "${AUTOREV}"
+SRC_URI = "git://github.com/umair-as/iotgw-otbrctl.git;protocol=https;branch=main"
+SRCREV = "d3d2c510138d5a9b23ef10435d441ce40e59637a"
 
 S = "${WORKDIR}/git"
 

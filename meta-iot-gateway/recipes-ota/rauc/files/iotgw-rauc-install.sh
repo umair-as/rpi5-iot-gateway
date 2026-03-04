@@ -577,7 +577,22 @@ if [ "${IS_URL}" -eq 1 ] && [ "${URL_SCHEME}" = "https" ] && [ "${INSTALL_SOURCE
 else
     rauc_cmd=(rauc install "${INSTALL_SOURCE}" "${EXTRA_ARGS[@]}")
 fi
-if "${rauc_cmd[@]}"; then
+# Filter rauc progress output: print on phase change or stage completion,
+# suppress repeated percentage lines for the same message.
+# set -o pipefail (active) ensures the pipeline exit reflects rauc's exit code.
+if "${rauc_cmd[@]}" 2>&1 | awk '
+    /^[[:space:]]*[0-9]+%/ {
+        pct = $1 + 0
+        sub(/^[[:space:]]*[0-9]+%[[:space:]]*/, "")
+        msg = $0
+        if (msg != last_msg || msg ~ /done\.$/ || pct == 100) {
+            printf "[%3d%%] %s\n", pct, msg
+            last_msg = msg
+        }
+        next
+    }
+    { print }
+'; then
     INSTALL_RC=0
     audit "rauc install succeeded"
 else
