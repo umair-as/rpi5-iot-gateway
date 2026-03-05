@@ -24,6 +24,25 @@ KERNEL_IMAGETYPE = "fitImage"
 KERNEL_CLASSES = " kernel-fitimage "
 inherit iotgw-fit-custom-its
 
+# Strategy A (optional): feed kernel-2 from an independent recovery kernel
+# build artifact instead of auto-generated kernel payload transformations.
+IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL ?= "0"
+IOTGW_FIT_RECOVERY_KERNEL_RECIPE ?= "linux-iotgw-mainline-recovery"
+IOTGW_FIT_RECOVERY_KERNEL_PATH ?= "${DEPLOY_DIR_IMAGE}/linux-recovery.bin"
+
+IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG ?= "none"
+
+python () {
+    if d.getVar("IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL") != "1":
+        return
+    recovery_recipe = d.getVar("IOTGW_FIT_RECOVERY_KERNEL_RECIPE")
+    if not recovery_recipe:
+        bb.fatal("IOTGW_FIT_RECOVERY_KERNEL_RECIPE is empty while Strategy A is enabled")
+    if not d.getVar("IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH"):
+        d.setVar("IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH", d.getVar("IOTGW_FIT_RECOVERY_KERNEL_PATH"))
+    d.appendVarFlag("do_assemble_fitimage", "depends", " %s:do_deploy" % recovery_recipe)
+}
+
 # Raspberry Pi firmware passes a runtime-prepared DTB to U-Boot. Inject FIT
 # public keys into deployed firmware DTBs so U-Boot control FDT can expose
 # /signature and enforce FIT config signatures on target.

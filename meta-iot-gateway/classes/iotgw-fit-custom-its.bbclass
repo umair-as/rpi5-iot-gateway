@@ -6,13 +6,14 @@ IOTGW_FIT_CUSTOM_ITS_TEMPLATE ?= "${WORKDIR}/iotgw-fit-single.its.in"
 IOTGW_FIT_CUSTOM_ITS_DEFAULT_DTB ?= "broadcom/bcm2712-rpi-5-b.dtb"
 IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH ?= ""
 IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG ?= "gzip"
+IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG ?= "none"
 IOTGW_FIT_CUSTOM_ITS_REQUIRE_DISTINCT_KERNELS ?= "1"
 IOTGW_FIT_CUSTOM_ITS_CONF_PRIMARY ?= "conf-primary"
 IOTGW_FIT_CUSTOM_ITS_CONF_SECONDARY ?= "conf-recovery"
 IOTGW_FIT_CUSTOM_ITS_DEFAULT_CONF ?= "${IOTGW_FIT_CUSTOM_ITS_CONF_PRIMARY}"
 
-# Required when kernel-2 auto-generation uses lzo compression.
-DEPENDS:append = "${@' lzop-native' if d.getVar('IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG') == 'lzo' else ''}"
+# Required when kernel-2 generation/path compression uses lzo.
+DEPENDS:append = "${@' lzop-native' if (d.getVar('IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG') == 'lzo' or d.getVar('IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG') == 'lzo') else ''}"
 
 do_assemble_fitimage:append() {
     if [ "${IOTGW_FIT_CUSTOM_ITS}" != "1" ]; then
@@ -51,16 +52,47 @@ do_assemble_fitimage:append() {
             ;;
     esac
 
-    kernel2_comp="${IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG}"
-    case "${kernel2_comp}" in
+    kernel2_comp_auto="${IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG}"
+    case "${kernel2_comp_auto}" in
         none|gzip|lzo) ;;
         *)
-            bbfatal "unsupported IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG='${kernel2_comp}' (expected: none|gzip|lzo)"
+            bbfatal "unsupported IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG='${kernel2_comp_auto}' (expected: none|gzip|lzo)"
             ;;
     esac
 
+    kernel2_comp_path="${IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG}"
+    case "${kernel2_comp_path}" in
+        none|gzip|lzo) ;;
+        *)
+            bbfatal "unsupported IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG='${kernel2_comp_path}' (expected: none|gzip|lzo)"
+            ;;
+    esac
+
+    kernel2_comp=""
     kernel2_path="${IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH}"
-    if [ -z "${kernel2_path}" ]; then
+    if [ -n "${kernel2_path}" ]; then
+        bbnote "Using Strategy A kernel-2 payload from path: ${kernel2_path} (comp=${kernel2_comp_path})"
+        [ -e "${kernel2_path}" ] || bbfatal "custom ITS mode could not find kernel-2 payload at '${kernel2_path}'"
+        kernel2_comp="${kernel2_comp_path}"
+        case "${kernel2_comp}" in
+            none) ;;
+            gzip)
+                kernel2_stage="${B}/linux-k2-path.bin"
+                cp -f "${kernel2_path}" "${kernel2_stage}"
+                gzip -9 -f "${kernel2_stage}"
+                mv -f "${kernel2_stage}.gz" "${kernel2_stage}"
+                kernel2_path="${kernel2_stage}"
+                ;;
+            lzo)
+                kernel2_stage="${B}/linux-k2-path.bin"
+                cp -f "${kernel2_path}" "${kernel2_stage}"
+                lzop -9 -f "${kernel2_stage}"
+                mv -f "${kernel2_stage}.lzo" "${kernel2_stage}"
+                kernel2_path="${kernel2_stage}"
+                ;;
+        esac
+    else
+        kernel2_comp="${kernel2_comp_auto}"
         bbnote "Auto-generating kernel-2 payload from local build artifacts (comp=${kernel2_comp})"
         kernel2_path="${B}/linux-k2.bin"
         rm -f "${kernel2_path}"
