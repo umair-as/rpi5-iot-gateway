@@ -35,3 +35,14 @@ local_conf_header:
     #   - dev-ca.crt / dev-ca.key
     # Keep this aligned with simple-ota-server CA used to sign server/device certs.
     RAUC_OTA_CA_DIR = "${IOTGW_RAUC_KEY_DIR}/ota-dev-ca"
+
+  fit_custom_its_strategy_a: |
+    # Optional: Strategy A for FIT recovery kernel.
+    # Uses an independent kernel payload for kernel-2/conf-recovery.
+    # Keep this disabled unless the artifact path is valid on your host.
+    # IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
+    # IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL:fitflow = "1"
+    # IOTGW_FIT_RECOVERY_KERNEL_RECIPE:fitflow = "linux-iotgw-mainline-recovery"
+    # IOTGW_FIT_RECOVERY_KERNEL_PATH:fitflow = "${DEPLOY_DIR_IMAGE}/linux-recovery.bin"
+    # Compression of the payload above: none|gzip|lzo
+    # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG:fitflow = "none"

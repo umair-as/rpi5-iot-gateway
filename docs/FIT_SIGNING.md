@@ -55,12 +55,41 @@ local_conf_header:
   fit_custom_its: |
     IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
     IOTGW_FIT_CUSTOM_ITS_DEFAULT_CONF:fitflow = "conf-primary"
-    # By default kernel-2 is auto-generated with gzip compression.
+    # Strategy B (default): auto-generate kernel-2 from local build artifacts.
     IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG:fitflow = "gzip"
     IOTGW_FIT_CUSTOM_ITS_REQUIRE_DISTINCT_KERNELS:fitflow = "1"
-    # Optional: alternate kernel payload for kernel-2 node
+    # Strategy A (optional): use an independent recovery kernel payload.
     # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH:fitflow = "/abs/path/to/linux-alt.bin"
+    # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG:fitflow = "gzip"  # none|gzip|lzo
 ```
+
+Notes:
+- `IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG` applies only to auto-generated
+  kernel-2 payloads (Strategy B).
+- `IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG` applies when
+  `IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH` is set (Strategy A).
+
+Strategy A concrete wiring (independent recovery kernel build):
+
+```yaml
+local_conf_header:
+  fit_custom_its: |
+    IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
+    IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL:fitflow = "1"
+    IOTGW_FIT_RECOVERY_KERNEL_RECIPE:fitflow = "linux-iotgw-mainline-recovery"
+    IOTGW_FIT_RECOVERY_KERNEL_PATH:fitflow = "${DEPLOY_DIR_IMAGE}/linux-recovery.bin"
+    IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG:fitflow = "gzip"
+```
+
+When enabled:
+- Recovery kernel artifact for FIT `kernel-2`: `linux-recovery.bin`
+- `IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG` controls how Strategy A payload
+  is staged in FIT (`none|gzip|lzo`). Recommended default: `gzip`.
+
+Important compatibility note:
+- If recovery boots the normal rootfs, keep recovery and primary kernel configs
+  module-ABI compatible (same effective module ABI options), otherwise modules
+  fail to load with `Exec format error` / `this_module` size mismatch.
 
 ## 2. Generate FIT Signing Keys (Manual)
 Use a dedicated keypair (do not reuse RAUC or mTLS keys):
@@ -169,6 +198,10 @@ dumpimage -l build/tmp-glibc/deploy/images/raspberrypi5/fitImage | \
   grep -E 'Image [0-9] \\(kernel-|Compression:|Hash value:'
 ```
 
+Expected with current Strategy A:
+- `kernel-1`: gzip compressed (primary kernel)
+- `kernel-2`: gzip compressed (recovery kernel from `linux-recovery.bin`)
+
 To test runtime config selection on target (U-Boot env):
 
 ```bash
@@ -214,6 +247,19 @@ Check U-Boot log for verification path:
 - hash verification success lines
 - no `Bad Data Hash` / `Unsupported hash algorithm`
 
+Quick functional checks after booting `conf-recovery`:
+
+```bash
+lsmod | head
+ip -4 a
+dmesg | grep -E "this_module|Exec format error|Bad Data Hash|Unsupported hash algorithm"
+```
+
+Expected:
+- modules load normally (`lsmod` non-empty)
+- recovery network interfaces are present
+- no module ABI mismatch errors
+
 ## 8. Negative Test (Tamper Protection)
 Goal: confirm tampered FIT does not boot.
 
@@ -241,6 +287,20 @@ Expected failure symptoms in U-Boot log:
 - Keep production private keys offline/HSM-managed.
 - Do not commit keys into repository.
 - Keep RAUC signing keys and FIT signing keys separate.
+
+## 10. Boot Timing Snapshot (Reference)
+Use this as a reference format for future comparisons. Keep raw serial logs in
+`/tmp/tio-session-logs/`; do not paste full logs into docs.
+
+Observed on RPi5 dev board (single run each):
+- Firmware handoff (`Starting OS`): primary ~6.27s, recovery ~6.43s
+- FIT read from boot partition: ~77.99 MB in ~3.23s
+- Kernel to init (`Run /sbin/init`): ~0.584s for both
+- Kernel to eth0 link up: primary ~9.415s, recovery ~9.447s
+
+Interpretation:
+- Recovery boot path is functionally equivalent to primary for early boot.
+- Most variability is from firmware/U-Boot jitter, not userspace.
 
 ## Related Files
 - `kas/local.yml`
