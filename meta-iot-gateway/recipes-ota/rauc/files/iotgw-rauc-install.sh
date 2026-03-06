@@ -244,6 +244,8 @@ preflight_streaming_url() {
     [ -n "${PREFLIGHT_STAGE}" ] && return 1
 
     curl_common=(
+        --fail
+        --location
         --silent
         --show-error
         --output /dev/null
@@ -274,11 +276,11 @@ preflight_streaming_url() {
     if "${curl_cmd[@]}" >/dev/null 2>&1; then
         audit "stage=tls-verify status=ok profile=${TLS_PROFILE}"
         return 0
+    else
+        curl_rc=$?
+        preflight_fail "tls-verify" "peer verification failed (CA/SAN/hostname mismatch or certificate chain error, curl_rc=${curl_rc})"
+        return 1
     fi
-
-    curl_rc=$?
-    preflight_fail "tls-verify" "peer verification failed (CA/SAN/hostname mismatch or certificate chain error, curl_rc=${curl_rc})"
-    return 1
 }
 
 download_streaming_bundle() {
