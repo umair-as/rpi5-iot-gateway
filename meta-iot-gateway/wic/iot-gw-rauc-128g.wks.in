@@ -7,13 +7,13 @@ part /boot --source bootimg-partition --ondisk mmcblk0 --fstype=vfat --label boo
 part /uboot-env --ondisk mmcblk0 --fstype=vfat --label ubootenv --align 4096 --size 16M --use-uuid --no-fstab-update
 
 # Root filesystem - Slot A
-part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096 --fixed-size 8G --uuid rootA-uuid
+part / --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096 --fixed-size 16G --uuid rootA-uuid
 
 # Root filesystem - Slot B
-part --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootB --align 4096 --fixed-size 8G --uuid rootB-uuid
+part --source rootfs --ondisk mmcblk0 --fstype=ext4 --label rootB --align 4096 --fixed-size 16G --uuid rootB-uuid
 
 # Data partition (persistent)
-part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 100G --fsoptions "defaults" --no-fstab-update
+part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 84G --fsoptions "defaults" --no-fstab-update
 # Note: runtime mount options (noatime/commit) are set in /etc/fstab, not here.
 
 bootloader --ptable gpt

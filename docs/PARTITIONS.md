@@ -24,7 +24,7 @@ on first boot by `rauc-grow-data-partition`.
 | **16GB** | `iot-gw-rauc-16g.wks.in` | 4G / 4G (fixed) | 2G | ~5GB |
 | **32GB** | `iot-gw-rauc-32g.wks.in` | 6G / 6G | 12G | ~8GB |
 | **64GB** | `iot-gw-rauc-64g.wks.in` | 8G / 8G | 36G | ~12GB |
-| **128GB** (default) | `iot-gw-rauc-128g.wks.in` | 8G / 8G | 100G | ~20GB |
+| **128GB** (default) | `iot-gw-rauc-128g.wks.in` | 16G / 16G | 84G | ~20GB |
 
 ---
 
@@ -93,7 +93,7 @@ on first boot by `rauc-grow-data-partition`.
 
 ## 128GB Layout (Default)
 
-**Total Allocated (base):** ~108.3GB
+**Total Allocated (base):** ~100.3GB
 **Target Card:** 128GB SD card
 **File:** `iot-gw-rauc-128g.wks.in`
 
@@ -101,14 +101,14 @@ on first boot by `rauc-grow-data-partition`.
 |---|--------|-------|------|------|-------|---------|
 | 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
 | 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
-| 3 | `/dev/mmcblk0p3` | `rootA` | 8G | ext4 | `/` | Root filesystem Slot A |
-| 4 | `/dev/mmcblk0p4` | `rootB` | 8G | ext4 | - | Root filesystem Slot B |
-| 5 | `/dev/mmcblk0p5` | `data` | 100G | ext4 | `/data` | Persistent user data |
+| 3 | `/dev/mmcblk0p3` | `rootA` | 16G | ext4 | `/` | Root filesystem Slot A |
+| 4 | `/dev/mmcblk0p4` | `rootB` | 16G | ext4 | - | Root filesystem Slot B |
+| 5 | `/dev/mmcblk0p5` | `data` | 84G | ext4 | `/data` | Persistent user data |
 
 **Remaining Space:** ~20GB reserved for auto-grow
 **After First Boot:** `/data` expands to fill remaining free space
 
-**Use Case:** 128GB media with large persistent storage while keeping A/B root slots unchanged
+**Use Case:** 128GB media with larger A/B root slots for growth while keeping substantial persistent storage
 
 ---
 
