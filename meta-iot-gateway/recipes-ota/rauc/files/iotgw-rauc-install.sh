@@ -33,13 +33,39 @@ BUNDLE_INPUT=""
 EXTRA_ARGS=()
 SYSTEMD_DISPATCH_RW_PATHS=()
 
-log() { printf '[iotgw-rauc-install] %s\n' "$*" >&2; }
-die() { log "ERROR: $*"; exit 1; }
+# ── colour setup (ANSI stripped automatically when stderr is not a terminal) ──
+if [ -t 2 ]; then
+    _CR=$'\033[0m'        # reset
+    _BCYAN=$'\033[1;36m'  # bold cyan   → tag prefix
+    _GREEN=$'\033[0;32m'  # green       → ok / succeeded
+    _YELLOW=$'\033[0;33m' # yellow      → starting / warn
+    _BRED=$'\033[1;31m'   # bold red    → failed / ERROR
+    _GRAY=$'\033[0;90m'   # dark gray   → skipped / run-id metadata
+    _BOLD=$'\033[1m'      # bold        → completed
+else
+    _CR='' _BCYAN='' _GREEN='' _YELLOW='' _BRED='' _GRAY='' _BOLD=''
+fi
+
+log() { printf '%s[iotgw-rauc-install]%s %s\n' "${_BCYAN}" "${_CR}" "$*" >&2; }
+die() { log "${_BRED}ERROR:${_CR} $*"; exit 1; }
 audit() {
-    local msg="$*"
-    log "run=${RUN_ID} ${msg}"
+    local plain="run=${RUN_ID} $*"
+    local display="${plain}"
+    if [ -n "${_CR}" ]; then
+        display="${display/run=${RUN_ID}/${_GRAY}run=${RUN_ID}${_CR}}"
+        display="${display//status=ok/${_GREEN}status=ok${_CR}}"
+        display="${display//status=starting/${_YELLOW}status=starting${_CR}}"
+        display="${display//status=failed/${_BRED}status=failed${_CR}}"
+        display="${display//status=warn/${_YELLOW}status=warn${_CR}}"
+        display="${display//status=skipped/${_GRAY}status=skipped${_CR}}"
+        display="${display//install succeeded/${_GREEN}install succeeded${_CR}}"
+        display="${display//install failed/${_BRED}install failed${_CR}}"
+        display="${display//completed /${_BOLD}completed ${_CR}}"
+        display="${display//UNSAFE/${_BRED}UNSAFE${_CR}}"
+    fi
+    printf '%s[iotgw-rauc-install]%s %s\n' "${_BCYAN}" "${_CR}" "${display}" >&2
     if command -v logger >/dev/null 2>&1; then
-        logger -t iotgw-rauc-install "run=${RUN_ID} ${msg}" || true
+        logger -t iotgw-rauc-install "${plain}" || true
     fi
 }
 
@@ -244,6 +270,8 @@ preflight_streaming_url() {
     [ -n "${PREFLIGHT_STAGE}" ] && return 1
 
     curl_common=(
+        --fail
+        --location
         --silent
         --show-error
         --output /dev/null
@@ -274,11 +302,11 @@ preflight_streaming_url() {
     if "${curl_cmd[@]}" >/dev/null 2>&1; then
         audit "stage=tls-verify status=ok profile=${TLS_PROFILE}"
         return 0
+    else
+        curl_rc=$?
+        preflight_fail "tls-verify" "peer verification failed (CA/SAN/hostname mismatch or certificate chain error, curl_rc=${curl_rc})"
+        return 1
     fi
-
-    curl_rc=$?
-    preflight_fail "tls-verify" "peer verification failed (CA/SAN/hostname mismatch or certificate chain error, curl_rc=${curl_rc})"
-    return 1
 }
 
 download_streaming_bundle() {

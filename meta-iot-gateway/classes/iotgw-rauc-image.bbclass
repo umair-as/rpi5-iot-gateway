@@ -8,7 +8,7 @@
 IMAGE_FSTYPES = "tar.bz2 ext4 wic.bz2 wic.bmap"
 
 # Use strong assignment to override meta-raspberrypi's default WKS_FILE
-WKS_FILE = "iot-gw-rauc-16g.wks.in"
+WKS_FILE = "iot-gw-rauc-128g.wks.in"
 
 # Packages required for RAUC flow
 IMAGE_INSTALL += " \
