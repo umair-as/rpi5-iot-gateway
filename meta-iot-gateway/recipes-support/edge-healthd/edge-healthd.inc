@@ -110,6 +110,7 @@ FILES:${PN} += " \
     ${systemd_system_unitdir}/edge-healthd.service \
     ${sysconfdir}/edge/healthd.conf \
     ${sysconfdir}/tmpfiles.d/edge-healthd.conf \
+    ${datadir}/dbus-1/system.d/edge-healthd-dbus.conf \
 "
 
 CONFFILES:${PN} += " \
