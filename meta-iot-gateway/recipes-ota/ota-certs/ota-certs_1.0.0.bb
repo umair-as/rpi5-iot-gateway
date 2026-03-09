@@ -30,7 +30,7 @@ RAUC_OTA_CA_DIR ?= ""
 
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "ota-certs-provision.service"
-SYSTEMD_AUTO_ENABLE:${PN} = "enable"
+SYSTEMD_AUTO_ENABLE:${PN} = "disable"
 
 do_install() {
     # Install provisioning script
@@ -73,6 +73,7 @@ do_install() {
         fi
 
         install -m 0644 "$ca_crt" ${D}${sysconfdir}/ota/ca.crt
+
     fi
 }
 
