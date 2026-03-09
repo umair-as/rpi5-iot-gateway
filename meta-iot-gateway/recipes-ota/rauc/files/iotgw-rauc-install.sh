@@ -1,635 +1,503 @@
 #!/usr/bin/env bash
+# iotgw-rauc-install — RAUC install wrapper
+#
+# Responsibilities:
+#   1. Re-dispatch via systemd-run for consistent privilege/namespace semantics
+#   2. Reconcile OTA certificates before HTTPS streaming installs
+#   3. Preflight connectivity check (single mTLS curl) for HTTPS URLs
+#   4. Remount /boot read-write if U-Boot env lives there (fw_env.config)
+#   5. Visual progress bar and result display
+#
+# TLS configuration for HTTPS streaming is read from /etc/rauc/system.conf
+# [streaming] section — rauc handles it natively; no CLI override needed.
 set -euo pipefail
 
+# ── state ─────────────────────────────────────────────────────────────────────
 BOOT_MP="/boot"
-MOUNTED_BEFORE=0
-RO_BEFORE=0
-MOUNTED_BY_US=0
-REMOUNTED_RW=0
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 INSTALL_RC=0
 DRY_RUN=0
 DIRECT_MODE=0
-DISPATCHED_MODE=0
-BOOT_RW_REQUIRED=1
-DEBUG_UNSAFE=0
-TLS_INSECURE=0
-ALLOW_MISSING_OTA_USER=0
-FALLBACK_DOWNLOAD=0
-TLS_PROFILE="system"
+NO_SYSTEMD_RUN=0
+VERBOSE=0
+BOOT_RW_REQUIRED=0
 IS_URL=0
-INSTALL_SOURCE=""
-DOWNLOAD_TMP=""
-PREFLIGHT_STAGE=""
-PREFLIGHT_MSG=""
-TLS_CA=""
-TLS_CERT=""
-TLS_KEY=""
-URL_HOST=""
-URL_PORT=""
-URL_SCHEME=""
-URL_PATH=""
 BUNDLE_INPUT=""
 EXTRA_ARGS=()
-SYSTEMD_DISPATCH_RW_PATHS=()
+URL_HOST=""
+URL_PORT=""
+TLS_CA="" TLS_CERT="" TLS_KEY=""
+MOUNTED_BY_US=0 RO_BEFORE=0 REMOUNTED_RW=0
 
-# ── colour setup (ANSI stripped automatically when stderr is not a terminal) ──
-if [ -t 2 ]; then
-    _CR=$'\033[0m'        # reset
-    _BCYAN=$'\033[1;36m'  # bold cyan   → tag prefix
-    _GREEN=$'\033[0;32m'  # green       → ok / succeeded
-    _YELLOW=$'\033[0;33m' # yellow      → starting / warn
-    _BRED=$'\033[1;31m'   # bold red    → failed / ERROR
-    _GRAY=$'\033[0;90m'   # dark gray   → skipped / run-id metadata
-    _BOLD=$'\033[1m'      # bold        → completed
+# ── terminal & colour ─────────────────────────────────────────────────────────
+IS_TTY=0; [ -t 2 ] && IS_TTY=1
+if [ "${IS_TTY}" -eq 1 ]; then
+    _CR=$'\033[0m'      _BGREEN=$'\033[1;32m'  _YELLOW=$'\033[0;33m'
+    _BRED=$'\033[1;31m' _GRAY=$'\033[0;90m'    _BOLD=$'\033[1m'  _CYAN=$'\033[0;36m'
 else
-    _CR='' _BCYAN='' _GREEN='' _YELLOW='' _BRED='' _GRAY='' _BOLD=''
+    _CR='' _BGREEN='' _YELLOW='' _BRED='' _GRAY='' _BOLD='' _CYAN=''
 fi
+_SPIN_PID=""
+_CHECK_W=44   # label column width for check lines
 
-log() { printf '%s[iotgw-rauc-install]%s %s\n' "${_BCYAN}" "${_CR}" "$*" >&2; }
-die() { log "${_BRED}ERROR:${_CR} $*"; exit 1; }
-audit() {
-    local plain="run=${RUN_ID} $*"
-    local display="${plain}"
-    if [ -n "${_CR}" ]; then
-        display="${display/run=${RUN_ID}/${_GRAY}run=${RUN_ID}${_CR}}"
-        display="${display//status=ok/${_GREEN}status=ok${_CR}}"
-        display="${display//status=starting/${_YELLOW}status=starting${_CR}}"
-        display="${display//status=failed/${_BRED}status=failed${_CR}}"
-        display="${display//status=warn/${_YELLOW}status=warn${_CR}}"
-        display="${display//status=skipped/${_GRAY}status=skipped${_CR}}"
-        display="${display//install succeeded/${_GREEN}install succeeded${_CR}}"
-        display="${display//install failed/${_BRED}install failed${_CR}}"
-        display="${display//completed /${_BOLD}completed ${_CR}}"
-        display="${display//UNSAFE/${_BRED}UNSAFE${_CR}}"
-    fi
-    printf '%s[iotgw-rauc-install]%s %s\n' "${_BCYAN}" "${_CR}" "${display}" >&2
-    if command -v logger >/dev/null 2>&1; then
-        logger -t iotgw-rauc-install "${plain}" || true
+# ── logging ───────────────────────────────────────────────────────────────────
+_syslog() { if command -v logger >/dev/null 2>&1; then logger -t iotgw-rauc-install "run=${RUN_ID} $*" || true; fi; }
+
+_log() {
+    _syslog "$*"
+    if [ "${VERBOSE}" -eq 1 ]; then
+        printf '%s %s\n' "$(date -u '+%H:%M:%S')" "$*" >&2
     fi
 }
 
-rauc_dbus_get_last_error() {
-    if ! command -v busctl >/dev/null 2>&1; then
-        return 1
-    fi
-    busctl --system get-property \
-        de.pengutronix.rauc \
-        / \
-        de.pengutronix.rauc.Installer \
-        LastError 2>/dev/null | sed -nE 's/^[^ ]+ "(.*)"$/\1/p'
+die() {
+    _syslog "ERROR: $*"
+    _spin_stop 2>/dev/null || true
+    printf '\n%sError:%s %s\n' "${_BRED}" "${_CR}" "$*" >&2
+    exit 1
 }
 
+# ── spinner ───────────────────────────────────────────────────────────────────
+_spin_stop() {
+    [ -n "${_SPIN_PID}" ] || return 0
+    kill "${_SPIN_PID}" 2>/dev/null || true
+    wait "${_SPIN_PID}" 2>/dev/null || true
+    _SPIN_PID=""
+}
+
+_spin_start() {
+    [ "${IS_TTY}" -eq 1 ] && [ "${VERBOSE}" -eq 0 ] || return 0
+    local label="$1"
+    (   local chars='-/|' i=0
+        trap 'exit 0' TERM INT
+        while true; do
+            printf '\r  %s%s%s  %s' "${_CYAN}" "${chars:$(( i % 3 )):1}" "${_CR}" "${label}" >&2
+            sleep 0.2; i=$(( i + 1 ))
+        done
+    ) &
+    _SPIN_PID=$!
+}
+
+# ── check-line display ────────────────────────────────────────────────────────
+_check_ok() {
+    local label="$1" detail="${2:-}"
+    _spin_stop
+    [ "${VERBOSE}" -eq 1 ] && return 0
+    if [ "${IS_TTY}" -eq 1 ]; then
+        printf '\r  %s✓%s  %-*s%s\n' "${_BGREEN}" "${_CR}" "${_CHECK_W}" "${label}" \
+            "${detail:+  ${_GRAY}${detail}${_CR}}" >&2
+    else
+        printf '  +  %-*s%s\n' "${_CHECK_W}" "${label}" "${detail:+  ${detail}}" >&2
+    fi
+}
+
+_check_fail() {
+    local label="$1" detail="${2:-}"
+    _spin_stop
+    [ "${VERBOSE}" -eq 1 ] && return 0
+    if [ "${IS_TTY}" -eq 1 ]; then
+        printf '\r  %s✗%s  %-*s%s\n' "${_BRED}" "${_CR}" "${_CHECK_W}" "${label}" \
+            "${detail:+  ${_GRAY}${detail}${_CR}}" >&2
+    else
+        printf '  !  %-*s%s\n' "${_CHECK_W}" "${label}" "${detail:+  ${detail}}" >&2
+    fi
+}
+
+_check_skip() {
+    local label="$1" reason="${2:-}"
+    _spin_stop
+    [ "${VERBOSE}" -eq 1 ] && return 0
+    if [ "${IS_TTY}" -eq 1 ]; then
+        printf '\r  %s—%s  %-*s%s\n' "${_GRAY}" "${_CR}" "${_CHECK_W}" "${label}" \
+            "${reason:+  ${_GRAY}${reason}${_CR}}" >&2
+    else
+        printf '  -  %-*s%s\n' "${_CHECK_W}" "${label}" "${reason:+  skipped}" >&2
+    fi
+}
+
+_section()     { printf '\n%s%s%s\n' "${_BOLD}" "$*" "${_CR}" >&2; }
+_result_ok()   { printf '\n  %s✓%s  %s\n' "${_BGREEN}" "${_CR}" "$*" >&2; }
+_result_fail() {
+    printf '\n  %s✗%s  %s\n' "${_BRED}" "${_CR}" "$1" >&2
+    if [ -n "${2:-}" ]; then printf '     %s%s%s\n' "${_GRAY}" "$2" "${_CR}" >&2; fi
+}
+
+# ── rauc DBus last error ───────────────────────────────────────────────────────
+_rauc_last_error() {
+    command -v busctl >/dev/null 2>&1 || return 1
+    busctl --system get-property de.pengutronix.rauc / \
+        de.pengutronix.rauc.Installer LastError \
+        2>/dev/null | sed -nE 's/^[^ ]+ "(.*)"$/\1/p'
+}
+
+# ── usage ─────────────────────────────────────────────────────────────────────
 usage() {
     cat >&2 <<'EOF'
-Usage: iotgw-rauc-install [wrapper options] <bundle|url> [rauc install args...]
+Usage: iotgw-rauc-install [options] <bundle|url> [rauc install args...]
 
-Wrapper for `rauc install` that temporarily remounts /boot read-write so
-fw_setenv-backed bootloader updates succeed, then restores prior mount state.
-If `/etc/fw_env.config` does not point into `/boot`, remount is skipped.
+Wrapper for `rauc install` that handles certificate reconciliation, preflight
+connectivity checks, /boot remounting, and visual progress display.
 
-By default, it dispatches itself through `systemd-run` for consistent
-privilege/mount namespace semantics on hardened systems.
+For HTTPS URLs, TLS config is read from /etc/rauc/system.conf [streaming].
 
-Wrapper options:
-  --direct                  Run install path directly (no dispatch)
-  --no-systemd-run          Disable systemd-run dispatch
-  -n, --n, --dry-run        Print planned actions and exit
-  --tls-profile <name>      TLS profile for HTTPS URLs: system|data (default: system)
-  --fallback-download       On HTTPS preflight failure, download bundle then install local file
-  --debug-unsafe            Allow explicitly unsafe debug-only flags
-  --tls-insecure            Disable TLS peer verification (requires --debug-unsafe)
-  --allow-missing-ota-user  Continue if streaming sandbox-user does not exist (requires --debug-unsafe)
+Options:
+  -n, --dry-run        Print planned actions and exit
+  -v, --verbose        Show timestamped log output (disables visual UX)
+  --no-systemd-run     Skip systemd-run dispatch (debugging only)
+  -h, --help           Show this help
+
+Internal:
+  --direct             Used by systemd-run re-exec; skips outer dispatch
 EOF
     exit 2
 }
 
-append_dispatch_rw_path() {
-    local path="$1"
-    local existing
-    [ -n "${path}" ] || return 0
-    for existing in "${SYSTEMD_DISPATCH_RW_PATHS[@]}"; do
-        [ "${existing}" = "${path}" ] && return 0
-    done
-    SYSTEMD_DISPATCH_RW_PATHS+=("${path}")
-}
-
-build_dispatch_rw_paths() {
-    local fw_env_dir=""
-    SYSTEMD_DISPATCH_RW_PATHS=()
-
-    # RAUC/runtime state and journald IPC can touch /run.
-    append_dispatch_rw_path "/run"
-
-    # Fallback download stores bundle in /tmp before local install.
-    if [ "${FALLBACK_DOWNLOAD}" -eq 1 ]; then
-        append_dispatch_rw_path "/tmp"
-    fi
-
-    if [ "${BOOT_RW_REQUIRED}" -eq 1 ]; then
-        append_dispatch_rw_path "${BOOT_MP}"
-    fi
-
-    case "${fw_env_target:-}" in
-        /boot/*|/uboot-env/*)
-            fw_env_dir="$(dirname "${fw_env_target}")"
-            append_dispatch_rw_path "${fw_env_dir}"
-            ;;
-    esac
-}
-
-detect_streaming_sandbox_user() {
-    local conf="/etc/rauc/system.conf"
-    if [ -r "${conf}" ]; then
-        awk -F= '
-            /^\[streaming\]/ { in_stream=1; next }
-            /^\[/ { in_stream=0 }
-            in_stream && $1 ~ /^[[:space:]]*sandbox-user[[:space:]]*$/ {
-                gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2)
-                print $2
-                exit
-            }' "${conf}" 2>/dev/null || true
-    fi
-}
-
-set_tls_profile_paths() {
-    case "${TLS_PROFILE}" in
-        system)
-            TLS_CA="/etc/ota/ca.crt"
-            TLS_CERT="/etc/ota/device.crt"
-            TLS_KEY="/etc/ota/device.key"
-            ;;
-        data)
-            TLS_CA="/data/ota-ca.crt"
-            TLS_CERT="/data/ota-device.crt"
-            TLS_KEY="/data/ota-device.key"
-            ;;
-        *)
-            die "invalid --tls-profile '${TLS_PROFILE}' (expected: system|data)"
-            ;;
-    esac
-}
-
-parse_url_fields() {
-    local input="$1"
-    local rest auth_host path hostport
-
-    URL_SCHEME=""
-    URL_HOST=""
-    URL_PORT=""
-    URL_PATH=""
-
-    case "${input}" in
-        https://*)
-            URL_SCHEME="https"
-            URL_PORT="443"
-            ;;
-        http://*)
-            URL_SCHEME="http"
-            URL_PORT="80"
-            ;;
-        *)
-            return 1
-            ;;
-    esac
-
-    rest="${input#*://}"
-    auth_host="${rest%%/*}"
-    path="/${rest#*/}"
-    [ "${rest}" = "${auth_host}" ] && path="/"
-    hostport="${auth_host##*@}"
-
+# ── URL parsing ───────────────────────────────────────────────────────────────
+# Extracts URL_HOST and URL_PORT from an http(s):// URL.
+_parse_url() {
+    local rest hostport
+    case "$1" in https://*) URL_PORT="443" ;; http://*) URL_PORT="80" ;; *) return 1 ;; esac
+    rest="${1#*://}"; hostport="${rest%%/*}"; hostport="${hostport##*@}"
     if [[ "${hostport}" == *:* ]]; then
-        URL_HOST="${hostport%%:*}"
-        URL_PORT="${hostport##*:}"
+        URL_HOST="${hostport%%:*}"; URL_PORT="${hostport##*:}"
     else
         URL_HOST="${hostport}"
     fi
-    URL_PATH="${path}"
-
-    [ -n "${URL_HOST}" ] || return 1
-    [ -n "${URL_PORT}" ] || return 1
-    return 0
+    [ -n "${URL_HOST}" ]
 }
 
-preflight_fail() {
-    PREFLIGHT_STAGE="$1"
-    PREFLIGHT_MSG="$2"
-    audit "stage=${PREFLIGHT_STAGE} status=failed reason='${PREFLIGHT_MSG}'"
+# ── TLS config from system.conf ───────────────────────────────────────────────
+# Reads tls-ca / tls-cert / tls-key from [streaming] section into TLS_* globals.
+# Used only for the preflight curl check; rauc install reads system.conf natively.
+_read_streaming_tls() {
+    local conf="/etc/rauc/system.conf"
+    [ -r "${conf}" ] || return 1
+    local vals
+    vals="$(awk -F'[[:space:]]*=[[:space:]]*' '
+        /^\[streaming\]/   { in_s=1; next }
+        /^\[/              { in_s=0 }
+        in_s && NF==2 && $1=="tls-ca"   { print "TLS_CA="$2 }
+        in_s && NF==2 && $1=="tls-cert" { print "TLS_CERT="$2 }
+        in_s && NF==2 && $1=="tls-key"  { print "TLS_KEY="$2 }
+    ' "${conf}" 2>/dev/null)"
+    TLS_CA="$(printf '%s\n'   "${vals}" | sed -n 's/^TLS_CA=//p')"
+    TLS_CERT="$(printf '%s\n' "${vals}" | sed -n 's/^TLS_CERT=//p')"
+    TLS_KEY="$(printf '%s\n'  "${vals}" | sed -n 's/^TLS_KEY=//p')"
+    [ -n "${TLS_CA}" ] && [ -n "${TLS_CERT}" ] && [ -n "${TLS_KEY}" ]
+}
+
+# ── ota-certs-provision ───────────────────────────────────────────────────────
+_reconcile_ota_certs() {
+    local label="OTA certificates" rc=0
+    _spin_start "${label}"
+    _log "cert-reconcile starting"
+
+    if command -v systemctl >/dev/null 2>&1 \
+            && systemctl cat ota-certs-provision.service >/dev/null 2>&1; then
+        if systemctl restart ota-certs-provision.service; then
+            _log "cert-reconcile ok method=systemd"
+            _check_ok "${label}"
+            return 0
+        fi
+        rc=$?
+    elif [ -x /usr/sbin/ota-certs-provision ]; then
+        if /usr/sbin/ota-certs-provision >/dev/null 2>&1; then
+            _log "cert-reconcile ok method=direct"
+            _check_ok "${label}"
+            return 0
+        fi
+        rc=$?
+    else
+        rc=127
+    fi
+
+    _log "cert-reconcile failed rc=${rc}"
+    _check_fail "${label}" "rc=${rc}"
     return 1
 }
 
-preflight_streaming_url() {
-    local sandbox_user
-    local file
-    local curl_rc
-    local curl_common=()
-    local curl_cmd=()
+# ── preflight connectivity check ──────────────────────────────────────────────
+# Single mTLS curl against the bundle URL — verifies TCP, TLS handshake, and
+# full CA chain in one shot.  TLS config is read from system.conf [streaming].
+_preflight_url() {
+    local label="Server  ${URL_HOST}:${URL_PORT}" curl_rc=0
 
-    PREFLIGHT_STAGE=""
-    PREFLIGHT_MSG=""
-    set_tls_profile_paths
+    command -v curl >/dev/null 2>&1 || die "curl not found"
+    _read_streaming_tls \
+        || die "cannot read TLS config from /etc/rauc/system.conf [streaming]"
 
-    audit "stage=resolve status=starting host=${URL_HOST}"
-    if command -v getent >/dev/null 2>&1; then
-        if getent ahostsv4 "${URL_HOST}" >/dev/null 2>&1 || getent ahosts "${URL_HOST}" >/dev/null 2>&1; then
-            audit "stage=resolve status=ok host=${URL_HOST}"
-        else
-            preflight_fail "resolve" "host '${URL_HOST}' could not be resolved"
-            return 1
-        fi
-    else
-        audit "stage=resolve status=skipped reason='getent unavailable'"
-    fi
-
-    sandbox_user="$(detect_streaming_sandbox_user)"
-    if [ -n "${sandbox_user}" ]; then
-        audit "stage=user-check status=starting user=${sandbox_user}"
-        if id -u "${sandbox_user}" >/dev/null 2>&1; then
-            audit "stage=user-check status=ok user=${sandbox_user}"
-        elif [ "${ALLOW_MISSING_OTA_USER}" -eq 1 ]; then
-            audit "stage=user-check status=warn user=${sandbox_user} reason='missing user accepted by debug override'"
-        else
-            preflight_fail "user-check" "streaming sandbox-user '${sandbox_user}' not found (use --debug-unsafe --allow-missing-ota-user only for triage)"
-            return 1
-        fi
-    else
-        audit "stage=user-check status=skipped reason='no sandbox-user in /etc/rauc/system.conf'"
-    fi
-
-    audit "stage=tls-files status=starting profile=${TLS_PROFILE}"
-    for file in "${TLS_CA}" "${TLS_CERT}" "${TLS_KEY}"; do
-        if [ ! -r "${file}" ]; then
-            preflight_fail "tls-files" "required TLS file is missing/unreadable: ${file}"
-            return 1
-        fi
+    for f in "${TLS_CA}" "${TLS_CERT}" "${TLS_KEY}"; do
+        [ -r "${f}" ] || { _check_fail "${label}" "missing: $(basename "${f}")"; return 1; }
     done
-    audit "stage=tls-files status=ok profile=${TLS_PROFILE}"
 
-    command -v curl >/dev/null 2>&1 || preflight_fail "connect" "curl command not found"
-    [ -n "${PREFLIGHT_STAGE}" ] && return 1
+    _spin_start "${label}"
+    _log "preflight connect starting host=${URL_HOST} port=${URL_PORT}"
 
-    curl_common=(
-        --fail
-        --location
-        --silent
-        --show-error
-        --output /dev/null
-        --connect-timeout 5
-        --max-time 15
-        --range 0-0
-        --cert "${TLS_CERT}"
-        --key "${TLS_KEY}"
-    )
-
-    audit "stage=connect status=starting host=${URL_HOST} port=${URL_PORT}"
-    curl_cmd=(curl "${curl_common[@]}" --insecure "${BUNDLE_INPUT}")
-    if "${curl_cmd[@]}" >/dev/null 2>&1; then
-        audit "stage=connect status=ok host=${URL_HOST} port=${URL_PORT}"
-    else
-        curl_rc=$?
-        preflight_fail "connect" "failed to connect to ${URL_HOST}:${URL_PORT} or perform TLS handshake (curl_rc=${curl_rc})"
-        return 1
-    fi
-
-    if [ "${TLS_INSECURE}" -eq 1 ]; then
-        audit "stage=tls-verify status=skipped reason='--tls-insecure enabled'"
+    if curl --fail --silent --show-error --location \
+            --output /dev/null \
+            --connect-timeout 5 --max-time 15 \
+            --range 0-0 \
+            --cacert "${TLS_CA}" --cert "${TLS_CERT}" --key "${TLS_KEY}" \
+            "${BUNDLE_INPUT}" >/dev/null 2>&1; then
+        _log "preflight connect ok"
+        _check_ok "${label}"
         return 0
     fi
-
-    audit "stage=tls-verify status=starting profile=${TLS_PROFILE}"
-    curl_cmd=(curl "${curl_common[@]}" --cacert "${TLS_CA}" "${BUNDLE_INPUT}")
-    if "${curl_cmd[@]}" >/dev/null 2>&1; then
-        audit "stage=tls-verify status=ok profile=${TLS_PROFILE}"
-        return 0
-    else
-        curl_rc=$?
-        preflight_fail "tls-verify" "peer verification failed (CA/SAN/hostname mismatch or certificate chain error, curl_rc=${curl_rc})"
-        return 1
-    fi
-}
-
-download_streaming_bundle() {
-    local curl_cmd=()
-    DOWNLOAD_TMP="/tmp/iotgw-rauc-install-${RUN_ID}.raucb"
-    set_tls_profile_paths
-
-    audit "stage=fallback-download status=starting target=${DOWNLOAD_TMP}"
-    if [ "${TLS_INSECURE}" -eq 1 ]; then
-        curl_cmd=(curl --fail --silent --show-error --location --retry 2 --connect-timeout 5 --max-time 900 --insecure --cert "${TLS_CERT}" --key "${TLS_KEY}" --output "${DOWNLOAD_TMP}" "${BUNDLE_INPUT}")
-    else
-        curl_cmd=(curl --fail --silent --show-error --location --retry 2 --connect-timeout 5 --max-time 900 --cacert "${TLS_CA}" --cert "${TLS_CERT}" --key "${TLS_KEY}" --output "${DOWNLOAD_TMP}" "${BUNDLE_INPUT}")
-    fi
-
-    if "${curl_cmd[@]}"; then
-        audit "stage=fallback-download status=ok target=${DOWNLOAD_TMP}"
-        INSTALL_SOURCE="${DOWNLOAD_TMP}"
-        return 0
-    fi
-
-    audit "stage=fallback-download status=failed target=${DOWNLOAD_TMP}"
+    curl_rc=$?
+    _log "preflight connect failed curl_rc=${curl_rc}"
+    _check_fail "${label}" "curl_rc=${curl_rc}"
     return 1
 }
 
-restore_mount_state() {
+# ── mount state restore (EXIT trap) ───────────────────────────────────────────
+_restore_mount_state() {
     local rc="$?"
-
-    if [ -n "${DOWNLOAD_TMP}" ] && [ -f "${DOWNLOAD_TMP}" ]; then
-        rm -f "${DOWNLOAD_TMP}" || true
-    fi
+    _spin_stop 2>/dev/null || true
 
     if [ "${MOUNTED_BY_US}" -eq 1 ]; then
-        if [ "${RO_BEFORE}" -eq 1 ] && [ "${REMOUNTED_RW}" -eq 1 ] && mountpoint -q "${BOOT_MP}"; then
+        if [ "${RO_BEFORE}" -eq 1 ] && [ "${REMOUNTED_RW}" -eq 1 ] \
+                && mountpoint -q "${BOOT_MP}"; then
             mount -o remount,ro "${BOOT_MP}" || true
-            audit "restored /boot to ro (wrapper-mounted case)"
         fi
-        umount "${BOOT_MP}" || true
-        audit "unmounted /boot (wrapper-mounted case), install_rc=${INSTALL_RC}, exit_rc=${rc}"
-        exit "${rc}"
-    fi
-
-    if [ "${RO_BEFORE}" -eq 1 ] && [ "${REMOUNTED_RW}" -eq 1 ] && mountpoint -q "${BOOT_MP}"; then
+        umount "${BOOT_MP}" 2>/dev/null || true
+    elif [ "${RO_BEFORE}" -eq 1 ] && [ "${REMOUNTED_RW}" -eq 1 ] \
+            && mountpoint -q "${BOOT_MP}"; then
         mount -o remount,ro "${BOOT_MP}" || true
-        audit "restored /boot to ro"
     fi
 
-    audit "completed install_rc=${INSTALL_RC}, exit_rc=${rc}"
+    _log "completed rc=${rc}"
+    if [ "${rc}" -eq 0 ]; then
+        _result_ok "OTA install complete"
+    else
+        _result_fail "OTA install failed" "exit code ${rc}"
+    fi
     exit "${rc}"
 }
 
+# ── argument parsing ──────────────────────────────────────────────────────────
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --direct)
-            DIRECT_MODE=1
-            shift
-            ;;
-        --no-systemd-run)
-            DISPATCHED_MODE=1
-            shift
-            ;;
-        --tls-profile)
-            [ "$#" -ge 2 ] || die "--tls-profile requires an argument"
-            TLS_PROFILE="$2"
-            shift 2
-            ;;
-        --fallback-download)
-            FALLBACK_DOWNLOAD=1
-            shift
-            ;;
-        --debug-unsafe)
-            DEBUG_UNSAFE=1
-            shift
-            ;;
-        --tls-insecure)
-            TLS_INSECURE=1
-            shift
-            ;;
-        --allow-missing-ota-user)
-            ALLOW_MISSING_OTA_USER=1
-            shift
-            ;;
-        -n|--n|--dry-run)
-            DRY_RUN=1
-            shift
-            ;;
-        -h|--help)
-            usage
-            ;;
-        --)
-            shift
-            break
-            ;;
-        -*)
-            die "unknown option: $1"
-            ;;
-        *)
-            break
-            ;;
+        --direct)         DIRECT_MODE=1;    shift ;;
+        --no-systemd-run) NO_SYSTEMD_RUN=1; shift ;;
+        -n|--dry-run)     DRY_RUN=1;        shift ;;
+        -v|--verbose)     VERBOSE=1;        shift ;;
+        -h|--help)        usage ;;
+        --)               shift; break ;;
+        -*)               die "unknown option: $1" ;;
+        *)                break ;;
     esac
 done
 
-[ "$#" -ge 1 ] || usage
-command -v rauc >/dev/null 2>&1 || die "rauc command not found"
-command -v mountpoint >/dev/null 2>&1 || die "mountpoint command not found"
-command -v findmnt >/dev/null 2>&1 || die "findmnt command not found"
-BUNDLE_INPUT="$1"
-shift
+[ "$#" -ge 1 ]            || usage
+command -v rauc       >/dev/null 2>&1 || die "rauc not found"
+command -v mountpoint >/dev/null 2>&1 || die "mountpoint not found"
+command -v findmnt    >/dev/null 2>&1 || die "findmnt not found"
+
+BUNDLE_INPUT="$1"; shift
 EXTRA_ARGS=("$@")
 
 case "${BUNDLE_INPUT}" in
-    http://*|https://*)
-        IS_URL=1
-        ;;
-    *)
-        IS_URL=0
-        ;;
+    http://*|https://*) IS_URL=1 ;;
+    *)                  IS_URL=0 ;;
 esac
 
 if [ "${IS_URL}" -eq 1 ]; then
-    parse_url_fields "${BUNDLE_INPUT}" || die "invalid bundle URL '${BUNDLE_INPUT}'"
-    if [ "${URL_SCHEME}" != "https" ] && [ "${DEBUG_UNSAFE}" -ne 1 ]; then
-        die "only https:// bundle URLs are supported (use --debug-unsafe to bypass for diagnostics)"
-    fi
+    _parse_url "${BUNDLE_INPUT}" || die "invalid bundle URL '${BUNDLE_INPUT}'"
+    [ "${BUNDLE_INPUT}" = "${BUNDLE_INPUT#http://}" ] \
+        || die "only https:// URLs are supported"
 fi
 
-if [ "${TLS_INSECURE}" -eq 1 ] || [ "${ALLOW_MISSING_OTA_USER}" -eq 1 ]; then
-    [ "${DEBUG_UNSAFE}" -eq 1 ] || die "--tls-insecure/--allow-missing-ota-user require --debug-unsafe"
-fi
-
-if [ "${TLS_INSECURE}" -eq 1 ]; then
-    audit "UNSAFE debug mode enabled: TLS peer verification disabled"
-fi
-
-for arg in "${EXTRA_ARGS[@]}"; do
-    case "${arg}" in
-        --tls-ca|--tls-cert|--tls-key|--tls-no-verify)
-            if [ "${DEBUG_UNSAFE}" -ne 1 ]; then
-                die "manual '${arg}' is blocked; use --tls-profile (or --debug-unsafe for manual TLS debug)"
-            fi
-            ;;
-    esac
-done
-
+# Detect if /boot remount is needed (only when fw_env.config targets /boot)
 if [ -r /etc/fw_env.config ]; then
     fw_env_target="$(awk '!/^[[:space:]]*#/ && NF {print $1; exit}' /etc/fw_env.config || true)"
-    case "${fw_env_target}" in
-        /boot/*)
-            BOOT_RW_REQUIRED=1
-            ;;
-        *)
-            BOOT_RW_REQUIRED=0
-            ;;
+    case "${fw_env_target:-}" in
+        /boot/*) BOOT_RW_REQUIRED=1 ;;
+        *)       BOOT_RW_REQUIRED=0 ;;
     esac
 fi
 
-if [ "${DIRECT_MODE}" -eq 1 ]; then
-    audit "systemd-run dispatch bypassed: --direct"
-elif [ "${DISPATCHED_MODE}" -eq 1 ]; then
-    audit "systemd-run dispatch bypassed: --no-systemd-run"
-fi
-
-# Prefer executing from systemd manager context to avoid hardened SSH session
-# namespace/capability differences from rauc.service.
-if [ "${DIRECT_MODE}" -eq 0 ] && [ "${DISPATCHED_MODE}" -eq 0 ]; then
+# ── outer dispatch via systemd-run ───────────────────────────────────────────
+# Re-exec under systemd-run for consistent namespace/capability semantics
+# regardless of how the operator invoked us (SSH, serial, cloud agent).
+if [ "${DIRECT_MODE}" -eq 0 ] && [ "${NO_SYSTEMD_RUN}" -eq 0 ]; then
     if command -v systemd-run >/dev/null 2>&1; then
-        local_rw_paths=""
-        systemd_props=()
         unit="iotgw-rauc-install-${RUN_ID}"
         reexec=(/usr/sbin/iotgw-rauc-install --direct)
-        build_dispatch_rw_paths
-        for path in "${SYSTEMD_DISPATCH_RW_PATHS[@]}"; do
-            local_rw_paths="${local_rw_paths:+${local_rw_paths} }${path}"
-        done
-        systemd_props=(
-            "--property=NoNewPrivileges=yes"
-            "--property=PrivateTmp=yes"
-            "--property=PrivateMounts=no"
-            "--property=ProtectSystem=full"
-            "--property=ProtectHome=yes"
-            "--property=ProtectKernelTunables=yes"
-            "--property=ProtectKernelModules=yes"
-            "--property=ProtectKernelLogs=yes"
-            "--property=ProtectControlGroups=yes"
-            "--property=RestrictNamespaces=yes"
-            "--property=RestrictSUIDSGID=yes"
-            "--property=LockPersonality=yes"
-            "--property=MemoryDenyWriteExecute=yes"
-            "--property=PrivateUsers=no"
-            "--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6"
-        )
-        for path in "${SYSTEMD_DISPATCH_RW_PATHS[@]}"; do
-            systemd_props+=("--property=ReadWritePaths=${path}")
-        done
         [ "${DRY_RUN}" -eq 1 ] && reexec+=(--dry-run)
-        [ "${TLS_PROFILE}" != "system" ] && reexec+=(--tls-profile "${TLS_PROFILE}")
-        [ "${FALLBACK_DOWNLOAD}" -eq 1 ] && reexec+=(--fallback-download)
-        [ "${DEBUG_UNSAFE}" -eq 1 ] && reexec+=(--debug-unsafe)
-        [ "${TLS_INSECURE}" -eq 1 ] && reexec+=(--tls-insecure)
-        [ "${ALLOW_MISSING_OTA_USER}" -eq 1 ] && reexec+=(--allow-missing-ota-user)
+        [ "${VERBOSE}" -eq 1 ] && reexec+=(--verbose)
         reexec+=("${BUNDLE_INPUT}" "${EXTRA_ARGS[@]}")
-        audit "dispatching via systemd-run unit=${unit} profile=namespace-hardened rw_paths='${local_rw_paths}'"
-        if systemd-run \
-            --quiet \
-            --wait \
-            --collect \
-            --pipe \
-            --unit "${unit}" \
-            "${systemd_props[@]}" \
-            "${reexec[@]}"; then
-            INSTALL_RC=0
-            audit "systemd-run install succeeded"
+
+        rw_props=(--property=ReadWritePaths=/run)
+        [ "${BOOT_RW_REQUIRED}" -eq 1 ] && rw_props+=(--property=ReadWritePaths="${BOOT_MP}")
+        case "${fw_env_target:-}" in
+            /boot/*|/uboot-env/*)
+                rw_props+=(--property=ReadWritePaths="$(dirname "${fw_env_target}")")
+                ;;
+        esac
+
+        _log "dispatching via systemd-run unit=${unit}"
+        if [ "${VERBOSE}" -eq 0 ]; then
+            printf '\n%sOTA Install%s\n  %s%s%s\n' \
+                "${_BOLD}" "${_CR}" "${_GRAY}" "${BUNDLE_INPUT}" "${_CR}" >&2
+        fi
+
+        # On Ctrl-C / SIGTERM: cancel the rauc daemon install first (killing the
+        # rauc-install client alone does NOT abort the daemon — it keeps going).
+        # Then stop our transient unit.  systemd-run --wait does not forward signals.
+        trap '
+            printf "\n" >&2
+            _log "cancelled — requesting rauc Cancel"
+            busctl call de.pengutronix.rauc / de.pengutronix.rauc.Installer Cancel 2>/dev/null || true
+            systemctl stop "${unit}" 2>/dev/null || true
+            exit 130
+        ' INT TERM
+
+        if systemd-run --quiet --wait --collect --pipe \
+                --unit "${unit}" \
+                --property=NoNewPrivileges=yes \
+                --property=PrivateTmp=yes \
+                --property=PrivateMounts=no \
+                --property=ProtectSystem=full \
+                --property=ProtectHome=yes \
+                --property=ProtectKernelTunables=yes \
+                --property=ProtectKernelModules=yes \
+                --property=ProtectKernelLogs=yes \
+                --property=ProtectControlGroups=yes \
+                --property=RestrictNamespaces=yes \
+                --property=RestrictSUIDSGID=yes \
+                --property=LockPersonality=yes \
+                --property=MemoryDenyWriteExecute=yes \
+                --property=PrivateUsers=no \
+                "--property=RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" \
+                "${rw_props[@]}" \
+                "${reexec[@]}"; then
+            trap - INT TERM
             exit 0
         else
-            INSTALL_RC=$?
-            audit "systemd-run install failed rc=${INSTALL_RC}"
-            exit "${INSTALL_RC}"
+            _rc=$?
+            trap - INT TERM
+            exit "${_rc}"
         fi
     fi
-    audit "systemd-run not available; continuing direct"
+    _log "systemd-run not available; running direct"
 fi
 
-trap restore_mount_state EXIT INT TERM
+# EXIT only — INT/TERM use bash default (exit with 130/143), which triggers EXIT.
+# Registering the same handler for TERM+EXIT causes double-invocation when the
+# TERM handler calls `exit`, making the second EXIT run see $?=0 (false success).
+trap _restore_mount_state EXIT
 
-INSTALL_SOURCE="${BUNDLE_INPUT}"
-if [ "${IS_URL}" -eq 1 ] && [ "${URL_SCHEME}" = "https" ]; then
-    set_tls_profile_paths
-    if [ "${DRY_RUN}" -eq 1 ]; then
-        audit "preflight status=skipped reason='dry-run'"
-    elif preflight_streaming_url; then
-        audit "preflight status=ok profile=${TLS_PROFILE} host=${URL_HOST}"
-    else
-        if [ "${FALLBACK_DOWNLOAD}" -eq 1 ]; then
-            audit "preflight status=failed stage=${PREFLIGHT_STAGE} fallback=download"
-            download_streaming_bundle || die "fallback download failed after preflight stage=${PREFLIGHT_STAGE}"
-        else
-            die "preflight failed stage=${PREFLIGHT_STAGE}: ${PREFLIGHT_MSG}"
-        fi
-    fi
+if [ "${VERBOSE}" -eq 0 ] && [ "${DIRECT_MODE}" -eq 0 ]; then
+    printf '\n%sOTA Install%s\n  %s%s%s\n' \
+        "${_BOLD}" "${_CR}" "${_GRAY}" "${BUNDLE_INPUT}" "${_CR}" >&2
 fi
 
-if [ "${IS_URL}" -eq 1 ] && [ "${URL_SCHEME}" != "https" ]; then
-    audit "preflight status=skipped reason='non-https URL'"
+# ── preflight (HTTPS only) ────────────────────────────────────────────────────
+if [ "${IS_URL}" -eq 1 ] && [ "${DRY_RUN}" -eq 0 ]; then
+    _section "Preflight  ${URL_HOST}:${URL_PORT}"
+    _reconcile_ota_certs || die "OTA certificate reconciliation failed"
+    _preflight_url        || die "server not reachable: ${URL_HOST}:${URL_PORT}"
 fi
 
+# ── /boot remount ─────────────────────────────────────────────────────────────
 if [ "${BOOT_RW_REQUIRED}" -eq 1 ]; then
     if mountpoint -q "${BOOT_MP}"; then
-        MOUNTED_BEFORE=1
+        if findmnt -no OPTIONS "${BOOT_MP}" | grep -qw ro; then RO_BEFORE=1; fi
     else
         mount "${BOOT_MP}" || die "failed to mount ${BOOT_MP}"
         MOUNTED_BY_US=1
     fi
-
-    if [ "${MOUNTED_BEFORE}" -eq 1 ] || [ "${MOUNTED_BY_US}" -eq 1 ]; then
-        if findmnt -no OPTIONS "${BOOT_MP}" | grep -qw ro; then
-            RO_BEFORE=1
-        fi
+    if [ "${DRY_RUN}" -eq 0 ]; then
+        mount -o remount,rw "${BOOT_MP}" || die "failed to remount ${BOOT_MP} rw"
+        REMOUNTED_RW=1
+        _log "remounted ${BOOT_MP} rw"
     fi
 fi
 
+# ── dry-run ───────────────────────────────────────────────────────────────────
 if [ "${DRY_RUN}" -eq 1 ]; then
-    audit "dry-run bundle='${INSTALL_SOURCE}' mounted_before=${MOUNTED_BEFORE} ro_before=${RO_BEFORE}"
-    if [ "${BOOT_RW_REQUIRED}" -eq 1 ]; then
-        audit "dry-run would remount ${BOOT_MP} rw"
-    else
-        audit "dry-run: /boot remount not required (fw_env.config target='${fw_env_target:-unknown}')"
-    fi
-    if [ "${IS_URL}" -eq 1 ] && [ "${URL_SCHEME}" = "https" ] && [ "${INSTALL_SOURCE}" = "${BUNDLE_INPUT}" ]; then
-        if [ "${TLS_INSECURE}" -eq 1 ]; then
-            audit "dry-run would run: rauc install --tls-no-verify --tls-cert '${TLS_CERT}' --tls-key '${TLS_KEY}' '${INSTALL_SOURCE}' ${EXTRA_ARGS[*]}"
-        else
-            audit "dry-run would run: rauc install --tls-ca '${TLS_CA}' --tls-cert '${TLS_CERT}' --tls-key '${TLS_KEY}' '${INSTALL_SOURCE}' ${EXTRA_ARGS[*]}"
-        fi
-    else
-        audit "dry-run would run: rauc install '${INSTALL_SOURCE}' ${EXTRA_ARGS[*]}"
-    fi
-    INSTALL_RC=0
+    printf '  %swould run:%s rauc install %s\n' \
+        "${_GRAY}" "${_CR}" "${BUNDLE_INPUT}" >&2
+    [ "${BOOT_RW_REQUIRED}" -eq 1 ] \
+        && printf '  %swould remount%s %s rw\n' "${_GRAY}" "${_CR}" "${BOOT_MP}" >&2
     exit 0
 fi
 
-audit "starting bundle='${INSTALL_SOURCE}' mounted_before=${MOUNTED_BEFORE} ro_before=${RO_BEFORE}"
-if [ "${BOOT_RW_REQUIRED}" -eq 1 ]; then
-    mount -o remount,rw "${BOOT_MP}" || die "failed to remount ${BOOT_MP} rw"
-    REMOUNTED_RW=1
-    audit "remounted /boot rw"
-else
-    audit "/boot remount skipped (fw_env.config target='${fw_env_target:-unknown}')"
-fi
+# ── rauc install ──────────────────────────────────────────────────────────────
+# TLS for HTTPS streaming is handled by rauc natively via system.conf [streaming].
+_section "Installing"
+_log "rauc install starting bundle='${BUNDLE_INPUT}'"
 
-audit "running rauc install"
-if [ "${IS_URL}" -eq 1 ] && [ "${URL_SCHEME}" = "https" ] && [ "${INSTALL_SOURCE}" = "${BUNDLE_INPUT}" ]; then
-    if [ "${TLS_INSECURE}" -eq 1 ]; then
-        rauc_cmd=(rauc install --tls-no-verify --tls-cert "${TLS_CERT}" --tls-key "${TLS_KEY}" "${INSTALL_SOURCE}" "${EXTRA_ARGS[@]}")
-    else
-        rauc_cmd=(rauc install --tls-ca "${TLS_CA}" --tls-cert "${TLS_CERT}" --tls-key "${TLS_KEY}" "${INSTALL_SOURCE}" "${EXTRA_ARGS[@]}")
+rauc_cmd=(rauc install "${BUNDLE_INPUT}" "${EXTRA_ARGS[@]}")
+
+if [ "${VERBOSE}" -eq 1 ]; then
+    # Verbose: rauc output flows through directly; operator sees raw progress.
+    if ! "${rauc_cmd[@]}"; then
+        INSTALL_RC=$?
+        _log "rauc install failed rc=${INSTALL_RC}"
+        exit "${INSTALL_RC}"
     fi
-else
-    rauc_cmd=(rauc install "${INSTALL_SOURCE}" "${EXTRA_ARGS[@]}")
-fi
-# Filter rauc progress output: print on phase change or stage completion,
-# suppress repeated percentage lines for the same message.
-# set -o pipefail (active) ensures the pipeline exit reflects rauc's exit code.
-if "${rauc_cmd[@]}" 2>&1 | awk '
-    /^[[:space:]]*[0-9]+%/ {
-        pct = $1 + 0
-        sub(/^[[:space:]]*[0-9]+%[[:space:]]*/, "")
-        msg = $0
-        if (msg != last_msg || msg ~ /done\.$/ || pct == 100) {
-            printf "[%3d%%] %s\n", pct, msg
-            last_msg = msg
-        }
+elif [ "${IS_TTY}" -eq 1 ]; then
+    # TTY normal: background spinner (continuous) + awk updates label from rauc output.
+    # Spinner animates at fixed 0.2s rate; label shows current phase/percentage.
+    # During silent phases (e.g. delta hash build) spinner keeps going, label holds last value.
+    _bname="$(basename "${BUNDLE_INPUT}")"
+    _pfile="$(mktemp)"
+    printf '%s' "${_bname}" > "${_pfile}"
+
+    (   chars='-/|'; i=0
+        trap 'exit 0' TERM INT
+        while true; do
+            label="$(cat "${_pfile}" 2>/dev/null || printf '%s' "${_bname}")"
+            printf '\r\033[K  %s%s%s  %s' "${_CYAN}" "${chars:$(( i % 3 )):1}" "${_CR}" "${label}" >&2
+            sleep 0.2
+            i=$(( i + 1 ))
+        done
+    ) &
+    _SPIN_PID=$!
+
+    set +e
+    "${rauc_cmd[@]}" 2>&1 | awk \
+        -v pfile="${_pfile}" -v bname="${_bname}" '
+    BEGIN { pct=0; phase=bname }
+    /^[[:space:]]*installing[[:space:]]*$/ { next }
+    /\(installing:/ {
+        s=$0; sub(/^.*\(installing:[[:space:]]*/,"",s)
+        pct=int(s); sub(/^[0-9]+%\)[[:space:]]*/,"",s)
+        if (s!="") { phase=s; gsub(/[[:space:]]+$/,"",phase) }
+        printf "[%3d%%]  %s", pct, phase > pfile; close(pfile)
         next
     }
-    { print }
-'; then
-    INSTALL_RC=0
-    audit "rauc install succeeded"
-else
-    INSTALL_RC=$?
-    if rauc_last_error="$(rauc_dbus_get_last_error || true)"; then
-        if [ -n "${rauc_last_error}" ]; then
-            audit "rauc dbus LastError='${rauc_last_error}'"
-        fi
+    /^[[:space:]]*[0-9]+%/ {
+        s=$0; sub(/^[[:space:]]*/,"",s)
+        pct=int(s); sub(/^[0-9]+%[[:space:]]*/,"",s)
+        if (s!="") { phase=s; gsub(/[[:space:]]+$/,"",phase) }
+        printf "[%3d%%]  %s", pct, phase > pfile; close(pfile)
+        next
+    }
+    ' >/dev/null
+    _pipe_status=("${PIPESTATUS[@]}")
+    set -e
+    _spin_stop
+    printf '\n' >&2
+    rm -f "${_pfile}"
+    INSTALL_RC="${_pipe_status[0]}"
+    if [ "${INSTALL_RC}" -ne 0 ]; then
+        err="$(_rauc_last_error 2>/dev/null || true)"
+        [ -n "${err}" ] && _log "rauc LastError=${err}"
+        _log "rauc install failed rc=${INSTALL_RC}"
+        exit "${INSTALL_RC}"
     fi
-    audit "rauc install failed rc=${INSTALL_RC}"
-    exit "${INSTALL_RC}"
+else
+    # Non-TTY (automated): completely silent; syslog and rauc event log have the record.
+    if ! "${rauc_cmd[@]}" >/dev/null 2>&1; then
+        INSTALL_RC=$?
+        err="$(_rauc_last_error 2>/dev/null || true)"
+        [ -n "${err}" ] && _log "rauc LastError=${err}"
+        _log "rauc install failed rc=${INSTALL_RC}"
+        exit "${INSTALL_RC}"
+    fi
 fi
+
+INSTALL_RC=0
+_log "rauc install succeeded"

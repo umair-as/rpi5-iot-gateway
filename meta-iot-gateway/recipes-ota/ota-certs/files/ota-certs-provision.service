@@ -9,7 +9,6 @@ Documentation=man:openssl(1)
 After=local-fs.target
 Before=ota-updater.timer
 RequiresMountsFor=/boot /data
-ConditionPathExists=!/var/lib/ota-certs-provision.done
 
 [Service]
 Type=oneshot
