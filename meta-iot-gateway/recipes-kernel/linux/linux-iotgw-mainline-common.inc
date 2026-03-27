@@ -17,6 +17,9 @@ KBUILD_DEFCONFIG:raspberrypi5 ?= "defconfig"
 
 COMPATIBLE_MACHINE = "^raspberrypi5$"
 
+# Gate Raspberry Pi firmware RTC backport for easy A/B build testing.
+IOTGW_ENABLE_RPI_RTC ?= "1"
+
 # Keep this baseline recipe minimal for initial bring-up.
 KERNEL_FEATURES:remove = "features/debug/printk.scc"
 KERNEL_FEATURES:remove = "features/kernel-sample/kernel-sample.scc"
@@ -30,3 +33,6 @@ do_kernel_configcheck[noexec] = "1"
 # meta-raspberrypi's raspberrypi5 machine config. Limit DTB build
 # to the one known-available board target for initial bring-up.
 KERNEL_DEVICETREE:raspberrypi5 = "broadcom/bcm2712-rpi-5-b.dtb"
+
+SRC_URI:append = "${@' file://0001-rtc-rtc-rpi-add-simple-RTC-driver-for-Raspberry-Pi.patch' if d.getVar('IOTGW_ENABLE_RPI_RTC') == '1' else ''}"
+SRC_URI:append = "${@' file://0002-arm64-dts-broadcom-bcm2712-add-rpi-rtc-node.patch' if d.getVar('IOTGW_ENABLE_RPI_RTC') == '1' else ''}"

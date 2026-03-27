@@ -108,6 +108,17 @@ Comprehensive kernel hardening for production.
 
 ---
 
+### `igw_tpm_slb9672`
+
+TPM2 baseline for SPI-attached Infineon SLB9672 class devices.
+
+**Features:** Built-in (`=y`) TPM core/TIS/TIS-SPI stack and SPI host path.
+
+**Developer note:** `SPI_SPIDEV` is intentionally left commented in the
+fragment. Avoid enabling spidev on the same SPI chip-select used by TPM.
+
+---
+
 ## Enabling Feature Sets
 
 ### Via KAS Overlay
@@ -124,6 +135,16 @@ local_conf_header:
 
 ```bash
 IOTGW_KERNEL_FEATURES="igw_containers igw_networking_iot" make dev
+```
+
+### RTC Backport Gate (Mainline Providers)
+
+Raspberry Pi firmware RTC backport can be toggled with:
+
+```yaml
+local_conf_header:
+  rtc_gate: |
+    IOTGW_ENABLE_RPI_RTC = "1"   # set to "0" to disable rtc-rpi patch/fragment
 ```
 
 ## DTB Selection

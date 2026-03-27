@@ -180,12 +180,20 @@ Enable optional kernel feature sets via `IOTGW_KERNEL_FEATURES`:
 - `igw_networking_iot` — WireGuard, CAN, VLAN
 - `igw_security_prod` — KSPP hardening (recommended for production)
 - `igw_observability_dev` — BPF, kprobes, ftrace (development only)
+- `igw_tpm_slb9672` — TPM2 over SPI baseline config for Infineon SLB9672 class devices
 
 Example (in `kas/local.yml`):
 ```yaml
 local_conf_header:
   kernel_features: |
     IOTGW_KERNEL_FEATURES = "igw_containers igw_networking_iot igw_security_prod"
+```
+
+Optional RTC backport gate (mainline providers):
+```yaml
+local_conf_header:
+  rtc_gate: |
+    IOTGW_ENABLE_RPI_RTC = "1"   # set "0" to build without rpi-rtc backport
 ```
 
 ### Optional: OpenThread Border Router (OTBR)
