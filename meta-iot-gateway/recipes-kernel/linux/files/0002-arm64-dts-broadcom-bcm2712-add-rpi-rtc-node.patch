@@ -1,0 +1,49 @@
+From 8d3a2d83cb2a1f2e4fdf2f8f1e9d0a4d343f5f8f Mon Sep 17 00:00:00 2001
+From: IoT Gateway Maintainers <maintainers@iotgw.local>
+Date: Fri, 27 Mar 2026 18:01:00 +0000
+Subject: [PATCH] arm64: dts: broadcom: bcm2712: add Raspberry Pi firmware RTC
+ node
+
+Enable the Raspberry Pi firmware-backed RTC device on the BCM2712 RPi5
+device tree and expose dtparam-compatible override hooks for enabling RTC
+and configuring backup-battery trickle charge voltage.
+
+This is required to support /dev/rtc0 and battery-backed time retention on
+Raspberry Pi 5 when using the mainline kernel provider.
+
+Signed-off-by: IoT Gateway Maintainers <maintainers@iotgw.local>
+---
+ .../boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts      | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
+index 5609db89eb67..a7ebca8a56d9 100644
+--- a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
++++ b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
+@@ -17,6 +17,11 @@ chosen: chosen {
+ 		stdout-path = "serial10:115200n8";
+ 	};
+ 
++	__overrides__ {
++		rtc = <&rpi_rtc>, "status";
++		rtc_bbat_vchg = <&rpi_rtc>, "trickle-charge-microvolt:0";
++	};
++
+ 	clk_rp1_xosc: clock-50000000 {
+ 		compatible = "fixed-clock";
+ 		#clock-cells = <0>;
+@@ -207,6 +212,12 @@ power: power {
+ 		firmware = <&firmware>;
+ 		#power-domain-cells = <1>;
+ 	};
++	rpi_rtc: rpi_rtc {
++		compatible = "raspberrypi,rpi-rtc";
++		firmware = <&firmware>;
++		status = "okay";
++		trickle-charge-microvolt = <0>;
++	};
+ };
+ 
+ /* uarta communicates with the BT module */
+-- 
+2.34.1

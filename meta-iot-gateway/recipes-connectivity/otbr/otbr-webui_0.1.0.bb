@@ -17,8 +17,8 @@ DEPENDS = "nodejs-bin-native"
 inherit systemd externalsrc
 
 # Set in local.conf/local.yml when using a local checkout:
-# EXTERNALSRC:pn-otbr-webui = "/home/umair/GitRepos/otbr-webui"
-# EXTERNALSRC_BUILD:pn-otbr-webui = "/home/umair/GitRepos/otbr-webui"
+# EXTERNALSRC:pn-otbr-webui = "/path/to/otbr-webui"
+# EXTERNALSRC_BUILD:pn-otbr-webui = "/path/to/otbr-webui"
 EXTERNALSRC ?= ""
 EXTERNALSRC_BUILD ?= "${WORKDIR}/build"
 

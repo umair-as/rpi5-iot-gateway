@@ -3,6 +3,8 @@ build/
 
 # KAS cache
 .kas/
+DL_SHARED/
+SSTATE/
 
 # Python virtual environment
 .venv/
@@ -44,3 +46,4 @@ dev/
 docs/signature.rst
 scripts/kernel-hardening-check-build.sh
 scripts/kernel-hardening-check-target.sh
+scripts/generate-splash.py

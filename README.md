@@ -85,8 +85,8 @@ RAUC is **enabled by default** in this distribution.
 # 1. Copy bundle to device
 scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full.raucb root@<device-ip>:/tmp/
 
-# 2. Install and reboot
-rauc install /tmp/iot-gw-bundle-full.raucb
+# 2. Install via project wrapper (handles preflight/cert checks)
+iotgw-rauc-install /tmp/iot-gw-bundle-full.raucb
 reboot
 
 # 3. Verify after reboot
@@ -115,17 +115,17 @@ See `kas/local.yml.example` for configuration template.
 
 ## 💿 Partition Layout
 
-### Default 16GB Layout (RAUC A/B)
+### Default 128GB Layout (RAUC A/B)
 
 | Device | Label | Size | Mount | Purpose |
 |--------|-------|------|-------|---------|
 | `/dev/mmcblk0p1` | `boot` | 256M | `/boot` | Bootloader & kernel (shared) |
 | `/dev/mmcblk0p2` | `ubootenv` | 16M | `/uboot-env` | Dedicated U-Boot environment store |
-| `/dev/mmcblk0p3` | `rootA` | 3G | `/` | Root filesystem Slot A |
-| `/dev/mmcblk0p4` | `rootB` | 3G | - | Root filesystem Slot B |
-| `/dev/mmcblk0p5` | `data` | 2G (auto-expands) | `/data` | Persistent data |
+| `/dev/mmcblk0p3` | `rootA` | 16G | `/` | Root filesystem Slot A |
+| `/dev/mmcblk0p4` | `rootB` | 16G | - | Root filesystem Slot B |
+| `/dev/mmcblk0p5` | `data` | 84G base (auto-expands) | `/data` | Persistent data |
 
-**Other sizes available:** 32GB, 64GB — see `meta-iot-gateway/wic/` for WKS files.
+**Other sizes available:** 16GB, 32GB, 64GB — see `meta-iot-gateway/wic/` for WKS files.
 **Note:** On first boot, `rauc-grow-data-partition` expands `/data` to fill remaining free space.
 
 ---
@@ -155,9 +155,10 @@ Two approaches:
 | Approach | When to Use | Config File |
 |----------|-------------|-------------|
 | **Auto-Fetch** (Default) | First-time users, single project | `kas/rpi5-autofetch.yml` |
-| **Local Clones** | Multi-project, CI/CD | `kas/rauc.yml` |
+| **Local Layer Mirrors/Clones** | Pre-synced layer workspace, CI mirrors | `rpi5.yml` (+ `kas/rauc.yml` for RAUC provider overrides) |
 
 Switch by editing the `includes:` section in `kas/local.yml`.
+For local layer paths, override the relevant entries under `repos:` in `kas/local.yml` with `path:` values.
 
 ### WiFi Configuration
 
@@ -179,12 +180,20 @@ Enable optional kernel feature sets via `IOTGW_KERNEL_FEATURES`:
 - `igw_networking_iot` — WireGuard, CAN, VLAN
 - `igw_security_prod` — KSPP hardening (recommended for production)
 - `igw_observability_dev` — BPF, kprobes, ftrace (development only)
+- `igw_tpm_slb9672` — TPM2 over SPI baseline config for Infineon SLB9672 class devices
 
 Example (in `kas/local.yml`):
 ```yaml
 local_conf_header:
   kernel_features: |
     IOTGW_KERNEL_FEATURES = "igw_containers igw_networking_iot igw_security_prod"
+```
+
+Optional RTC backport gate (mainline providers):
+```yaml
+local_conf_header:
+  rtc_gate: |
+    IOTGW_ENABLE_RPI_RTC = "1"   # set "0" to build without rpi-rtc backport
 ```
 
 ### Optional: OpenThread Border Router (OTBR)
@@ -234,7 +243,6 @@ Detailed documentation is available in the `docs/` directory:
 - **[OpenThread Border Router](docs/OTBR.md)** — OTBR setup, configuration, commissioning
 - **[OTA Updates](OTA_UPDATE.md)** — RAUC workflow, bundles, rollback (root level)
 - **[RAUC Update Runbook](docs/RAUC_UPDATE.md)** — Slot validation and adaptive update checks
-- **[FIT Setup and Signing](docs/FIT_SIGNING.md)** — FIT flow setup, signing, verification, tamper test
 
 ---
 
