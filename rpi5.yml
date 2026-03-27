@@ -11,16 +11,19 @@ target:
 repos:
 
   bitbake:
-    path: /home/umair/yocto_resource/layers/bitbake
+    url: https://git.openembedded.org/bitbake
+    branch: "2.8"
     layers: {}
 
   openembedded-core:
-    path: /home/umair/yocto_resource/layers/openembedded-core
+    url: https://git.openembedded.org/openembedded-core
+    branch: scarthgap
     layers:
       meta:
 
   meta-openembedded:
-    path: /home/umair/yocto_resource/layers/meta-openembedded
+    url: https://github.com/openembedded/meta-openembedded.git
+    branch: scarthgap
     layers:
       meta-oe:
       meta-python:
@@ -28,13 +31,16 @@ repos:
       meta-filesystems:
 
   meta-raspberrypi:
-    path: /home/umair/yocto_resource/layers/meta-raspberrypi
+    url: https://github.com/agherzan/meta-raspberrypi.git
+    branch: scarthgap
 
   meta-virtualization:
-    path: /home/umair/yocto_resource/layers/meta-virtualization
+    url: https://github.com/openembedded/meta-virtualization.git
+    branch: scarthgap
 
   meta-security:
-    path: /home/umair/yocto_resource/layers/meta-security
+    url: git://git.yoctoproject.org/meta-security
+    branch: scarthgap
 
   meta-iot-gateway:
     path: meta-iot-gateway
@@ -92,11 +98,6 @@ local_conf_header:
 
   image_hw_modules: |
     KERNEL_MODULE_AUTOLOAD:append = " i2c-dev"
-
-  shared_paths: |
-    DL_DIR = "/home/umair/yocto_resource/DL_SHARED"
-    SSTATE_DIR = "/home/umair/yocto_resource/SSTATE"
-    TMPDIR = "${TOPDIR}/tmp"
 
   prefer_bin_node: |
     # Use prebuilt Node.js binary to avoid long V8 builds

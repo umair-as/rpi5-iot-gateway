@@ -7,15 +7,18 @@ distro: iotgw
 
 repos:
   meta-lts-mixins:
-    path: /home/umair/yocto_resource/layers/meta-lts-mixins
+    url: https://github.com/yoctoproject/meta-lts-mixins.git
+    branch: scarthgap/u-boot
     layers:
       .:
 
   meta-rauc:
-    path: /home/umair/yocto_resource/layers/meta-rauc
+    url: https://github.com/rauc/meta-rauc.git
+    branch: scarthgap
 
   meta-rauc-community:
-    path: /home/umair/yocto_resource/layers/meta-rauc-community
+    url: https://github.com/rauc/meta-rauc-community.git
+    branch: scarthgap
     layers:
       meta-rauc-raspberrypi:
 
