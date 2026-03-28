@@ -1,0 +1,32 @@
+header:
+  version: 18
+
+repos:
+  meta-secure-core:
+    path: /home/umair/yocto_resource/layers/meta-secure-core
+    layers:
+      meta-secure-core-common:
+      meta-signing-key:
+      meta-tpm2:
+      # Phase 2: uncomment for LUKS-encrypted /data with TPM-sealed keys
+      # meta-encrypted-storage:
+
+local_conf_header:
+  tpm_spi: |
+    # Enable TPM2 over SPI (Infineon SLB9672 class profile + overlay wiring).
+    IOTGW_ENABLE_TPM_SLB9672 = "1"
+    # Optional overlay override if wiring/CS differs:
+    # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
+
+  tpm_provider_policy: |
+    # Select TPM2 userspace recipes from meta-secure-core/meta-tpm2.
+    # Mask overlapping TPM2 recipes from meta-security/meta-tpm to avoid
+    # duplicate-provider ambiguity (same PN/PV with different layer paths).
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-abrmd/.*\\.bb"
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-pytss/.*\\.bb"
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-pkcs11/.*\\.bb"
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-tss/.*\\.bb"
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-tools/.*\\.bb"
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-tss-engine/.*\\.bb"
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-openssl/.*\\.bb"
+    BBMASK:append = " .*/meta-security/meta-tpm/recipes-tpm2/tpm2-totp/.*\\.bb"

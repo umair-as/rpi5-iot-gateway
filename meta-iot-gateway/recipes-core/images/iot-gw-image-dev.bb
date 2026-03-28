@@ -25,6 +25,7 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     tmux \
     btop \
     iotgw-dev-ssh-keys \
+    ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' libtss2-tcti-device','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5','',d)} \
 "
 

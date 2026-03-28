@@ -52,6 +52,8 @@ ERROR_TO_WARN_QA ?= "version-going-backwards"
 # Init system and features (single source of truth)
 INIT_MANAGER ?= "systemd"
 VIRTUAL-RUNTIME_init_manager ?= "systemd"
+# Journald-only policy: do not pull classic syslog daemons from packagegroups.
+VIRTUAL-RUNTIME_base-utils-syslog = ""
 DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
 # RAUC is mandatory in this distro
 DISTRO_FEATURES:append = " rauc"
@@ -76,6 +78,7 @@ ROOT_HOME ?= "/root"
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 
 # Prune machine features that are not relevant on Raspberry Pi 5
@@ -86,6 +89,10 @@ MACHINE_FEATURES:remove = " apm"
 # Default profile is headless; switch via KAS/local.conf: IOTGW_PROFILE = "desktop"
 IOTGW_PROFILE ?= "headless"
 OVERRIDES .= ":${IOTGW_PROFILE}"
+
+# Headless/serial-focused default: skip vconsole setup unit to avoid
+# vtcon-related startup warnings on framebuffer-less deployments.
+IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
 
 # Headless profile trims windowing/graphics/audio stacks
 DISTRO_FEATURES:remove:headless = " x11 wayland vulkan opengl pulseaudio"
@@ -105,6 +112,14 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
+
+# Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
+# Enable to pull built-in TPM kernel config and Raspberry Pi firmware overlay.
+# Overlay default maps to Raspberry Pi's upstream TPM SPI overlay.
+IOTGW_ENABLE_TPM_SLB9672 ?= "0"
+IOTGW_TPM_DTO_OVERLAY ?= "tpm-slb9670"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', ' igw_tpm_slb9672', '', d)}"
+RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', '\\ndtparam=spi=on\\ndtoverlay=%s\\n' % d.getVar('IOTGW_TPM_DTO_OVERLAY'), '', d)}"
 
 # Raspberry Pi 5 DTB policy by kernel provider:
 # - Default to Model B only (smallest artifact set for rpi5 deployments).

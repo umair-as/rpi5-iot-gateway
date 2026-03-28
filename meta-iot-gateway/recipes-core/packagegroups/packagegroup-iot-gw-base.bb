@@ -13,6 +13,7 @@ RDEPENDS:${PN} = " \
     systemd-analyze \
     lynis \
     ota-certs \
+    ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' iotgw-tpm-policy tpm-ops','',d)} \
 "
 
 # Avoid allarch + dynamically renamed library deps (e.g., libgpiod -> libgpiod3)

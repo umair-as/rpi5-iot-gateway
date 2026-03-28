@@ -65,6 +65,14 @@ iotgw_rootfs_nftables() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_nftables;"
 
+###### Bluetooth configuration directory mode alignment
+iotgw_rootfs_bluetooth_mode() {
+    if [ -d ${IMAGE_ROOTFS}/etc/bluetooth ]; then
+        chmod 0555 ${IMAGE_ROOTFS}/etc/bluetooth || true
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_bluetooth_mode;"
+
 ###### systemd presets
 iotgw_rootfs_systemd_presets() {
     if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-systemd-presets/90-iotgw.preset ]; then

@@ -1,0 +1,8 @@
+# TPM device access policy for IoT Gateway
+#
+# /dev/tpmrm0 is the primary interface for userspace TPM2 consumers.
+# Keep /dev/tpm0 restricted; expose resource manager node to dedicated group.
+
+SUBSYSTEM=="tpmrm", KERNEL=="tpmrm[0-9]*", OWNER="root", GROUP="iotgwtpm", MODE="0660"
+SUBSYSTEM=="tpm", KERNEL=="tpm[0-9]*", OWNER="root", GROUP="root", MODE="0600"
+

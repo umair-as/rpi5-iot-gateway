@@ -1,0 +1,71 @@
+From 6ed73a7b31e1d2ce0b6f7d8cb6a5f9c84b9a3f11 Mon Sep 17 00:00:00 2001
+From: IoT Gateway Maintainers <maintainers@iotgw.local>
+Date: Fri, 27 Mar 2026 22:30:00 +0000
+Subject: [PATCH] arm64: dts: broadcom: rp1-common: add RP1 SPI0 controller
+
+Mainline 6.18's RP1 DT subset used by bcm2712-rpi-5-b lacks an exposed
+RP1 SPI controller node. Add a minimal SPI0 controller definition and the
+matching pinctrl states so board DTS files can attach SPI peripherals on
+the 40-pin header.
+
+This keeps the change focused for TPM-over-SPI bring-up without pulling in
+the full downstream RP1 DT surface.
+
+Signed-off-by: IoT Gateway Maintainers <maintainers@iotgw.local>
+---
+ arch/arm64/boot/dts/broadcom/rp1-common.dtsi | 34 +++++++++++++++++++
+ 1 file changed, 34 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/broadcom/rp1-common.dtsi b/arch/arm64/boot/dts/broadcom/rp1-common.dtsi
+index d8ff5c085a48..6d6c695f8f5d 100644
+--- a/arch/arm64/boot/dts/broadcom/rp1-common.dtsi
++++ b/arch/arm64/boot/dts/broadcom/rp1-common.dtsi
+@@ -40,6 +40,20 @@ rp1_clocks: clocks@40018000 {
+ 				       <200000000>;  // RP1_CLK_SYS
+ 	};
+ 
++	rp1_spi0: spi@40050000 {
++		compatible = "snps,dw-apb-ssi";
++		reg = <0x00 0x40050000 0x0 0x130>;
++		interrupts = <19 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&rp1_clocks RP1_CLK_SYS>;
++		clock-names = "ssi_clk";
++		#address-cells = <1>;
++		#size-cells = <0>;
++		num-cs = <2>;
++		status = "disabled";
++
++		/* Keep disabled unless a board DTS configures a concrete child. */
++	};
++
+ 	rp1_gpio: pinctrl@400d0000 {
+ 		compatible = "raspberrypi,rp1-gpio";
+ 		reg = <0x00 0x400d0000  0x0 0xc000>,
+@@ -54,6 +68,25 @@ rp1_gpio: pinctrl@400d0000 {
+ 		interrupts = <0 IRQ_TYPE_LEVEL_HIGH>,
+ 			     <1 IRQ_TYPE_LEVEL_HIGH>,
+ 			     <2 IRQ_TYPE_LEVEL_HIGH>;
++
++		rp1_spi0_gpio9: rp1-spi0-gpio9 {
++			function = "spi0";
++			pins = "gpio9", "gpio10", "gpio11";
++			bias-disable;
++			drive-strength = <12>;
++			slew-rate = <1>;
++		};
++
++		rp1_spi0_cs_gpio7: rp1-spi0-cs-gpio7 {
++			function = "spi0";
++			pins = "gpio7", "gpio8";
++			bias-pull-up;
++		};
++
++		/*
++		 * GPIO function muxing for SPI0 lives here because RP1 exposes
++		 * header SPI signals through the RP1 pin controller.
++		 */
+ 	};
+ 
+ 	rp1_eth: ethernet@40100000 {
+-- 
+2.34.1
