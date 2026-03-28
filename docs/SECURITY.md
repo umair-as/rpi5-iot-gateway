@@ -13,7 +13,7 @@ The distribution implements defense-in-depth security across multiple layers:
 - **Firewall**: nftables enabled by default
 - **Read-only Root**: RAUC A/B slots mounted read-only
 
-For FIT boot signing and verification chain setup, see [FIT Setup and Signing Guide](FIT_SIGNING.md).
+For FIT boot signing and verification chain setup, see the [FIT Signing Guide](FIT_SIGNING.md).
 
 ---
 
@@ -55,7 +55,9 @@ Distribution-level compiler flags provide additional runtime protections.
 
 ### System Configuration (sysctl)
 
-**Configuration:** `meta-iot-gateway/recipes-support/iotgw-hardening/files/99-iotgw-sysctl.conf`
+**Configuration:** `meta-iot-gateway/recipes-support/iotgw-sysctl/files/90-iotgw.conf`
+
+**Hardening overrides:** `meta-iot-gateway/recipes-security/iotgw-hardening/files/99-iotgw-hardening.conf`
 
 **Network Security:**
 - SYN flood protection (syncookies, retries, backlog)
@@ -221,6 +223,34 @@ lynis audit system > /data/lynis-baseline.txt
 
 # Compare over time
 diff /data/lynis-baseline.txt <(lynis audit system)
+```
+
+---
+
+## TPM 2.0 (Infineon SLB9672)
+
+When `IOTGW_ENABLE_TPM_SLB9672=1`, the following TPM security components are included:
+
+### Device Policy (`iotgw-tpm-policy`)
+- Dedicated `iotgwtpm` system user/group for least-privilege TPM access
+- udev rules enforce ownership on TPM device nodes:
+  - `/dev/tpmrm0` (resource manager): `root:iotgwtpm 0660` — group-accessible for applications
+  - `/dev/tpm0` (raw device): `root:root 0600` — root-only, prevents direct hardware access
+
+### Userspace Tools
+- **`tpm-ops`** — Rust CLI for TPM operations (info, TRNG, PCR reads, hashing, signing)
+- **`tpm2-tools`** — Low-level TPM2 CLI (dev image only)
+
+### Kernel Support
+- Fragment: `meta-iot-gateway/recipes-kernel/linux/files/fragments/tpm-slb9672.cfg`
+- TIS-SPI stack over RP1 DesignWare SPI controller
+- TPM TRNG feeds kernel entropy pool (`CONFIG_HW_RANDOM_TPM=y`)
+- `/dev/spidev` intentionally disabled on TPM chip-select to prevent conflicts
+
+### Build-Time Enablement
+```bash
+IOTGW_ENABLE_TPM_SLB9672=1 make dev
+# Or via kas/tpm.yml include in kas/local.yml
 ```
 
 ---

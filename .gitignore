@@ -40,8 +40,10 @@ meta-iot-gateway/recipes-ota/bundles/files/dev-key.pem
 # Local assistant and scratch files
 AGENTS.md
 claude.md
+CLAUDE.md
 .agents/
 .claude/
+docs/kernel-config-reference/
 dev/
 docs/signature.rst
 scripts/kernel-hardening-check-build.sh
