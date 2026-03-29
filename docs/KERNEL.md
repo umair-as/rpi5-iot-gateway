@@ -117,6 +117,20 @@ TPM2 baseline for SPI-attached Infineon SLB9672 class devices.
 **Developer note:** `SPI_SPIDEV` is intentionally left commented in the
 fragment. Avoid enabling spidev on the same SPI chip-select used by TPM.
 
+**Runtime wiring:** enabling `IOTGW_ENABLE_TPM_SLB9672 = "1"` appends:
+- `dtparam=spi=on`
+- `dtoverlay=${IOTGW_TPM_DTO_OVERLAY}` (default `tpm-slb9670`)
+
+If board wiring requires a different overlay parameterization, override
+`IOTGW_TPM_DTO_OVERLAY` in `kas/local.yml`.
+
+**TPM reset via GPIO (dev only):** If the TPM enters a bad state during
+development, toggle the reset pin (GPIO 24 on LetsTrust-style wiring):
+```bash
+pinctrl set 24 op && pinctrl set 24 dl && sleep 0.1 && pinctrl set 24 dh
+tpm2_startup -c
+```
+
 ---
 
 ## Enabling Feature Sets
@@ -145,6 +159,18 @@ Raspberry Pi firmware RTC backport can be toggled with:
 local_conf_header:
   rtc_gate: |
     IOTGW_ENABLE_RPI_RTC = "1"   # set to "0" to disable rtc-rpi patch/fragment
+```
+
+### TPM SPI Gate
+
+Enable TPM2-over-SPI profile and firmware overlay:
+
+```yaml
+local_conf_header:
+  tpm_spi: |
+    IOTGW_ENABLE_TPM_SLB9672 = "1"
+    # Optional override (default "tpm-slb9670")
+    # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
 ```
 
 ## DTB Selection

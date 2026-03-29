@@ -196,6 +196,15 @@ local_conf_header:
     IOTGW_ENABLE_RPI_RTC = "1"   # set "0" to build without rpi-rtc backport
 ```
 
+Optional TPM2 SPI profile (Infineon SLB9672 class):
+```yaml
+local_conf_header:
+  tpm_spi: |
+    IOTGW_ENABLE_TPM_SLB9672 = "1"
+    # Optional overlay override (default: tpm-slb9670)
+    # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
+```
+
 ### Optional: OpenThread Border Router (OTBR)
 
 Enable OTBR support at build time (includes the React-based web UI on port 80):

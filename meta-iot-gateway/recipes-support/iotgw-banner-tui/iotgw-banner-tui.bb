@@ -10,7 +10,7 @@ SRC_URI = " \
 
 S = "${WORKDIR}"
 
-inherit cargo systemd
+inherit cargo_bin systemd
 
 # Pass distro variables as environment variables at compile time
 DISTRO_NAME ??= "IoT Gateway OS"
@@ -22,25 +22,13 @@ export DISTRO_VERSION
 export MACHINE
 
 # Cargo build configuration
-CARGO_BUILD_FLAGS = "--release"
+CARGO_BUILD_PROFILE = "release"
+CARGO_INSTALL_DIR = "${D}${bindir}"
+do_compile[network] = "1"
+# Ensure binaries are not pre-stripped; Yocto handles debug split/strip.
+export CARGO_PROFILE_RELEASE_STRIP = "false"
 
-do_compile() {
-    # Build the Rust project
-    cargo build ${CARGO_BUILD_FLAGS}
-}
-
-do_install() {
-    # Install the binary
-    install -d ${D}${bindir}
-    install -m 0755 ${B}/target/${RUST_TARGET_SYS}/release/iotgw-banner-tui ${D}${bindir}/iotgw-banner-tui
-
-    # Optionally install systemd service for auto-display at boot
-    # (commented out by default - enable if you want TUI on every boot)
-    # install -d ${D}${systemd_system_unitdir}
-    # install -m 0644 ${WORKDIR}/iotgw-banner-tui.service ${D}${systemd_system_unitdir}/
-}
-
-FILES:${PN} = "${bindir}/iotgw-banner-tui"
+FILES:${PN} += "${bindir}/iotgw-banner-tui"
 
 # Runtime dependencies
 RDEPENDS:${PN} = "rauc"

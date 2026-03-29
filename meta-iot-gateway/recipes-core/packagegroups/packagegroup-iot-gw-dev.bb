@@ -17,6 +17,7 @@ RDEPENDS:${PN} = " \
     kernel-hardening-checker \
     ota-certs-devca \
     ota-updater \
+    ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' tpm2-tools tpm2-tss','',d)} \
 "
 
 # Optional: container runtime tools (opt-in)

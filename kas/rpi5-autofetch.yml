@@ -56,6 +56,10 @@ repos:
     layers:
       .:
 
+  meta-rust-bin:
+    url: https://github.com/rust-embedded/meta-rust-bin.git
+    refspec: master
+
   meta-iot-gateway:
     path: meta-iot-gateway
 
@@ -116,6 +120,13 @@ local_conf_header:
   prefer_bin_node: |
     # Use prebuilt Node.js binary to avoid long V8 builds
     PREFERRED_PROVIDER_nodejs = "nodejs-bin"
+
+  prefer_bin_rust: |
+    # Use prebuilt Rust toolchain from meta-rust-bin (Scarthgap native is 1.75)
+    PREFERRED_VERSION_rust-native = "1.94.%"
+    PREFERRED_VERSION_rust-cross-${TUNE_ARCH} = "1.94.%"
+    PREFERRED_VERSION_cargo-native = "1.94.%"
+    PREFERRED_VERSION_libstd-rs = "1.94.%"
 
   sanity_check: |
     # Add Ubuntu 24.04 to tested distributions to avoid warnings

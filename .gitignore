@@ -49,3 +49,5 @@ docs/signature.rst
 scripts/kernel-hardening-check-build.sh
 scripts/kernel-hardening-check-target.sh
 scripts/generate-splash.py
+scripts/tpm-validate.sh
+docs/infineon-optiga-tpm-rpi-quickstarter-user-guide-usermanual-en.pdf
