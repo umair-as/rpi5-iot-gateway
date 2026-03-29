@@ -124,6 +124,13 @@ fragment. Avoid enabling spidev on the same SPI chip-select used by TPM.
 If board wiring requires a different overlay parameterization, override
 `IOTGW_TPM_DTO_OVERLAY` in `kas/local.yml`.
 
+**TPM reset via GPIO (dev only):** If the TPM enters a bad state during
+development, toggle the reset pin (GPIO 24 on LetsTrust-style wiring):
+```bash
+pinctrl set 24 op && pinctrl set 24 dl && sleep 0.1 && pinctrl set 24 dh
+tpm2_startup -c
+```
+
 ---
 
 ## Enabling Feature Sets
