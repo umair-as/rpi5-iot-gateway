@@ -12,6 +12,12 @@ repos:
       # meta-encrypted-storage:
 
 local_conf_header:
+  prefer_bin_rust: |
+    # Use prebuilt Rust/Cargo from meta-rust-bin for Rust application recipes.
+    PREFERRED_VERSION_rust-bin-cross-${TARGET_ARCH} = "1.94.%"
+    PREFERRED_VERSION_rust-bin-native-${BUILD_ARCH} = "1.94.%"
+    PREFERRED_VERSION_cargo-bin-cross-${TARGET_ARCH} = "1.94.%"
+
   tpm_spi: |
     # Enable TPM2 over SPI (Infineon SLB9672 class profile + overlay wiring).
     IOTGW_ENABLE_TPM_SLB9672 = "1"
