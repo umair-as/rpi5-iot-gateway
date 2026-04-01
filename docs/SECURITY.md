@@ -265,6 +265,7 @@ When `IOTGW_ENABLE_TPM_SLB9672=1`, the following TPM security components are inc
 ### Userspace Tools
 - **`tpm-ops`** — Rust CLI for TPM operations (info, TRNG, PCR reads, hashing, signing)
 - **`tpm2-tools`** — Low-level TPM2 CLI (dev image only)
+- Default TCTI policy is pinned to `device:/dev/tpmrm0` to avoid simulator/fallback ambiguity.
 
 ### Kernel Support
 - Fragment: `meta-iot-gateway/recipes-kernel/linux/files/fragments/tpm-slb9672.cfg`
