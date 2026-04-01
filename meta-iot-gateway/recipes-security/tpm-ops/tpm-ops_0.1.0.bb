@@ -9,7 +9,12 @@ SRCREV = "e6fdda8eff836f2e819a3cb6f907ca1d3f4a3793"
 
 S = "${WORKDIR}/git"
 
-inherit cargo_bin
+inherit cargo_bin externalsrc
+
+# Local externalsrc override (set in kas/local.yml) keeps remote git fetch path
+# as default when EXTERNALSRC is not provided.
+EXTERNALSRC ?= ""
+EXTERNALSRC_BUILD ?= "${WORKDIR}/build"
 
 # tss-esapi links against libtss2 via pkg-config
 DEPENDS = "tpm2-tss"

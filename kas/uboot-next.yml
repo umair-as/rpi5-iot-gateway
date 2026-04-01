@@ -1,0 +1,19 @@
+header:
+  version: 18
+
+local_conf_header:
+  uboot_source_override: |
+    # Optional U-Boot source override used by:
+    #   meta-iot-gateway/recipes-bsp/u-boot/u-boot_%.bbappend
+    #
+    # Usage:
+    #   kas shell kas/local.yml:kas/uboot-next.yml -c "bitbake u-boot"
+    #
+    # Pin both URI and SRCREV for reproducibility.
+    # Example upstream master test:
+    # IOTGW_UBOOT_ALT_URI = "git://source.denx.de/u-boot/u-boot.git;protocol=https;branch=master"
+    # IOTGW_UBOOT_ALT_SRCREV = "REPLACE_WITH_PINNED_COMMIT"
+
+    # Keep disabled by default until explicitly set.
+    IOTGW_UBOOT_ALT_URI ?= ""
+    IOTGW_UBOOT_ALT_SRCREV ?= ""
