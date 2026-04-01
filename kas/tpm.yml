@@ -3,7 +3,8 @@ header:
 
 repos:
   meta-secure-core:
-    path: /home/umair/yocto_resource/layers/meta-secure-core
+    url: https://github.com/Wind-River/meta-secure-core.git
+    refspec: scarthgap
     layers:
       meta-secure-core-common:
       meta-signing-key:

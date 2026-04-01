@@ -1,5 +1,5 @@
 .PHONY: help base dev prod desktop \
-        bundle-dev-full bundle-dev-full-fit bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
+        bundle-dev bundle-dev-full bundle-dev-full-fit bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
         layers parse clean-lock
 
 KAS ?= kas
@@ -25,6 +25,7 @@ help:
 	@echo "  make bundle-prod-full     # Bundle from prod image"
 	@echo "  make bundle-desktop-full  # Bundle from desktop image"
 	@echo "  -- Bundles (rootfs-only) --"
+	@echo "  make bundle-dev           # Rootfs-only bundle from dev image"
 	@echo "  make bundle-desktop       # Rootfs-only bundle from desktop image"
 	@echo "  -- Utilities --"
 	@echo "  make layers               # Show layers for RAUC stack"
@@ -50,6 +51,9 @@ define bundle_cmd
                    IOTGW_ENABLE_OTBR=$$IOTGW_ENABLE_OTBR \
                    bitbake $(2)' $(BASE)
 endef
+
+bundle-dev:
+	$(call bundle_cmd,iot-gw-image-dev,iot-gw-bundle)
 
 bundle-dev-full:
 	$(call bundle_cmd,iot-gw-image-dev,iot-gw-bundle-full)
