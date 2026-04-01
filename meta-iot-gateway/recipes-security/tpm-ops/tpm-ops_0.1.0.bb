@@ -5,7 +5,7 @@ LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=bf72105a69d303b78352c6a39239bc69"
 
 SRC_URI = "git://github.com/umair-as/tpm-ops.git;protocol=https;branch=main"
-SRCREV = "e6fdda8eff836f2e819a3cb6f907ca1d3f4a3793"
+SRCREV = "7be8a903d967cac9872468497359a5d7a9a47d7b"
 
 S = "${WORKDIR}/git"
 
