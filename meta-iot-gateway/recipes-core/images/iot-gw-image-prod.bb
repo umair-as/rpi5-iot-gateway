@@ -6,6 +6,9 @@ LICENSE = "MIT"
 # Pull in common base
 require iot-gw-image-base.inc
 
+# Production metadata policy: do not expose build host identifier in /etc/buildinfo.
+IOTGW_BUILDINFO_INCLUDE_BUILD_SYS = "0"
+
 # Lean image features suitable for production
 IMAGE_FEATURES += " \
     ssh-server-openssh \

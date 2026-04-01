@@ -109,13 +109,18 @@ iotgw_rootfs_buildinfo() {
         echo "DISTRO_NAME=${DISTRO_NAME}"
         echo "DISTRO_VERSION=${DISTRO_VERSION}"
         echo "DISTRO_CODENAME=${DISTRO_CODENAME}"
+        echo "IOTGW_VERSION=${IOTGW_VERSION}"
+        echo "IOTGW_RELEASE_TRACK=${IOTGW_RELEASE_TRACK}"
+        echo "IOTGW_BUILD_ID=${IOTGW_BUILD_ID}"
         echo "MACHINE=${MACHINE}"
         echo "TUNE_PKGARCH=${TUNE_PKGARCH}"
         echo "IMAGE_BASENAME=${IMAGE_BASENAME}"
         echo "IMAGE_NAME=${IMAGE_NAME}"
         echo "RAUC_BUNDLE_VERSION=${RAUC_BUNDLE_VERSION}"
         echo "RAUC_BUNDLE_COMPATIBLE=${RAUC_BUNDLE_COMPATIBLE}"
-        echo "BUILD_SYS=${BUILD_SYS}"
+        if [ "${IOTGW_BUILDINFO_INCLUDE_BUILD_SYS}" = "1" ]; then
+            echo "BUILD_SYS=${BUILD_SYS}"
+        fi
     } > ${IMAGE_ROOTFS}/etc/buildinfo
 
     # Provide a single-line version file for compatibility with tools expecting /etc/version

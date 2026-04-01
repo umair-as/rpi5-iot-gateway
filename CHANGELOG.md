@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- TPM 2.0 (Infineon SLB9672) integration with build-time gating across kernel/device-tree/userspace packaging.
+- FIT Strategy A recovery-kernel flow for signed multi-config boot updates.
+- Rootfs-only dev bundle target for faster OTA iteration (`bundle-dev` path).
+
+### Changed
+- FIT custom ITS flow advanced to Phase B (dual-kernel + dual-config policy with `conf-primary`/`conf-recovery`).
+- OTA cert provisioning and RAUC install wrapper flow reconciled for HTTPS-driven installs.
+- WIC/OTA layout moved to 128G default with 16G A/B rootfs slots and hardened streaming preflight behavior.
+
+### Fixed
+- Raspberry Pi 5 RTC support backported behind build-time gate (`IOTGW_ENABLE_RPI_RTC`).
+- U-Boot boot path adjusted to skip unused EFI boot method probes for this product flow.
+
+### Documentation
+- Security and FIT signing documentation refreshed for current runtime policy and operator workflow.
+- OTA follow-up notes and repository references aligned with merged implementation state.
+
 ## [0.1.0] - 2026-03-04
 
 ### Added
