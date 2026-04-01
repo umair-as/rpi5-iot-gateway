@@ -8,13 +8,23 @@ VENDOR_LONG_NAME ?= "IoT Gateway"
 # Propagate vendor into target triplet and SDK names
 TARGET_VENDOR ?= "-${VENDOR_SHORT_NAME}"
 
-# Distro/versioning (override OE-Core default 'nodistro.0')
-DISTRO_VERSION = "${VENDOR_SHORT_NAME}.0.1"
+# Distro/versioning policy (override OE-Core default 'nodistro.0')
+# Keep version components explicit so release policy can bump one field at a time.
+IOTGW_VERSION_MAJOR ?= "0"
+IOTGW_VERSION_MINOR ?= "1"
+IOTGW_VERSION_PATCH ?= "0"
+IOTGW_VERSION ?= "${IOTGW_VERSION_MAJOR}.${IOTGW_VERSION_MINOR}.${IOTGW_VERSION_PATCH}"
+DISTRO_VERSION ?= "${VENDOR_SHORT_NAME}.${IOTGW_VERSION}"
 # Default codename for this product line (override in CI if desired)
 DISTRO_CODENAME ?= "rpi5"
 
-# RAUC defaults (deterministic). CI may override RAUC_BUNDLE_VERSION.
-RAUC_BUNDLE_VERSION ?= "r0"
+# RAUC bundle version policy:
+#   <distro-version>-<machine>-<image-track>-b<build-id>
+# where image-track is derived from iot-gw-image-{dev,prod,base,...}.
+# CI/release jobs may override IOTGW_BUILD_ID or RAUC_BUNDLE_VERSION directly.
+IOTGW_RELEASE_TRACK ?= "${@((d.getVar('BUNDLE_IMAGE_NAME') or d.getVar('IMAGE_BASENAME') or 'iot-gw-image-unknown').replace('iot-gw-image-', ''))}"
+IOTGW_BUILD_ID ?= "${@d.getVar('SOURCE_DATE_EPOCH') or '0'}"
+RAUC_BUNDLE_VERSION ?= "${DISTRO_VERSION}-${MACHINE}-${IOTGW_RELEASE_TRACK}-b${IOTGW_BUILD_ID}"
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 PREFERRED_RPROVIDER_virtual-rauc-conf ?= "rauc-conf-iotgw"
 
@@ -23,6 +33,11 @@ SKIP_RECIPE[rauc-conf] = "replaced with rauc-conf-iotgw"
 
 # RAUC keyring default for device verification (bundle signing keys are set in bundle recipes or kas/local.yml)
 RAUC_KEYRING_FILE ?= "dev-cert.pem"
+
+# Build metadata exposure policy
+# Keep host build system identifier in buildinfo by default for diagnostics.
+# Production images can disable this in image recipes.
+IOTGW_BUILDINFO_INCLUDE_BUILD_SYS ?= "1"
 
 # SDK branding
 SDK_VENDOR ?= "-${VENDOR_SHORT_NAME}sdk"
@@ -80,6 +95,7 @@ ROOT_HOME ?= "/root"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
 # Prune machine features that are not relevant on Raspberry Pi 5
 # Keep qemu-usermode to allow gobject-introspection typelibs generation at build time

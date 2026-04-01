@@ -17,6 +17,31 @@ For FIT boot signing and verification chain setup, see the [FIT Signing Guide](F
 
 ---
 
+## Device Identity and Build Metadata Policy
+
+### `/etc/machine-id` Policy
+
+- `machine-id` is a host/runtime instance identifier used by systemd/DBus and OTA correlation.
+- It is **not** a cryptographic device identity and must not be used as a trust anchor for attestation, licensing, or anti-cloning.
+- Images must avoid shipping a fixed `machine-id`; each unit should end up with a unique value after provisioning/first boot and persist it across OTA updates.
+
+### `/etc/buildinfo` Policy
+
+- `DISTRO_*`, `IMAGE_*`, and `RAUC_BUNDLE_*` metadata are intentionally exposed for supportability and fleet operations.
+- Production images should avoid unnecessary host build disclosures.
+- Policy in this layer:
+  - default (`dev`/`base`): includes `BUILD_SYS` for diagnostics.
+  - `prod`: omits `BUILD_SYS` from `/etc/buildinfo` via `IOTGW_BUILDINFO_INCLUDE_BUILD_SYS = "0"`.
+
+### Raspberry Pi EEPROM/OTP Policy
+
+- Raspberry Pi EEPROM/serial/OTP values are useful for inventory and manufacturing correlation.
+- Treat EEPROM/OTP identifiers as **non-secret hardware metadata**, not proof of device trustworthiness.
+- Avoid irreversible OTP security fusing in early product stages unless manufacturing process, recovery strategy, and rollback policy are finalized.
+- Preferred long-term trust model: TPM-backed key material + device certificate chain for identity and attestation.
+
+---
+
 ## Kernel Hardening
 
 The kernel follows Kernel Self Protection Project (KSPP) recommendations.
@@ -240,6 +265,7 @@ When `IOTGW_ENABLE_TPM_SLB9672=1`, the following TPM security components are inc
 ### Userspace Tools
 - **`tpm-ops`** — Rust CLI for TPM operations (info, TRNG, PCR reads, hashing, signing)
 - **`tpm2-tools`** — Low-level TPM2 CLI (dev image only)
+- Default TCTI policy is pinned to `device:/dev/tpmrm0` to avoid simulator/fallback ambiguity.
 
 ### Kernel Support
 - Fragment: `meta-iot-gateway/recipes-kernel/linux/files/fragments/tpm-slb9672.cfg`

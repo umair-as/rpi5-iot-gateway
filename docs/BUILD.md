@@ -79,6 +79,24 @@ IOTGW_ENABLE_OTBR=1 make dev
 IOTGW_KERNEL_FEATURES="igw_containers igw_security_prod" make prod
 ```
 
+### Versioning Overrides
+
+The distro and RAUC bundle versioning policy is defined in
+`meta-iot-gateway/conf/distro/include/iotgw-common.inc`.
+
+Defaults:
+- `DISTRO_VERSION = igw.<major>.<minor>.<patch>`
+- `RAUC_BUNDLE_VERSION = <DISTRO_VERSION>-<MACHINE>-<image-track>-b<IOTGW_BUILD_ID>`
+
+Example release override:
+```bash
+IOTGW_VERSION_MAJOR=0 \
+IOTGW_VERSION_MINOR=2 \
+IOTGW_VERSION_PATCH=0 \
+IOTGW_BUILD_ID=20260401 \
+make bundle-prod-full
+```
+
 ---
 
 ## Layer Management
