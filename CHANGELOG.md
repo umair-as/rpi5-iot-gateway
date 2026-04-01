@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-01
+
 ### Added
 - TPM 2.0 (Infineon SLB9672) integration with build-time gating across kernel/device-tree/userspace packaging.
 - FIT Strategy A recovery-kernel flow for signed multi-config boot updates.
@@ -74,5 +76,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added adaptive OTA benchmark and troubleshooting guidance for field validation.
 - Added HTTPS streaming OTA notes and refreshed operational docs for build/partition/security flows.
 
-[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/umair-as/rpi5-iot-gateway/releases/tag/v0.1.0
