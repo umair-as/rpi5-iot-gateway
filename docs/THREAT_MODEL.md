@@ -11,7 +11,7 @@ In scope:
 - Secure boot chain (RPI firmware -> U-Boot -> FIT -> kernel/initramfs)
 - OTA update path (RAUC A/B, bundle verification, slot switching)
 - Runtime configuration persistence (`/etc` overlay reconciliation)
-- Provisioning path (`/boot` inputs -> on-device config/cred stores)
+- Provisioning path (`/data/iotgw` inputs -> on-device config/cred stores)
 - Core services (networking, OTA, observability, container runtime, TPM helpers)
 - Local/remote management interfaces (SSH, D-Bus mediated services)
 
@@ -32,7 +32,7 @@ Out of scope:
 1. Build host/CI -> signed artifacts
 2. Signed artifact store -> target device OTA installer
 3. Read-only rootfs slots -> writable `/data` and `/etc` overlay upper
-4. Boot partition (`/boot`) -> privileged provisioning services
+4. Provisioning input store (`/data/iotgw`) -> privileged provisioning services
 5. Local root/admin shell -> all runtime secret and control planes
 6. Network ingress (MQTT/SSH/management) -> internal services
 

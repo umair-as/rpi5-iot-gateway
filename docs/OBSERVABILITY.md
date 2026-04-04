@@ -72,8 +72,8 @@ telegraf.conf: username = "@{systemd:mqtt_username}"
 ```
 
 The bootstrap file `/data/iotgw/observability.env` is **deleted** by
-`iotgw-provision` after credentials are successfully applied. It is never
-present on a provisioned device.
+`iotgw-provision` after credentials are successfully applied. If credential
+application is incomplete, the file is retained for operator recovery.
 
 ### Bootstrap File Format
 
