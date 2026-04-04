@@ -4,7 +4,8 @@ HOMEPAGE = "https://github.com/umair-as/tpm-ops"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=bf72105a69d303b78352c6a39239bc69"
 
-SRC_URI = "git://github.com/umair-as/tpm-ops.git;protocol=https;branch=main"
+# Fetch by pinned SRCREV without enforcing branch containment checks.
+SRC_URI = "git://github.com/umair-as/tpm-ops.git;protocol=https;nobranch=1"
 S = "${WORKDIR}/git"
 
 inherit cargo_bin
