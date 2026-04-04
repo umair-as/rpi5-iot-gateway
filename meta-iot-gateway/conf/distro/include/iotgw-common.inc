@@ -94,6 +94,8 @@ ROOT_HOME ?= "/root"
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
@@ -136,6 +138,11 @@ IOTGW_ENABLE_TPM_SLB9672 ?= "0"
 IOTGW_TPM_DTO_OVERLAY ?= "tpm-slb9670"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', ' igw_tpm_slb9672', '', d)}"
 RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', '\\ndtparam=spi=on\\ndtoverlay=%s\\n' % d.getVar('IOTGW_TPM_DTO_OVERLAY'), '', d)}"
+
+# Optional observability stack (native services: InfluxDB + Telegraf).
+# Containerized observability is paused on Scarthgap due to Rust toolchain skew
+# in netavark/aardvark-dns and will be revisited on the next Yocto LTS rebase.
+IOTGW_ENABLE_OBSERVABILITY ?= "0"
 
 # Raspberry Pi 5 DTB policy by kernel provider:
 # - Default to Model B only (smallest artifact set for rpi5 deployments).

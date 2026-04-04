@@ -77,6 +77,9 @@ IOTGW_ENABLE_OTBR=1 make dev
 
 # Custom kernel features
 IOTGW_KERNEL_FEATURES="igw_containers igw_security_prod" make prod
+
+# Enable native observability stack (InfluxDB + Telegraf)
+IOTGW_ENABLE_OBSERVABILITY=1 make dev
 ```
 
 ### Versioning Overrides

@@ -2,6 +2,9 @@
 
 This document describes the security features and hardening measures implemented in the IoT Gateway OS.
 
+For gateway-wide STRIDE scope, trust boundaries, and documentation classification policy,
+see [Threat Model](THREAT_MODEL.md).
+
 ## Overview
 
 The distribution implements defense-in-depth security across multiple layers:
