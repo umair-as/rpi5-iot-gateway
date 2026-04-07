@@ -11,7 +11,7 @@ RDEPENDS:${PN} = " \
     sudo \
     networkmanager \
     systemd-analyze \
-    systemd-crypt \
+    systemd-extra-utils \
     lynis \
     ota-certs \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' cryptsetup','',d)} \
