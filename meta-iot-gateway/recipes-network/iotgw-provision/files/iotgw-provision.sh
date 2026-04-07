@@ -239,10 +239,16 @@ if [ -r "$OBS_SRC" ]; then
             chmod 0600 /etc/mosquitto/acl
             chown mosquitto:mosquitto /etc/mosquitto/acl
 
-            # Use -c (create/overwrite) on first provisioning to avoid
-            # "Corrupt password file" error on empty/missing file.
-            # mosquitto_passwd stdin: password\npassword\n
-            if ! printf '%s\n%s\n' "$mqtt_pass" "$mqtt_pass" | mosquitto_passwd -c /etc/mosquitto/passwd "$mqtt_user"; then
+            # Use -c only when the file is absent or empty to avoid the
+            # "Corrupt password file" error. When the file has existing
+            # entries, omit -c so other users are preserved.
+            # stdin: password\npassword\n (no -b avoids argv exposure)
+            if [ ! -s /etc/mosquitto/passwd ]; then
+                printf '%s\n%s\n' "$mqtt_pass" "$mqtt_pass" | mosquitto_passwd -c /etc/mosquitto/passwd "$mqtt_user"
+            else
+                printf '%s\n%s\n' "$mqtt_pass" "$mqtt_pass" | mosquitto_passwd /etc/mosquitto/passwd "$mqtt_user"
+            fi
+            if [ $? -ne 0 ]; then
                 fail "$RC_MOSQ_PASSWD_NOT_PERSISTED" "mosquitto_passwd failed for user '${mqtt_user}'"
             fi
             chmod 0600 /etc/mosquitto/passwd
