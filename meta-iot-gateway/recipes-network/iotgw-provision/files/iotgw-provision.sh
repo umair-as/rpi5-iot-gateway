@@ -244,12 +244,13 @@ if [ -r "$OBS_SRC" ]; then
             # entries, omit -c so other users are preserved.
             # stdin: password\npassword\n (no -b avoids argv exposure)
             if [ ! -s /etc/mosquitto/passwd ]; then
-                printf '%s\n%s\n' "$mqtt_pass" "$mqtt_pass" | mosquitto_passwd -c /etc/mosquitto/passwd "$mqtt_user"
+                if ! printf '%s\n%s\n' "$mqtt_pass" "$mqtt_pass" | mosquitto_passwd -c /etc/mosquitto/passwd "$mqtt_user"; then
+                    fail "$RC_MOSQ_PASSWD_NOT_PERSISTED" "mosquitto_passwd failed for user '${mqtt_user}'"
+                fi
             else
-                printf '%s\n%s\n' "$mqtt_pass" "$mqtt_pass" | mosquitto_passwd /etc/mosquitto/passwd "$mqtt_user"
-            fi
-            if [ $? -ne 0 ]; then
-                fail "$RC_MOSQ_PASSWD_NOT_PERSISTED" "mosquitto_passwd failed for user '${mqtt_user}'"
+                if ! printf '%s\n%s\n' "$mqtt_pass" "$mqtt_pass" | mosquitto_passwd /etc/mosquitto/passwd "$mqtt_user"; then
+                    fail "$RC_MOSQ_PASSWD_NOT_PERSISTED" "mosquitto_passwd failed for user '${mqtt_user}'"
+                fi
             fi
             chmod 0600 /etc/mosquitto/passwd
             chown mosquitto:mosquitto /etc/mosquitto/passwd
