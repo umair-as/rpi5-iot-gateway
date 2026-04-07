@@ -76,6 +76,8 @@ DISTRO_FEATURES:append = " luks"
 
 # This unblocks systemd-creds TPM operations and cryptenroll-based flows.
 PACKAGECONFIG:append:pn-systemd = " tpm2 openssl"
+PACKAGECONFIG:append:pn-systemd = " pcre2 audit"
+PACKAGECONFIG:append:pn-systemd = " cryptsetup cryptsetup-plugins"
 PACKAGECONFIG:append:pn-cryptsetup = " luks2"
 
 # Always use U-Boot on Raspberry Pi for RAUC boot flow

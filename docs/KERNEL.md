@@ -104,7 +104,7 @@ Comprehensive kernel hardening for production.
 - AppArmor LSM
 - Audit framework
 
-**See:** `docs/SECURITY.md` for full details
+**See:** [SECURITY.md](SECURITY.md) for full details
 
 ---
 

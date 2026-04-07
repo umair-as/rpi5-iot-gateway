@@ -1,18 +1,15 @@
-# TPM Requirements and Learning Plan
+# TPM 2.0 Requirements
 
-## Status
-- Date: 2026-04-01
-- Scope: Linux-side TPM enablement and measured-boot exploration on Raspberry Pi 5
-- U-Boot TPM path: parked (upstream RP1/PCIe/SPI gaps and unstable probe path)
+This document describes the requirements and work plan for Linux-side TPM enablement and
+measured-boot design on the Raspberry Pi 5 (Infineon SLB9672). U-Boot TPM integration is
+parked pending upstream RP1/PCIe/SPI support.
 
-## Why This Document Exists
-This project already has TPM building blocks, but we need a shared definition of:
-- what problem we are solving,
-- what is already working,
-- what we want to achieve next,
-- what is intentionally out of scope for now.
 
-This is both a requirements doc and a practical learning guide.
+## Overview
+
+This project has TPM building blocks in place. This document defines what problem we are
+solving, what is already working, what we want to achieve next, and what is intentionally
+out of scope.
 
 ## Current State (What We Have)
 - Hardware target: Infineon SLB9672 class TPM2 over SPI on RPi5.
