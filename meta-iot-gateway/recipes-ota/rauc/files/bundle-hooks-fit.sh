@@ -72,7 +72,7 @@ VERBOSE_OVERLAYS="${IOTGW_VERBOSE_OVERLAYS:-0}"
 RECONCILE_TOOL="/usr/libexec/rauc/overlay-reconcile.py"
 RECONCILE_TOOL_BUNDLE="${BUNDLE_MNT}/overlay-reconcile.py"
 
-for cmd in tar mount mountpoint install cmp sed awk sync grep sha256sum cp rm mkdir mktemp; do
+for cmd in tar mount mountpoint umount install cmp sed awk sync grep sha256sum cp rm mkdir mktemp; do
   command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
 done
 
@@ -128,7 +128,18 @@ fi
 log_info "Summary: slot='${RAUC_SLOT_NAME:-unknown}', bundle='${ARCHIVE}', boot='${BOOT_DEV}'"
 
 tmpdir=$(mktemp -d /tmp/bootfiles.XXXXXX)
-cleanup() { rm -rf "$tmpdir" || true; }
+boot_mounted_by_hook=0
+boot_was_readonly=0
+cleanup() {
+  if [ "$boot_mounted_by_hook" -eq 1 ]; then
+    if mountpoint -q "$BOOT_MP"; then
+      umount "$BOOT_MP" || log_warn "failed to unmount $BOOT_MP during cleanup"
+    fi
+  elif [ "$boot_was_readonly" -eq 1 ]; then
+    mount -o remount,ro "$BOOT_MP" || log_warn "failed to remount $BOOT_MP read-only during cleanup"
+  fi
+  rm -rf "$tmpdir" || true
+}
 trap cleanup EXIT INT TERM
 
 log_install "Extracting bootfiles from bundle archive..."
@@ -165,7 +176,12 @@ if ! mountpoint -q "$BOOT_MP"; then
   log_install "Mounting $BOOT_DEV at $BOOT_MP..."
   mkdir -p "$BOOT_MP"
   mount -t vfat "$BOOT_DEV" "$BOOT_MP" || die "Failed to mount $BOOT_DEV at $BOOT_MP"
+  boot_mounted_by_hook=1
 else
+  mount_opts="$(awk -v mp="$BOOT_MP" '$2==mp {print $4; exit}' /proc/mounts 2>/dev/null || true)"
+  case ",${mount_opts}," in
+    *,ro,*) boot_was_readonly=1 ;;
+  esac
   log_success "/boot is already mounted"
 fi
 

@@ -5,17 +5,22 @@ All three services run on-device — no cloud dependency for telemetry collectio
 
 ## Architecture
 
-```
-Edge sensors / MQTT publishers
-         │
-         ▼
-  Mosquitto (MQTT broker)          ← port 1883 (localhost only)
-         │
-         ▼
-  Telegraf (metrics agent)         ← subscribes to MQTT, collects system health
-         │
-         ▼
-  InfluxDB 1.x (time-series DB)   ← port 8086 (localhost only)
+```mermaid
+flowchart TD
+    sensors(["Edge sensors\nMQTT publishers"])
+    sysmets(["System metrics\n/proc · /sys · /dev"])
+
+    subgraph gw["IoT Gateway — all inter-service traffic on 127.0.0.1"]
+        mosq["Mosquitto\nMQTT broker\n:1883 localhost"]
+        tele["Telegraf\nmetrics agent"]
+        idb[("InfluxDB 1.x\ntime-series DB\n:8086 localhost")]
+
+        mosq -- "subscribe sensors/+/data" --> tele
+        tele -- "write" --> idb
+    end
+
+    sensors -- "MQTT publish" --> mosq
+    sysmets -- "cpu · mem · disk · temp · net · processes" --> tele
 ```
 
 All inter-service traffic is local (`127.0.0.1`). No port is exposed to external
@@ -54,21 +59,20 @@ local_conf_header:
 Secrets (MQTT and InfluxDB passwords) are never stored in the Telegraf config,
 environment variables, or process arguments. The flow is:
 
-```
-/data/iotgw/observability.env          ← operator-supplied bootstrap file
-         │
-         ▼ (first boot, iotgw-provision.service)
-/etc/credstore/                        ← root:root 0700, files 0600
-  telegraf.service.mqtt_username
-  telegraf.service.mqtt_password
-  telegraf.service.influxdb_username
-  telegraf.service.influxdb_password
-         │
-         ▼ (systemd LoadCredential=)
-/run/credentials/telegraf.service/     ← per-unit tmpfs, 0500, telegraf user only
-         │
-         ▼ (secretstores.systemd plugin)
-telegraf.conf: username = "@{systemd:mqtt_username}"
+```mermaid
+flowchart TD
+    env(["/data/iotgw/observability.env\noperator-supplied · 0600"])
+    prov["iotgw-provision.service\nfirst boot"]
+    cred["/etc/credstore/\ntelegraf.service.*\nroot:root 0700 · files 0600"]
+    sd["systemd\nLoadCredential="]
+    run["/run/credentials/telegraf.service/\nper-unit tmpfs · 0500 · telegraf user only"]
+    conf["telegraf.conf\nsecretstores.systemd plugin\ncredential refs resolved at runtime"]
+
+    env -->|"read once → deleted on success"| prov
+    prov -->|"writes"| cred
+    cred -->|"at service start"| sd
+    sd -->|"bind-mounted into unit"| run
+    run -->|"resolved at runtime"| conf
 ```
 
 The bootstrap file `/data/iotgw/observability.env` is **deleted** by

@@ -257,6 +257,8 @@ diff /data/lynis-baseline.txt <(lynis audit system)
 
 ## TPM 2.0 (Infineon SLB9672)
 
+For the TPM roadmap, see [TPM Requirements](TPM_REQUIREMENTS.md).
+
 When `IOTGW_ENABLE_TPM_SLB9672=1`, the following TPM security components are included:
 
 ### Device Policy (`iotgw-tpm-policy`)

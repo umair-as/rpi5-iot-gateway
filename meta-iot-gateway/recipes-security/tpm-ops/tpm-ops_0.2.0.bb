@@ -1,4 +1,4 @@
 require tpm-ops.inc
 
 # Pin upstream source for reproducible non-externalsrc builds.
-SRCREV = "08340c2e0d7de7d080180daa446a629dc01548c7"
+SRCREV = "02885a24e047a1153a6fbfdbc08616a9fac504dc"
