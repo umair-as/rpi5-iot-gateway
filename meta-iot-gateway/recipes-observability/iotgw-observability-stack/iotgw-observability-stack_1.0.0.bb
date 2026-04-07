@@ -38,10 +38,12 @@ CONFFILES:${PN} = " \
 "
 
 ALLOW_EMPTY:${PN} = "1"
+
+# Set to "1" to replace InfluxDB 1.x with InfluxDB 3 Core (influxdb3-bin).
+# Requires INFLUXDB3_BIN_SRC_URI to be set; see influxdb3-bin_3.0.0.bb.
 IOTGW_OBSERVABILITY_ENABLE_INFLUXDB3_NATIVE ?= "0"
 
 RDEPENDS:${PN} = " \
-    influxdb \
     telegraf \
+    ${@bb.utils.contains('IOTGW_OBSERVABILITY_ENABLE_INFLUXDB3_NATIVE','1','influxdb3-bin','influxdb',d)} \
 "
-RDEPENDS:${PN}:append = "${@bb.utils.contains('IOTGW_OBSERVABILITY_ENABLE_INFLUXDB3_NATIVE','1',' influxdb3-bin','',d)}"
