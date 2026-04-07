@@ -351,7 +351,12 @@ def do_post() -> int:
             updated += 1
             log("info", f"removed stale overlay entry: {managed_path}")
 
-        if apply_meta and upper_exists and upper.is_file() and metadata:
+        if apply_meta and upper_exists and metadata:
+            if not upper.is_file():
+                preserved += 1
+                log("warn", f"enforce_meta: {managed_path} upper entry is not a regular file; skipping metadata enforcement")
+                apply_meta = False
+        if apply_meta and upper_exists and metadata:
             uid_ref, gid_ref, mode = metadata
             try:
                 uid = resolve_uid(uid_ref)
@@ -408,6 +413,9 @@ def do_post() -> int:
         f"removed={updated}, preserved={preserved}, "
         f"missing={skipped_missing}, optional_missing={skipped_optional_missing}",
     )
+    if skipped_missing > 0:
+        log("error", f"{skipped_missing} non-optional managed path(s) missing from target slot; failing hook")
+        return 1
     return 0
 
 
