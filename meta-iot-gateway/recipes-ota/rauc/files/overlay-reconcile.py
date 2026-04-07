@@ -390,13 +390,18 @@ def do_post() -> int:
         if policy != "absent":
             new_state[managed_path] = desired_hash
 
-    write_state(new_state)
+    failed = skipped_missing > 0
+
+    # Only persist state on success. A failed run must not update the baseline
+    # used by replace_if_unmodified on the next OTA attempt.
+    if not failed:
+        write_state(new_state)
 
     txn = read_txn()
     txn.update(
         {
             "applied_utc": utc_now(),
-            "status": "applied",
+            "status": "failed" if failed else "applied",
             "updated": updated,
             "preserved": preserved,
             "skipped_missing": skipped_missing,
@@ -408,12 +413,12 @@ def do_post() -> int:
     write_txn(txn)
 
     log(
-        "info",
+        "info" if not failed else "error",
         "overlay reconciliation complete: "
         f"removed={updated}, preserved={preserved}, "
         f"missing={skipped_missing}, optional_missing={skipped_optional_missing}",
     )
-    if skipped_missing > 0:
+    if failed:
         log("error", f"{skipped_missing} non-optional managed path(s) missing from target slot; failing hook")
         return 1
     return 0
