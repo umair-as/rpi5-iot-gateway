@@ -78,7 +78,7 @@ if test -n "${bootpart}"; then
         reset
     fi
     if part uuid @@BOOT_MEDIA@@ 0:${rootpartnum} rootpartuuid; then
-        setenv rootarg "root=PARTUUID=${rootpartuuid}"
+        setenv rootarg "root=PARTUUID=${rootpartuuid} rootwait"
         echo "[RAUC] Using root from PARTUUID=${rootpartuuid} (slot ${rauc_slot})"
     else
         echo "[RAUC] PARTUUID lookup failed for slot ${rauc_slot}; resetting"

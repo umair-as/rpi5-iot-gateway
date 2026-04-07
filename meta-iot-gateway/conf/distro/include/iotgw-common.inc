@@ -72,6 +72,11 @@ VIRTUAL-RUNTIME_base-utils-syslog = ""
 DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
 # RAUC is mandatory in this distro
 DISTRO_FEATURES:append = " rauc"
+DISTRO_FEATURES:append = " luks"
+
+# This unblocks systemd-creds TPM operations and cryptenroll-based flows.
+PACKAGECONFIG:append:pn-systemd = " tpm2 openssl"
+PACKAGECONFIG:append:pn-cryptsetup = " luks2"
 
 # Always use U-Boot on Raspberry Pi for RAUC boot flow
 RPI_USE_U_BOOT ?= "1"
