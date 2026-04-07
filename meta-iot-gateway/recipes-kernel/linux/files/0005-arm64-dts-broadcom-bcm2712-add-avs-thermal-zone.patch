@@ -1,0 +1,74 @@
+From 43c38caee1ecdf3ed5098c282918d10295ccd87d Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Tue, 7 Apr 2026 16:27:20 +0200
+Subject: [PATCH] arm64: dts: broadcom: bcm2712: add AVS thermal zone
+
+BCM2712 (RPi 5) has an AVS ring-oscillator temperature sensor at
+0x7d542000 (physical 0x107d542000) that is register-compatible with
+BCM2711.  Mainline 6.18 does not yet carry thermal zone nodes for
+BCM2712; add them here, mirroring the approach used in the RPi
+downstream kernel (rpi-6.12.y, bcm2712-ds.dtsi).
+
+The bcm2711_thermal driver is reused unchanged: it fetches the parent
+syscon regmap and reads AVS_RO_TEMP_STATUS at offset 0x200.
+Temperature conversion: T(mC) = -550 * adc + 450000.
+
+Critical trip at 110 C matches the RPi firmware default policy.
+
+Upstream-Status: Pending [BCM2712 thermal not yet in mainline 6.18]
+---
+ .../boot/dts/broadcom/bcm2712-rpi-5-b.dts     | 38 +++++++++++++++++++
+ 1 file changed, 38 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts
+index 5a6d531fd7d6..ad96fb439bd2 100644
+--- a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts
++++ b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts
+@@ -67,6 +67,44 @@ &rp1_usb1 {
+ 	status = "okay";
+ };
+ 
++/*
++ * BCM2712 AVS ring-oscillator temperature sensor.
++ * Physical base: 0x107d542000 (soc child addr 0x7d542000).
++ * Register-compatible with BCM2711; reuses bcm2711_thermal driver.
++ * Source: RPi downstream rpi-6.12.y, bcm2712-ds.dtsi.
++ */
++&soc {
++	avs_monitor: avs-monitor@7d542000 {
++		compatible = "brcm,bcm2711-avs-monitor", "syscon", "simple-mfd";
++		reg = <0x7d542000 0xf00>;
++
++		thermal: thermal {
++			compatible = "brcm,bcm2711-thermal";
++			#thermal-sensor-cells = <0>;
++		};
++	};
++};
++
++/ {
++	thermal-zones {
++		cpu_thermal: cpu-thermal {
++			polling-delay-passive = <1000>;
++			polling-delay = <1000>;
++			/* T(mC) = -550 * adc + 450000 */
++			coefficients = <(-550) 450000>;
++			thermal-sensors = <&thermal>;
++
++			trips {
++				cpu_crit: cpu-crit {
++					temperature = <110000>;
++					hysteresis = <0>;
++					type = "critical";
++				};
++			};
++		};
++	};
++};
++
+ &rp1_spi0 {
+ 	pinctrl-names = "default";
+ 	pinctrl-0 = <&rp1_spi0_gpio9 &rp1_spi0_cs_gpio7>;
+-- 
+2.43.0
+
