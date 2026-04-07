@@ -14,6 +14,7 @@ RDEPENDS:${PN} = " \
     lynis \
     ota-certs \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' iotgw-tpm-policy tpm-ops','',d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_OBSERVABILITY','1',' packagegroup-iot-gw-observability','',d)} \
 "
 
 # Avoid allarch + dynamically renamed library deps (e.g., libgpiod -> libgpiod3)

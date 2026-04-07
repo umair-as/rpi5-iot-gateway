@@ -1,0 +1,54 @@
+[Unit]
+Description=Telegraf metrics agent
+Documentation=https://github.com/influxdata/telegraf
+After=network-online.target mosquitto.service
+Wants=network-online.target mosquitto.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=telegraf
+Group=telegraf
+StateDirectory=telegraf
+UMask=0027
+# Non-secret defaults (URL/db name) come from env file.
+EnvironmentFile=-/etc/default/iotgw-observability
+# Credentials are delivered into $CREDENTIALS_DIRECTORY (a per-unit tmpfs,
+# mode 0500) by systemd. The secretstores.systemd Telegraf plugin reads them
+# directly — no shell export, no rendered file, no argv exposure.
+LoadCredential=mqtt_username:/etc/credstore/telegraf.service.mqtt_username
+LoadCredential=mqtt_password:/etc/credstore/telegraf.service.mqtt_password
+LoadCredential=influxdb_username:/etc/credstore/telegraf.service.influxdb_username
+LoadCredential=influxdb_password:/etc/credstore/telegraf.service.influxdb_password
+ExecStart=/usr/bin/telegraf --config /etc/telegraf/telegraf.conf
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+PrivateTmp=yes
+# Keep device namespace isolated for current deployments.
+# If Modbus RTU (/dev/ttyUSB*) is enabled in future, this must be revisited
+# (disable PrivateDevices or allow explicit device access policy).
+PrivateDevices=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+LockPersonality=yes
+RemoveIPC=yes
+ReadWritePaths=/var/lib/telegraf
+
+[Install]
+WantedBy=multi-user.target

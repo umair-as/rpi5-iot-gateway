@@ -6,6 +6,7 @@ SRC_URI:append = " \
     file://grow-data-partition.sh \
     file://managed-paths.conf \
     file://managed-paths.d/network.conf \
+    file://managed-paths.d/observability.conf \
     file://overlay-reconcile.py \
 "
 
@@ -31,6 +32,8 @@ do_install:append() {
     install -d ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d
     install -m 0644 ${WORKDIR}/managed-paths.d/network.conf \
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf
+    install -m 0644 ${WORKDIR}/managed-paths.d/observability.conf \
+        ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d/observability.conf
 
     # Install Python overlay reconciler invoked by bundle hooks.
     install -d ${D}${libexecdir}/rauc
@@ -40,7 +43,7 @@ do_install:append() {
 
 # Ensure the script is placed with the grow subpackage
 FILES:rauc-grow-data-part:append = " ${sbindir}/grow-data-partition.sh"
-FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf ${libexecdir}/rauc/overlay-reconcile.py"
+FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/observability.conf ${libexecdir}/rauc/overlay-reconcile.py"
 RDEPENDS:${PN}-service:append = " python3-core"
 
 # Keep RAUC available for D-Bus activation, but don't start it by default

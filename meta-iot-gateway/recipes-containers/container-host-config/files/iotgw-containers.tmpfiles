@@ -1,3 +1,6 @@
 d /var/lib/containers 0755 root root -
 d /var/lib/containers/storage 0700 root root -
 d /run/containers 0755 root root -
+d /run/containers/storage 0700 root root -
+d /data/containers 0755 root root -
+d /data/containers/storage 0700 root root -

@@ -1,0 +1,1 @@
+d /var/lib/telegraf 0750 telegraf telegraf -

@@ -1,4 +1,4 @@
-SUMMARY = "IoT GW first-boot provisioning (keys, NM profiles)"
+SUMMARY = "IoT GW first-boot provisioning (network + observability)"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
@@ -28,5 +28,4 @@ FILES:${PN} += " \
     ${systemd_system_unitdir}/iotgw-provision.service \
 "
 
-RDEPENDS:${PN} = "bash networkmanager"
-
+RDEPENDS:${PN} = "bash networkmanager mosquitto"

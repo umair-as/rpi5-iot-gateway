@@ -13,10 +13,13 @@ import datetime as dt
 import hashlib
 import json
 import os
+import grp
+import pwd
 from pathlib import Path
 import shutil
+import stat
 import sys
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 
 STATE_DIR = Path("/data/iotgw/overlay-reconcile")
@@ -28,7 +31,10 @@ UPPER_ROOT = Path("/data/overlays/etc/upper")
 MANIFEST_MAIN = Path("usr/share/iotgw/overlay-reconcile/managed-paths.conf")
 MANIFEST_DIR = Path("usr/share/iotgw/overlay-reconcile/managed-paths.d")
 
-POLICIES = {"enforce", "replace_if_unmodified", "preserve", "absent"}
+POLICIES = {"enforce", "replace_if_unmodified", "preserve", "absent", "enforce_meta"}
+
+
+MetadataSpec = Tuple[str, str, int]
 
 
 def log(level: str, msg: str) -> None:
@@ -105,9 +111,70 @@ def sanitize_managed_path(path: str) -> str:
     return path
 
 
-def load_manifest_entries(slot_mount: Path) -> List[Tuple[str, str, bool, Path]]:
-    entries: List[Tuple[str, str, bool, Path]] = []
+def resolve_uid(value: str) -> int:
+    if value.isdigit():
+        return int(value, 10)
+    return pwd.getpwnam(value).pw_uid
+
+
+def resolve_gid(value: str) -> int:
+    if value.isdigit():
+        return int(value, 10)
+    return grp.getgrnam(value).gr_gid
+
+
+def parse_mode(value: str) -> int:
+    raw = value.strip().lower()
+    if raw.startswith("0o"):
+        raw = raw[2:]
+    return int(raw, 8)
+
+
+def parse_manifest_flags(
+    policy: str, path: str, extras: List[str]
+) -> Tuple[bool, Optional[MetadataSpec]]:
+    optional = False
+    kv: Dict[str, str] = {}
+    unknown: List[str] = []
+    for token in extras:
+        low = token.lower()
+        if low == "optional":
+            optional = True
+            continue
+        if "=" in token:
+            k, v = token.split("=", 1)
+            kv[k.strip().lower()] = v.strip()
+            continue
+        unknown.append(token)
+
+    if unknown:
+        raise ValueError(f"unknown manifest flags {unknown} for {path}")
+
+    if policy != "enforce_meta":
+        if kv:
+            raise ValueError(f"metadata flags {sorted(kv)} are only valid with enforce_meta for {path}")
+        return optional, None
+
+    required = {"uid", "gid", "mode"}
+    missing = sorted(required - set(kv))
+    if missing:
+        raise ValueError(f"enforce_meta missing required flags {missing} for {path}")
+    extra_keys = sorted(set(kv) - required)
+    if extra_keys:
+        raise ValueError(f"enforce_meta has unknown keys {extra_keys} for {path}")
+
+    try:
+        mode = parse_mode(kv["mode"])
+    except (KeyError, ValueError) as exc:
+        raise ValueError(f"invalid enforce_meta spec for {path}: {exc}") from exc
+
+    return optional, (kv["uid"], kv["gid"], mode)
+
+
+def load_manifest_entries(slot_mount: Path) -> List[Tuple[str, str, bool, Path, Optional[MetadataSpec]]]:
+    entries: List[Tuple[str, str, bool, Path, Optional[MetadataSpec]]] = []
     seen = set()
+    errors: List[str] = []
 
     candidates: List[Path] = []
     main = slot_mount / MANIFEST_MAIN
@@ -124,30 +191,33 @@ def load_manifest_entries(slot_mount: Path) -> List[Tuple[str, str, bool, Path]]
                 continue
             parts = line.split()
             if len(parts) < 2:
-                log("warn", f"invalid entry '{line}' in {manifest}")
+                errors.append(f"invalid entry '{line}' in {manifest}")
                 continue
             policy, path = parts[0], parts[1]
-            optional = False
-            if len(parts) > 2:
-                extra = parts[2:]
-                unknown = [x for x in extra if x.lower() != "optional"]
-                optional = any(x.lower() == "optional" for x in extra)
-                if unknown:
-                    log("warn", f"unknown manifest flags {unknown} for {path}; skipping entry")
-                    continue
             if policy not in POLICIES:
-                log("warn", f"unknown policy '{policy}' for {path}; skipping")
+                errors.append(f"unknown policy '{policy}' for {path} in {manifest}")
                 continue
+            optional = False
+            metadata: Optional[MetadataSpec] = None
+            if len(parts) > 2:
+                try:
+                    optional, metadata = parse_manifest_flags(policy, path, parts[2:])
+                except ValueError as exc:
+                    errors.append(f"{exc} in {manifest}")
+                    continue
             try:
                 path = sanitize_managed_path(path)
             except ValueError as exc:
-                log("warn", f"{exc}; skipping")
+                errors.append(f"{exc} in {manifest}")
                 continue
             if path in seen:
-                log("warn", f"duplicate managed path '{path}' in {manifest}; skipping duplicate")
+                errors.append(f"duplicate managed path '{path}' in {manifest}")
                 continue
             seen.add(path)
-            entries.append((policy, path, optional, manifest))
+            entries.append((policy, path, optional, manifest, metadata))
+
+    if errors:
+        raise ValueError("invalid managed-path manifest entries: " + " | ".join(errors))
 
     return entries
 
@@ -225,7 +295,7 @@ def do_post() -> int:
 
     backup_dir: Path | None = None
 
-    for policy, managed_path, optional, _manifest in entries:
+    for policy, managed_path, optional, _manifest, metadata in entries:
         desired = slot_mount / managed_path.lstrip("/")
         if policy != "absent" and not desired.is_file():
             if optional:
@@ -248,6 +318,7 @@ def do_post() -> int:
             upper_hash = sha256_file(upper)
 
         remove_upper = False
+        apply_meta = False
         if upper_exists:
             if policy == "enforce":
                 remove_upper = upper_hash != desired_hash
@@ -264,6 +335,14 @@ def do_post() -> int:
                 preserved += 1
             elif policy == "absent":
                 remove_upper = True
+            elif policy == "enforce_meta":
+                apply_meta = True
+        elif policy == "enforce_meta":
+            # File exists only in lower (squashfs) layer — cannot mutate it.
+            # Metadata will be enforced once an upper-layer entry is created
+            # (e.g. by provisioning or first runtime write).
+            preserved += 1
+            log("info", f"enforce_meta: {managed_path} has no upper entry; lower layer is immutable")
 
         if remove_upper:
             if backup_dir is None:
@@ -272,16 +351,57 @@ def do_post() -> int:
             updated += 1
             log("info", f"removed stale overlay entry: {managed_path}")
 
+        if apply_meta and upper_exists and metadata:
+            if not upper.is_file():
+                preserved += 1
+                log("warn", f"enforce_meta: {managed_path} upper entry is not a regular file; skipping metadata enforcement")
+                apply_meta = False
+        if apply_meta and upper_exists and metadata:
+            uid_ref, gid_ref, mode = metadata
+            try:
+                uid = resolve_uid(uid_ref)
+                gid = resolve_gid(gid_ref)
+            except LookupError as exc:
+                preserved += 1
+                log(
+                    "warn",
+                    f"unable to resolve enforce_meta uid/gid for {managed_path}: {exc}; "
+                    "skipping metadata enforcement",
+                )
+                uid = -1
+                gid = -1
+
+            if uid == -1 or gid == -1:
+                pass
+            else:
+                st = upper.stat()
+                cur_mode = stat.S_IMODE(st.st_mode)
+                changed = False
+                if st.st_uid != uid or st.st_gid != gid:
+                    os.chown(upper, uid, gid)
+                    changed = True
+                if cur_mode != mode:
+                    os.chmod(upper, mode)
+                    changed = True
+                if changed:
+                    updated += 1
+                    log("info", f"enforced metadata on overlay entry: {managed_path}")
+
         if policy != "absent":
             new_state[managed_path] = desired_hash
 
-    write_state(new_state)
+    failed = skipped_missing > 0
+
+    # Only persist state on success. A failed run must not update the baseline
+    # used by replace_if_unmodified on the next OTA attempt.
+    if not failed:
+        write_state(new_state)
 
     txn = read_txn()
     txn.update(
         {
             "applied_utc": utc_now(),
-            "status": "applied",
+            "status": "failed" if failed else "applied",
             "updated": updated,
             "preserved": preserved,
             "skipped_missing": skipped_missing,
@@ -293,11 +413,14 @@ def do_post() -> int:
     write_txn(txn)
 
     log(
-        "info",
+        "info" if not failed else "error",
         "overlay reconciliation complete: "
         f"removed={updated}, preserved={preserved}, "
         f"missing={skipped_missing}, optional_missing={skipped_optional_missing}",
     )
+    if failed:
+        log("error", f"{skipped_missing} non-optional managed path(s) missing from target slot; failing hook")
+        return 1
     return 0
 
 
