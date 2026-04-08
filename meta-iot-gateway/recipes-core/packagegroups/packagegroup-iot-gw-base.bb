@@ -8,6 +8,7 @@ inherit packagegroup
 # Keep ota-updater excluded unless periodic polling is explicitly required.
 RDEPENDS:${PN} = " \
     packagegroup-iot-gw-utils \
+    iotgw-bootstage \
     sudo \
     networkmanager \
     systemd-analyze \

@@ -1,0 +1,27 @@
+[Unit]
+Description=IoT Gateway U-Boot bootstage collector
+DefaultDependencies=no
+After=local-fs.target
+Before=multi-user.target
+ConditionPathExists=/proc/device-tree
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/iotgw-bootstage
+RemainAfterExit=yes
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/run
+
+[Install]
+WantedBy=multi-user.target

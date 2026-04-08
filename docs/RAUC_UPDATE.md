@@ -147,6 +147,63 @@ Requirement:
 
 - `mod4096=0` for all adaptive rootfs slots
 
+## U-Boot Fast-Boot and Diagnostics Controls
+
+This project now uses explicit U-Boot environment controls to keep normal
+boots fast while preserving OTA diagnostics capability.
+
+Defaults are set in the boot script:
+
+- `iotgw_appliance=1`
+- `iotgw_enable_netboot=0`
+- `iotgw_diag=0` (unset by default)
+- `iotgw_bootstage=1`
+
+Behavior:
+
+- `iotgw_appliance=1`: appliance fast-path in U-Boot board init
+- `iotgw_enable_netboot=1`: enable netboot-related network path in board init
+- `iotgw_diag=1`: print extra boot diagnostics (RAUC vars + MMC info) at boot
+- `iotgw_bootstage=1`: print U-Boot bootstage timing report on serial
+
+Bootstage build profile in this layer:
+
+- `CONFIG_BOOTSTAGE=y`
+- `CONFIG_CMD_BOOTSTAGE=y`
+- `CONFIG_BOOTSTAGE_RECORD_COUNT=100`
+- `CONFIG_BOOTSTAGE_FDT=y` (timing data available in device tree)
+- `CONFIG_BOOTSTAGE_STASH=n` (not enabled until a safe reserved memory address is defined for RPi5)
+
+Examples on target (U-Boot prompt):
+
+```bash
+# Enable one-shot/full diagnostics for field debugging
+setenv iotgw_diag 1
+saveenv
+
+# Re-enable full board-init path (disable appliance fast-path)
+setenv iotgw_appliance 0
+saveenv
+
+# Allow netboot-related initialization
+setenv iotgw_enable_netboot 1
+saveenv
+
+# Enable U-Boot bootstage timing report
+setenv iotgw_bootstage 1
+saveenv
+```
+
+Restore production defaults:
+
+```bash
+setenv iotgw_appliance 1
+setenv iotgw_enable_netboot 0
+setenv iotgw_diag 0
+setenv iotgw_bootstage 0
+saveenv
+```
+
 ## Troubleshooting
 
 If install fails early with:
