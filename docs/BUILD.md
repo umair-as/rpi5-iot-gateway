@@ -94,9 +94,9 @@ Defaults:
 Example release override:
 ```bash
 IOTGW_VERSION_MAJOR=0 \
-IOTGW_VERSION_MINOR=2 \
+IOTGW_VERSION_MINOR=3 \
 IOTGW_VERSION_PATCH=0 \
-IOTGW_BUILD_ID=20260401 \
+IOTGW_BUILD_ID=20260408 \
 make bundle-prod-full
 ```
 
