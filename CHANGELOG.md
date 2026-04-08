@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-08
+
+### Changed
+- Release metadata alignment:
+  - distro default version bumped to `igw.0.3.0` in `iotgw-common.inc`
+  - build documentation release override example updated to `0.3.0`
+- `v0.3.0` changelog entry amended to include observability stack rollout notes
+  (`influxdb`, `telegraf`, `mosquitto`).
+
 ## [0.3.0] - 2026-04-08
 
 ### Added
@@ -111,7 +120,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added adaptive OTA benchmark and troubleshooting guidance for field validation.
 - Added HTTPS streaming OTA notes and refreshed operational docs for build/partition/security flows.
 
-[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/umair-as/rpi5-iot-gateway/releases/tag/v0.1.0
