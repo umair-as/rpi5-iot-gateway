@@ -65,6 +65,18 @@ iotgw_rootfs_nftables() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_nftables;"
 
+###### Audit rules deployment
+# auditd owns /etc/audit and /etc/audit/rules.d — we cannot package into those dirs
+# directly from iotgw-audit without a file conflict. Deploy at rootfs build time instead.
+iotgw_rootfs_audit_rules() {
+    if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-audit/iotgw.rules ]; then
+        install -d -m 0750 ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d
+        install -m 0640 ${IMAGE_ROOTFS}${datadir}/iotgw-audit/iotgw.rules \
+            ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d/iotgw.rules
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_audit_rules;"
+
 ###### Bluetooth configuration directory mode alignment
 iotgw_rootfs_bluetooth_mode() {
     if [ -d ${IMAGE_ROOTFS}/etc/bluetooth ]; then

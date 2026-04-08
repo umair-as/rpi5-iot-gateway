@@ -11,8 +11,11 @@ RDEPENDS:${PN} = "auditd"
 S = "${WORKDIR}"
 
 do_install() {
-    install -d ${D}${sysconfdir}/audit/rules.d
-    install -m 0640 ${WORKDIR}/audit.rules ${D}${sysconfdir}/audit/rules.d/iotgw.rules
+    # Stage under datadir — auditd owns /etc/audit and /etc/audit/rules.d, so we
+    # cannot package into those directories directly. iotgw-rootfs.bbclass deploys
+    # the rules into the image rootfs via ROOTFS_POSTPROCESS_COMMAND.
+    install -d ${D}${datadir}/iotgw-audit
+    install -m 0640 ${WORKDIR}/audit.rules ${D}${datadir}/iotgw-audit/iotgw.rules
 }
 
-FILES:${PN} = "${sysconfdir}/audit/rules.d/iotgw.rules"
+FILES:${PN} = "${datadir}/iotgw-audit/iotgw.rules"
