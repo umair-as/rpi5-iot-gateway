@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-08
+
+### Added
+- U-Boot bootstage userspace collector service (`iotgw-bootstage`) with structured logging and environment export.
+- Stable RAUC slot udev links (`/dev/disk/by-rauc-slot/*`) for early boot partition resolution.
+
+### Changed
+- Raspberry Pi 5 U-Boot boot path optimized for appliance flow with script-first behavior.
+- U-Boot boot interaction refined to a 2s keyed stop string (`igw`) with image-variant bootdelay policy.
+- U-Boot diagnostics expanded with stage markers and bootstage reporting path for fleet timing analysis.
+- Startup critical path improved by removing `udev-settle` dependency from `rauc-grow-data-partition`.
+- Network boot wait behavior hardened by masking `NetworkManager-wait-online` at rootfs build time.
+- Systemd preset installation path corrected to `${libdir}/systemd/system-preset` for deterministic application during image build.
+
+### Fixed
+- Resolved RPi5 U-Boot init/probe regressions encountered during EFI/video/DM path tuning.
+- Audit rule deployment moved away from fragile `pkg_postinst` flow to deterministic rootfs deployment.
+- AArch64 audit rule compatibility fixed (invalid syscall usage removed), with reliable `augenrules` load.
+- File/dir audit monitoring switched to watch-form rules for stable boot-time rule activation.
+- `devel` account password aging policy adjusted to avoid forced expiry lockouts on first login after OTA.
+- Overlay reconcile policy updated to enforce `/etc/login.defs` consistency across slot switches.
+
+### Security
+- Login policy hardening moved to `shadow` package build-time patching (`/etc/login.defs`) for OTA-consistent behavior.
+- Audit policy profile clarified with image-profile lock mode handling (`-e 1` dev/base, stricter prod policy support).
+
+### Documentation
+- Security documentation updated for current audit rules path and Lynis baseline workflow.
+- Partition documentation updated for current grow-data detection/stamp behavior.
+
 ## [0.2.0] - 2026-04-01
 
 ### Added
@@ -76,6 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added adaptive OTA benchmark and troubleshooting guidance for field validation.
 - Added HTTPS streaming OTA notes and refreshed operational docs for build/partition/security flows.
 
-[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/umair-as/rpi5-iot-gateway/releases/tag/v0.1.0
