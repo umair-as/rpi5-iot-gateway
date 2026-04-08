@@ -93,6 +93,17 @@ iotgw_rootfs_bluetooth_mode() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_bluetooth_mode;"
 
+###### Mask units that preset-all cannot disable (Yocto always runs --preset-mode=enable-only)
+# NM installs its wants symlink via pkg_postinst before our preset is applied, so the
+# disable directive in 90-iotgw.preset is silently ignored. An explicit mask is required.
+iotgw_rootfs_mask_nm_wait_online() {
+    install -d ${IMAGE_ROOTFS}/etc/systemd/system
+    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/NetworkManager-wait-online.service
+    # Also remove the wants symlink if NM's postinst left one
+    rm -f ${IMAGE_ROOTFS}/etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_nm_wait_online;"
+
 ###### Optional vconsole setup masking (headless/serial-focused images)
 iotgw_rootfs_mask_vconsole_setup() {
     if [ "${IOTGW_DISABLE_VCONSOLE_SETUP}" = "1" ]; then
