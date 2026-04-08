@@ -23,3 +23,6 @@ CORE_IMAGE_EXTRA_INSTALL += " \
 
 # Keep image smaller by avoiding extra free space
 IMAGE_ROOTFS_EXTRA_SPACE = "524288"
+
+# Production policy: disable U-Boot interactive stop window.
+IOTGW_UBOOT_BOOTDELAY = "-2"

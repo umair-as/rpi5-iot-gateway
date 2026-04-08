@@ -15,7 +15,8 @@ NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
-PrivateDevices=true
+# fw_setenv needs block-device visibility for /uboot-env backend.
+PrivateDevices=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
