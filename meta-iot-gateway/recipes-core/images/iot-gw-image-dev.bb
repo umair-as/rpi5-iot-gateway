@@ -20,6 +20,7 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-dev \
     packagegroup-iot-gw-security \
     packagegroup-core-buildessential \
+    dtc \
     bridge-utils \
     avahi-daemon \
     tmux \
