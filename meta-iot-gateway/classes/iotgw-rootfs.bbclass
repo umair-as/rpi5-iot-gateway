@@ -70,8 +70,16 @@ ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_nftables;"
 # directly from iotgw-audit without a file conflict. Deploy at rootfs build time instead.
 iotgw_rootfs_audit_rules() {
     if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-audit/iotgw.rules ]; then
+        audit_lock_mode=""
         install -d -m 0750 ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d
         install -m 0640 ${IMAGE_ROOTFS}${datadir}/iotgw-audit/iotgw.rules \
+            ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d/iotgw.rules
+        audit_lock_mode="${IOTGW_AUDIT_RULE_IMMUTABLE}"
+        case "${audit_lock_mode}" in
+            1|2) ;;
+            *) audit_lock_mode="1" ;;
+        esac
+        sed -i -E "s/^-e[[:space:]]+[0-9]+$/-e ${audit_lock_mode}/" \
             ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d/iotgw.rules
     fi
 }

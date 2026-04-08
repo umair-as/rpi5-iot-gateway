@@ -22,6 +22,7 @@ IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
 # Keep upstream RAUC mark-good flow enabled.
 IOTGW_DISABLE_RAUC_MARK_GOOD ?= "0"
 IOTGW_UBOOT_BOOTDELAY ?= "2"
+IOTGW_AUDIT_RULE_IMMUTABLE ?= "1"
 
 # Desktop profile can include splash
 IMAGE_FEATURES:append:desktop = " splash"
