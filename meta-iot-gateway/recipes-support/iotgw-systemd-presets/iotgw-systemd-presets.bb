@@ -8,9 +8,9 @@ S = "${WORKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 do_install() {
-    install -d ${D}${datadir}/iotgw-systemd-presets
-    install -m 0644 ${WORKDIR}/90-iotgw.preset ${D}${datadir}/iotgw-systemd-presets/90-iotgw.preset
+    install -d ${D}${libdir}/systemd/system-preset
+    install -m 0644 ${WORKDIR}/90-iotgw.preset ${D}${libdir}/systemd/system-preset/90-iotgw.preset
 }
 
-FILES:${PN} = "${datadir}/iotgw-systemd-presets/90-iotgw.preset"
+FILES:${PN} = "${libdir}/systemd/system-preset/90-iotgw.preset"
 
