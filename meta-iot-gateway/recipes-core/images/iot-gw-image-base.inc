@@ -21,6 +21,7 @@ IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
 
 # Keep upstream RAUC mark-good flow enabled.
 IOTGW_DISABLE_RAUC_MARK_GOOD ?= "0"
+IOTGW_UBOOT_BOOTDELAY ?= "2"
 
 # Desktop profile can include splash
 IMAGE_FEATURES:append:desktop = " splash"
@@ -47,3 +48,12 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     kernel-modules \
     linux-firmware-rpidistro-bcm43455 \
 "
+
+iotgw_write_uboot_policy () {
+    install -d ${IMAGE_ROOTFS}${sysconfdir}/default
+    cat > ${IMAGE_ROOTFS}${sysconfdir}/default/iotgw-uboot-policy <<EOF
+# Managed by image build. Applied on target by iotgw-provision.sh.
+IOTGW_UBOOT_BOOTDELAY=${IOTGW_UBOOT_BOOTDELAY}
+EOF
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_write_uboot_policy; "

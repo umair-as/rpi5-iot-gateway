@@ -144,7 +144,14 @@ IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 IOTGW_ENABLE_TPM_SLB9672 ?= "0"
 IOTGW_TPM_DTO_OVERLAY ?= "tpm-slb9670"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', ' igw_tpm_slb9672', '', d)}"
-RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', '\\ndtparam=spi=on\\ndtoverlay=%s\\n' % d.getVar('IOTGW_TPM_DTO_OVERLAY'), '', d)}"
+# Mainline RPi5 DTB note:
+# - Firmware `dtparam=` keys must exist in DTB `__overrides__`.
+# - Current mainline bcm2712-rpi-5-b path exports rtc/rtc_bbat_vchg, but not
+#   generic `spi`, `i2c1`, or `i2c_arm`.
+# - Keep peripheral enablement explicit via DTO overlays and DTS changes.
+# - Do not append `dtparam=spi=on` here; it is ignored on this path and adds
+#   early-boot noise.
+RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', '\\ndtoverlay=%s\\n' % d.getVar('IOTGW_TPM_DTO_OVERLAY'), '', d)}"
 
 # Optional observability stack (native services: InfluxDB + Telegraf).
 # Containerized observability is paused on Scarthgap due to Rust toolchain skew

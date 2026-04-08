@@ -9,6 +9,7 @@ echo "----------------------------------------------------"
 echo "  Platform : Raspberry Pi 5"
 echo "  Boot     : U-Boot (script)"
 echo "===================================================="
+echo "[IOTGW][01/05] Banner/Init"
 echo "Boot media: @@BOOT_MEDIA@@  | Image: @@KERNEL_IMAGETYPE@@"
 if test -n "${iotgw_build}"; then
     echo "Build     : ${iotgw_build}"
@@ -20,17 +21,25 @@ if test -n "${iotgw_bootcount}"; then
     echo "Boot cnt  : ${iotgw_bootcount}"
 fi
 
-# Display splash if present in /boot (no env toggle required)
-if fatload @@BOOT_MEDIA@@ 0:1 ${loadaddr} splash.bmp; then
-    echo "Displaying splash..."
-    # Clear any earlier framebuffer contents (e.g., built-in U-Boot logo)
-    cls
-    bmp display ${loadaddr} m m
+# Default to appliance fast-path boot behavior unless explicitly overridden.
+test -n "${iotgw_appliance}" || setenv iotgw_appliance 1
+test -n "${iotgw_enable_netboot}" || setenv iotgw_enable_netboot 0
+test -n "${iotgw_bootstage}" || setenv iotgw_bootstage 1
+
+if test "x${iotgw_diag}" = "x1"; then
+    echo "[DIAG] Enabled (iotgw_diag=1)"
+    env print BOOT_ORDER BOOT_A_LEFT BOOT_B_LEFT rauc_slot bootcount bootdelay
+    if mmc dev 0; then
+        mmc info
+    fi
 fi
+
+# Headless profile: no pre-kernel splash rendering in U-Boot.
 
 # Determine slot to boot (RAUC integration)
 # Upstream RAUC pattern: respect BOOT_ORDER and per-slot remaining tries.
 # Defaults for first boot if env not initialized
+echo "[IOTGW][02/05] RAUC Slot Selection"
 test -n "${BOOT_ORDER}" || setenv BOOT_ORDER "A B"
 test -n "${BOOT_A_LEFT}" || setenv BOOT_A_LEFT 3
 test -n "${BOOT_B_LEFT}" || setenv BOOT_B_LEFT 3
@@ -71,6 +80,7 @@ for BOOT_SLOT in ${BOOT_ORDER}; do
 done
 
 # Build kernel cmdline: start from firmware-provided args, then append root per slot
+echo "[IOTGW][03/05] Kernel Args"
 fdt addr ${fdt_addr} && fdt get value bootargs /chosen bootargs
 if test -n "${bootpart}"; then
     if test -z "${rootpartnum}"; then
@@ -107,7 +117,9 @@ else
 fi
 
 echo "[bootscript] Selected RAUC slot ${rauc_slot} (root=${bootpart})"
+echo "[IOTGW][SUMMARY] slot=${rauc_slot} rootpartnum=${rootpartnum} partuuid=${rootpartuuid}"
 
+echo "[IOTGW][04/05] Kernel Load"
 echo "[RAUC] Loading kernel from boot partition; slot=${rauc_slot} root=${bootpart}"
 
 # Avoid source/destination overlap for large FIT images: load fitImage at a
@@ -129,6 +141,11 @@ fi
 if test ! -e @@BOOT_MEDIA@@ 0:2 uboot.env; then saveenv; fi;
 
 # FIT-mode visibility and explicit configuration selection.
+echo "[IOTGW][05/05] Kernel Boot"
+if test "x${iotgw_bootstage}" = "x1"; then
+    echo "[IOTGW][TIMING] U-Boot bootstage report"
+    bootstage report
+fi
 if test "x@@KERNEL_IMAGETYPE@@" = "xfitImage"; then
     test -n "${iotgw_fit_verify}" || setenv iotgw_fit_verify "required"
     test -n "${iotgw_fit_algo}" || setenv iotgw_fit_algo "sha256,rsa2048"

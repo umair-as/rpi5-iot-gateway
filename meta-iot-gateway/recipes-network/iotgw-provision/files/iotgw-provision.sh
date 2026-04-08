@@ -4,6 +4,7 @@ set -euo pipefail
 STAMP="/var/lib/iotgw-provision.done"
 SRC_DIR="/data/iotgw"
 OBS_DST="/etc/default/iotgw-observability"
+UBOOT_POLICY="/etc/default/iotgw-uboot-policy"
 OBS_CRED_DIR="/etc/credstore"
 CHANGED=0
 WARNINGS=0
@@ -19,6 +20,7 @@ OBS_SOURCE="none"
 OBS_CRED_UPDATES=0
 OBS_BROKER_APPLIED=0
 LEGACY_SECRET_KEYS_REMOVED=0
+UBOOT_ENV_UPDATES=0
 
 mkdir -p /var/lib
 
@@ -87,6 +89,40 @@ set_credential_value() {
     return 1
 }
 
+get_fw_env_value() {
+    local key="$1"
+    local line
+    line="$(fw_printenv "$key" 2>/dev/null | sed -n "s/^${key}=//p" | tail -n 1 || true)"
+    printf '%s' "$line"
+}
+
+apply_uboot_policy() {
+    local desired current
+
+    [ -r "$UBOOT_POLICY" ] || return 0
+    desired="$(get_env_value "$UBOOT_POLICY" "IOTGW_UBOOT_BOOTDELAY")"
+    [ -n "$desired" ] || return 0
+
+    if ! command -v fw_setenv >/dev/null 2>&1 || ! command -v fw_printenv >/dev/null 2>&1; then
+        warn "U-Boot policy present but fw_setenv/fw_printenv unavailable; skipping bootdelay policy"
+        return 0
+    fi
+
+    current="$(get_fw_env_value "bootdelay")"
+    if [ "$current" = "$desired" ]; then
+        log "ℹ️  [provision] U-Boot bootdelay already set to ${desired}"
+        return 0
+    fi
+
+    if fw_setenv bootdelay "$desired"; then
+        UBOOT_ENV_UPDATES=$((UBOOT_ENV_UPDATES + 1))
+        CHANGED=1
+        log "⚙️  [provision] Applied U-Boot bootdelay policy: ${current:-<unset>} -> ${desired}"
+    else
+        warn "Failed to apply U-Boot bootdelay policy (${desired})"
+    fi
+}
+
 normalize_mosquitto_auth_files() {
     local changed=0
     if ! getent passwd mosquitto >/dev/null 2>&1; then
@@ -143,6 +179,7 @@ fi
 
 # Keep mosquitto auth material readable by the daemon account on every boot.
 normalize_mosquitto_auth_files
+apply_uboot_policy
 
 # Exit early if already provisioned
 if [ -e "$STAMP" ]; then
@@ -337,5 +374,5 @@ if [ "$CHANGED" -eq 1 ]; then
 else
     log "✅ [provision] Completed: no changes"
 fi
-log "[provision] Summary: changed=${CHANGED} source=${OBS_SOURCE} nm_profiles=${NM_PROFILE_UPDATES} nm_conf=${NM_CONF_UPDATES} cred_updates=${OBS_CRED_UPDATES} broker_applied=${OBS_BROKER_APPLIED} legacy_keys_removed=${LEGACY_SECRET_KEYS_REMOVED} warnings=${WARNINGS}"
+log "[provision] Summary: changed=${CHANGED} source=${OBS_SOURCE} nm_profiles=${NM_PROFILE_UPDATES} nm_conf=${NM_CONF_UPDATES} cred_updates=${OBS_CRED_UPDATES} broker_applied=${OBS_BROKER_APPLIED} legacy_keys_removed=${LEGACY_SECRET_KEYS_REMOVED} uboot_env_updates=${UBOOT_ENV_UPDATES} warnings=${WARNINGS}"
 exit "$RC_OK"

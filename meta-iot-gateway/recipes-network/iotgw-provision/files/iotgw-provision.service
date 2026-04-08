@@ -15,7 +15,8 @@ NoNewPrivileges=true
 ProtectSystem=full
 ProtectHome=true
 PrivateTmp=true
-PrivateDevices=true
+# fw_setenv needs block-device visibility for /uboot-env backend.
+PrivateDevices=false
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectKernelLogs=true
@@ -25,7 +26,8 @@ RestrictNamespaces=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=/etc/NetworkManager /etc/default /etc/credstore /etc/mosquitto /var/lib /data/iotgw
+# Allow /data mount even when /data/iotgw is absent on fresh systems.
+ReadWritePaths=/etc/NetworkManager /etc/default /etc/credstore /etc/mosquitto /var/lib /data
 
 [Install]
 WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+diff --git a/board/raspberrypi/rpi/rpi.env b/board/raspberrypi/rpi/rpi.env
+index 30228285edd..e6867e443d5 100644
+--- a/board/raspberrypi/rpi/rpi.env
++++ b/board/raspberrypi/rpi/rpi.env
+@@ -2,10 +2,10 @@
+ 
+ /* environment for Raspberry Pi boards */
+ 
+-dhcpuboot=usb start; dhcp u-boot.uimg; bootm
++dhcpuboot=dhcp u-boot.uimg; bootm
+ 
+ /* Environment */
+-stdin=serial,usbkbd
++stdin=serial
+ stdout=serial,vidconsole
+ stderr=serial,vidconsole
+ 
+@@ -74,4 +74,4 @@ pxefile_addr_r=0x02500000
+ fdt_addr_r=0x02600000
+ ramdisk_addr_r=0x02700000
+ 
+-boot_targets=mmc usb pxe dhcp
++boot_targets=mmc

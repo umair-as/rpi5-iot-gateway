@@ -1,0 +1,41 @@
+--- a/board/raspberrypi/rpi/rpi.c
++++ b/board/raspberrypi/rpi/rpi.c
+@@ -380,6 +380,10 @@
+ 	ALLOC_CACHE_ALIGN_BUFFER(struct msg_get_mac_address, msg, 1);
+ 	int ret;
+ 
++	/* Gateway defaults to local boot; enable netboot path explicitly. */
++	if (env_get_yesno("iotgw_enable_netboot") != 1)
++		return;
++
+ 	if (!model->has_onboard_eth)
+ 		return;
+ 
+@@ -446,13 +450,25 @@
+ 
+ int misc_init_r(void)
+ {
++	int appliance_mode;
++	int diag_mode;
++
++	appliance_mode = env_get_yesno("iotgw_appliance");
++	diag_mode = env_get_yesno("iotgw_diag");
++
+ 	set_fdt_addr();
+ 	set_fdtfile();
+-	set_usbethaddr();
++
++	/*
++	 * Appliance fast path: skip network MAC provisioning and extra mailbox
++	 * traffic on normal boots. Diagnostics mode can still force full init.
++	 */
++	if (appliance_mode == 0 || diag_mode == 1)
++		set_usbethaddr();
+ #ifdef CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG
+ 	set_board_info();
+ #endif
+-	set_serial_number();
++	set_serial_number();
+ 
+ 	return 0;
+ }
