@@ -65,6 +65,26 @@ iotgw_rootfs_nftables() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_nftables;"
 
+###### Audit rules deployment
+# auditd owns /etc/audit and /etc/audit/rules.d — we cannot package into those dirs
+# directly from iotgw-audit without a file conflict. Deploy at rootfs build time instead.
+iotgw_rootfs_audit_rules() {
+    if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-audit/iotgw.rules ]; then
+        audit_lock_mode=""
+        install -d -m 0750 ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d
+        install -m 0640 ${IMAGE_ROOTFS}${datadir}/iotgw-audit/iotgw.rules \
+            ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d/iotgw.rules
+        audit_lock_mode="${IOTGW_AUDIT_RULE_IMMUTABLE}"
+        case "${audit_lock_mode}" in
+            1|2) ;;
+            *) audit_lock_mode="1" ;;
+        esac
+        sed -i -E "s/^-e[[:space:]]+[0-9]+$/-e ${audit_lock_mode}/" \
+            ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d/iotgw.rules
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_audit_rules;"
+
 ###### Bluetooth configuration directory mode alignment
 iotgw_rootfs_bluetooth_mode() {
     if [ -d ${IMAGE_ROOTFS}/etc/bluetooth ]; then
@@ -73,15 +93,16 @@ iotgw_rootfs_bluetooth_mode() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_bluetooth_mode;"
 
-###### systemd presets
-iotgw_rootfs_systemd_presets() {
-    if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-systemd-presets/90-iotgw.preset ]; then
-        install -d ${IMAGE_ROOTFS}/etc/systemd/system-preset
-        install -m 0644 ${IMAGE_ROOTFS}${datadir}/iotgw-systemd-presets/90-iotgw.preset \
-            ${IMAGE_ROOTFS}/etc/systemd/system-preset/90-iotgw.preset
-    fi
+###### Mask units that preset-all cannot disable (Yocto always runs --preset-mode=enable-only)
+# NM installs its wants symlink via pkg_postinst before our preset is applied, so the
+# disable directive in 90-iotgw.preset is silently ignored. An explicit mask is required.
+iotgw_rootfs_mask_nm_wait_online() {
+    install -d ${IMAGE_ROOTFS}/etc/systemd/system
+    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/NetworkManager-wait-online.service
+    # Also remove the wants symlink if NM's postinst left one
+    rm -f ${IMAGE_ROOTFS}/etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service
 }
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_systemd_presets;"
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_nm_wait_online;"
 
 ###### Optional vconsole setup masking (headless/serial-focused images)
 iotgw_rootfs_mask_vconsole_setup() {

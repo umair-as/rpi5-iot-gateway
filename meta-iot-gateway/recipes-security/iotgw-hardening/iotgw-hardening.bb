@@ -8,7 +8,6 @@ SRC_URI = " \
     file://blacklist.conf \
     file://limits-hardening.conf \
     file://umask.sh \
-    file://login.defs.hardening \
     file://50-core-limits.conf \
     file://coredump.conf \
     file://tmp.mount.override \
@@ -68,34 +67,9 @@ do_install() {
     # Restrictive umask (AUTH-9328)
     install -d ${D}${sysconfdir}/profile.d
     install -m 0644 ${WORKDIR}/umask.sh ${D}${sysconfdir}/profile.d/
-
-    # Password policy hardening
-    install -d ${D}${sysconfdir}/login.defs.d
-    install -m 0644 ${WORKDIR}/login.defs.hardening ${D}${sysconfdir}/login.defs.d/
+    # Note: login.defs hardening is applied via shadow_%.bbappend at package build time
 }
 
-pkg_postinst:${PN}() {
-    if [ -z "$D" ]; then
-        # Ensure stronger defaults in /etc/login.defs for Lynis visibility
-        # (Lynis may not parse /etc/login.defs.d). Update or append values.
-        defs=/etc/login.defs
-        tmp=$(mktemp)
-        if [ -r "$defs" ]; then
-            cp -a "$defs" "$tmp" || true
-            # Set UMASK 027
-            grep -q '^UMASK' "$tmp" && sed -i 's/^UMASK.*/UMASK\t\t027/' "$tmp" || echo 'UMASK\t\t027' >> "$tmp"
-            # Set password aging
-            grep -q '^PASS_MIN_DAYS' "$tmp" && sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS\t7/' "$tmp" || echo 'PASS_MIN_DAYS\t7' >> "$tmp"
-            grep -q '^PASS_MAX_DAYS' "$tmp" && sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS\t90/' "$tmp" || echo 'PASS_MAX_DAYS\t90' >> "$tmp"
-            grep -q '^PASS_WARN_AGE' "$tmp" && sed -i 's/^PASS_WARN_AGE.*/PASS_WARN_AGE\t14/' "$tmp" || echo 'PASS_WARN_AGE\t14' >> "$tmp"
-            # Configure SHA-crypt rounds
-            grep -q '^SHA_CRYPT_MIN_ROUNDS' "$tmp" && sed -i 's/^SHA_CRYPT_MIN_ROUNDS.*/SHA_CRYPT_MIN_ROUNDS\t5000/' "$tmp" || echo 'SHA_CRYPT_MIN_ROUNDS\t5000' >> "$tmp"
-            grep -q '^SHA_CRYPT_MAX_ROUNDS' "$tmp" && sed -i 's/^SHA_CRYPT_MAX_ROUNDS.*/SHA_CRYPT_MAX_ROUNDS\t10000/' "$tmp" || echo 'SHA_CRYPT_MAX_ROUNDS\t10000' >> "$tmp"
-            cp -a "$tmp" "$defs" || true
-            rm -f "$tmp"
-        fi
-    fi
-}
 
 FILES:${PN} = " \
     ${sysconfdir}/sysctl.d/99-iotgw-hardening.conf \
@@ -112,7 +86,6 @@ FILES:${PN} = " \
     ${sysconfdir}/systemd/system/avahi-daemon.service.d/override.conf \
     ${sysconfdir}/systemd/system/sshd@.service \
     ${sysconfdir}/profile.d/umask.sh \
-    ${sysconfdir}/login.defs.d/login.defs.hardening \
 "
 
 CONFFILES:${PN} = " \

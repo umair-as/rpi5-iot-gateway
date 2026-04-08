@@ -1,7 +1,8 @@
 # Enable baseline services on first boot
 enable iotgw-nftables.service
 
-# Disable systemd-networkd wait-online since we use NetworkManager
+# Disable wait-online services — NM manages connectivity, blocking boot is unnecessary
+disable NetworkManager-wait-online.service
 disable systemd-networkd-wait-online.service
 disable systemd-networkd.service
 disable systemd-networkd.socket

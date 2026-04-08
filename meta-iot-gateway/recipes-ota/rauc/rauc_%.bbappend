@@ -8,6 +8,7 @@ SRC_URI:append = " \
     file://managed-paths.d/network.conf \
     file://managed-paths.d/observability.conf \
     file://overlay-reconcile.py \
+    file://99-iotgw-rauc-slots.rules \
 "
 
 # grow-data-partition.sh requires bash/e2fsprogs plus util-linux (lsblk, partprobe),
@@ -39,11 +40,18 @@ do_install:append() {
     install -d ${D}${libexecdir}/rauc
     install -m 0755 ${WORKDIR}/overlay-reconcile.py \
         ${D}${libexecdir}/rauc/overlay-reconcile.py
+
+    # Install stable RAUC slot udev rules — symlinks appear at udev-trigger
+    # time so the grow service no longer needs udev-settle.
+    install -d ${D}${sysconfdir}/udev/rules.d
+    install -m 0644 ${WORKDIR}/99-iotgw-rauc-slots.rules \
+        ${D}${sysconfdir}/udev/rules.d/99-iotgw-rauc-slots.rules
 }
 
 # Ensure the script is placed with the grow subpackage
 FILES:rauc-grow-data-part:append = " ${sbindir}/grow-data-partition.sh"
 FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/observability.conf ${libexecdir}/rauc/overlay-reconcile.py"
+FILES:${PN}:append = " ${sysconfdir}/udev/rules.d/99-iotgw-rauc-slots.rules"
 RDEPENDS:${PN}-service:append = " python3-core"
 
 # Keep RAUC available for D-Bus activation, but don't start it by default

@@ -26,3 +26,6 @@ IMAGE_ROOTFS_EXTRA_SPACE = "524288"
 
 # Production policy: disable U-Boot interactive stop window.
 IOTGW_UBOOT_BOOTDELAY = "-2"
+
+# Production policy: lock audit rules after load (reboot required to change).
+IOTGW_AUDIT_RULE_IMMUTABLE = "2"

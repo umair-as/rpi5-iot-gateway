@@ -16,7 +16,7 @@ EXTRA_USERS_PARAMS:append = " \
     groupadd -f -r ota; \
     groupadd -f -r systemd-timesync; \
     useradd -r -g systemd-timesync -d / -s /sbin/nologin systemd-timesync; \
-    useradd -d /home/devel -m -s /bin/bash -G sudo,dialout,netdev,plugdev,video,render,input,wireshark,podman,gpio,i2c,spi devel; \
+    useradd -K PASS_MAX_DAYS=99999 -d /home/devel -m -s /bin/bash -G sudo,dialout,netdev,plugdev,video,render,input,wireshark,podman,gpio,i2c,spi devel; \
     usermod -p '${IOTGW_DEVEL_PASSWORD_HASH}' devel; \
 "
 
