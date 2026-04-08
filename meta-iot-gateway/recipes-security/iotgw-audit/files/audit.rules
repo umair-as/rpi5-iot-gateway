@@ -8,57 +8,39 @@
 -f 1
 
 ## Identity files (passwd/group/shadow)
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/passwd              -F perm=wa -k identity
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/passwd              -F perm=wa -k identity
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/group               -F perm=wa -k identity
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/group               -F perm=wa -k identity
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/shadow              -F perm=wa -k identity
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/shadow              -F perm=wa -k identity
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/gshadow             -F perm=wa -k identity
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/gshadow             -F perm=wa -k identity
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/security/opasswd    -F perm=wa -k identity
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/security/opasswd    -F perm=wa -k identity
+-w /etc/passwd              -p wa -k identity
+-w /etc/group               -p wa -k identity
+-w /etc/shadow              -p wa -k identity
+-w /etc/gshadow             -p wa -k identity
+-w /etc/security/opasswd    -p wa -k identity
 
 ## Login configuration
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/login.defs          -F perm=wa -k login
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/login.defs          -F perm=wa -k login
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/securetty           -F perm=wa -k login
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/securetty           -F perm=wa -k login
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/var/log/faillog         -F perm=wa -k login
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/var/log/faillog         -F perm=wa -k login
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/var/log/lastlog         -F perm=wa -k login
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/var/log/lastlog         -F perm=wa -k login
+-w /etc/login.defs          -p wa -k login
+-w /etc/securetty           -p wa -k login
+-w /var/log/faillog         -p wa -k login
+-w /var/log/lastlog         -p wa -k login
 
 ## Network config
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/hosts               -F perm=wa -k network
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/hosts               -F perm=wa -k network
+-w /etc/hosts               -p wa -k network
 # Directory changes under /etc/network
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F dir=/etc/network              -F perm=wa -k network
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F dir=/etc/network              -F perm=wa -k network
+-w /etc/network             -p wa -k network
 
 ## Cron
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/crontab             -F perm=wa -k cron
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/crontab             -F perm=wa -k cron
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F dir=/etc/cron.d               -F perm=wa -k cron
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F dir=/etc/cron.d               -F perm=wa -k cron
+-w /etc/crontab             -p wa -k cron
+-w /etc/cron.d              -p wa -k cron
 
 ## SSH server config
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/ssh/sshd_config     -F perm=wa -k sshd
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/ssh/sshd_config     -F perm=wa -k sshd
+-w /etc/ssh/sshd_config     -p wa -k sshd
 
 ## systemd configuration directory
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F dir=/etc/systemd              -F perm=wa -k systemd
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F dir=/etc/systemd              -F perm=wa -k systemd
+-w /etc/systemd             -p wa -k systemd
 
 ## Sudoers
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F path=/etc/sudoers             -F perm=wa -k sudoers
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F path=/etc/sudoers             -F perm=wa -k sudoers
--a always,exit -F arch=b64 -S openat,truncate,ftruncate -F dir=/etc/sudoers.d            -F perm=wa -k sudoers
--a always,exit -F arch=b32 -S openat,truncate,ftruncate -F dir=/etc/sudoers.d            -F perm=wa -k sudoers
+-w /etc/sudoers             -p wa -k sudoers
+-w /etc/sudoers.d           -p wa -k sudoers
 
 ## Kernel module operations (prefer syscall-based over path watches)
 -a always,exit -F arch=b64 -S init_module,finit_module,delete_module -k modules
--a always,exit -F arch=b32 -S init_module,finit_module,delete_module -k modules
 
 # Default: keep rules reloadable on dev/base images.
 # Production image policy can override this to -e 2 at rootfs postprocess time.
