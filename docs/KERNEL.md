@@ -118,11 +118,19 @@ TPM2 baseline for SPI-attached Infineon SLB9672 class devices.
 fragment. Avoid enabling spidev on the same SPI chip-select used by TPM.
 
 **Runtime wiring:** enabling `IOTGW_ENABLE_TPM_SLB9672 = "1"` appends:
-- `dtparam=spi=on`
 - `dtoverlay=${IOTGW_TPM_DTO_OVERLAY}` (default `tpm-slb9670`)
 
 If board wiring requires a different overlay parameterization, override
 `IOTGW_TPM_DTO_OVERLAY` in `kas/local.yml`.
+
+**Mainline RPi5 note (important):**
+- `dtparam=` keys work only when exported in DTB `__overrides__`.
+- On our current mainline `bcm2712-rpi-5-b.dtb`, classic keys such as
+  `spi`, `i2c1`, and `i2c_arm` are not exported, so firmware logs
+  `Unknown dtparam ... - ignored`.
+- Use explicit `dtoverlay=` and DTS changes for peripheral enablement on
+  this path instead of relying on generic `ENABLE_SPI_BUS`/`ENABLE_I2C`.
+- `dtparam=rtc_bbat_vchg=...` is valid here because the RTC overlay exports it.
 
 **TPM reset via GPIO (dev only):** If the TPM enters a bad state during
 development, toggle the reset pin (GPIO 24 on LetsTrust-style wiring):
