@@ -73,16 +73,6 @@ iotgw_rootfs_bluetooth_mode() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_bluetooth_mode;"
 
-###### systemd presets
-iotgw_rootfs_systemd_presets() {
-    if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-systemd-presets/90-iotgw.preset ]; then
-        install -d ${IMAGE_ROOTFS}/etc/systemd/system-preset
-        install -m 0644 ${IMAGE_ROOTFS}${datadir}/iotgw-systemd-presets/90-iotgw.preset \
-            ${IMAGE_ROOTFS}/etc/systemd/system-preset/90-iotgw.preset
-    fi
-}
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_systemd_presets;"
-
 ###### Optional vconsole setup masking (headless/serial-focused images)
 iotgw_rootfs_mask_vconsole_setup() {
     if [ "${IOTGW_DISABLE_VCONSOLE_SETUP}" = "1" ]; then
