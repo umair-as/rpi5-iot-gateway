@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - U-Boot bootstage userspace collector service (`iotgw-bootstage`) with structured logging and environment export.
 - Stable RAUC slot udev links (`/dev/disk/by-rauc-slot/*`) for early boot partition resolution.
+- Native observability service stack integration for gateway telemetry:
+  - InfluxDB
+  - Telegraf
+  - Mosquitto
 
 ### Changed
 - Raspberry Pi 5 U-Boot boot path optimized for appliance flow with script-first behavior.
@@ -20,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Startup critical path improved by removing `udev-settle` dependency from `rauc-grow-data-partition`.
 - Network boot wait behavior hardened by masking `NetworkManager-wait-online` at rootfs build time.
 - Systemd preset installation path corrected to `${libdir}/systemd/system-preset` for deterministic application during image build.
+- Observability provisioning and OTA reconciliation flow hardened for native services and credential paths.
 
 ### Fixed
 - Resolved RPi5 U-Boot init/probe regressions encountered during EFI/video/DM path tuning.
