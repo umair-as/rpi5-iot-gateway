@@ -1,0 +1,8 @@
+# Stable RAUC slot aliases based on partition identity, not filesystem labels.
+# Symlinks appear at udev-trigger time — no udev-settle needed.
+
+SUBSYSTEM=="block", KERNEL=="mmcblk0p1", SYMLINK+="disk/by-rauc-slot/boot"
+SUBSYSTEM=="block", KERNEL=="mmcblk0p2", SYMLINK+="disk/by-rauc-slot/ubootenv"
+SUBSYSTEM=="block", KERNEL=="mmcblk0p3", SYMLINK+="disk/by-rauc-slot/rootfsA"
+SUBSYSTEM=="block", KERNEL=="mmcblk0p4", SYMLINK+="disk/by-rauc-slot/rootfsB"
+SUBSYSTEM=="block", KERNEL=="mmcblk0p5", SYMLINK+="disk/by-rauc-slot/data"
