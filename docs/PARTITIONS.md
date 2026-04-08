@@ -248,11 +248,11 @@ On first boot, the `rauc-grow-data-partition` service automatically expands the 
 **Script:** `/usr/sbin/grow-data-partition.sh`
 
 **Behavior:**
-1. Detect `/data` partition (by label)
+1. Detect `/data` partition (prefer `/dev/disk/by-rauc-slot/data`, fallback to by-label/lsblk)
 2. Expand partition to fill disk
 3. Resize ext4 filesystem
-4. Log results
-5. Disable service (runs once)
+4. Write stamp file `/boot/.rauc-grow-done`
+5. On subsequent boots, service is skipped via `ConditionPathExists=!/boot/.rauc-grow-done`
 
 **Logs:**
 ```bash

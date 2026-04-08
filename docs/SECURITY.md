@@ -121,6 +121,9 @@ Unnecessary kernel modules are blacklisted to reduce attack surface.
 ### auditd Configuration
 
 The `iotgw-audit` package provides comprehensive audit rules based on CIS benchmarks.
+Rules are staged under `/usr/share/iotgw-audit/iotgw.rules` and deployed into
+`/etc/audit/rules.d/iotgw.rules` during rootfs post-processing to avoid package
+ownership conflicts with `auditd`.
 
 **What's Audited:**
 - File integrity (critical system files)
@@ -131,9 +134,9 @@ The `iotgw-audit` package provides comprehensive audit rules based on CIS benchm
 - System calls (execve, mount, etc.)
 - Failed authentication attempts
 
-**Rules Location:**
-```
-/etc/audit/rules.d/iotgw-audit.rules
+**Rules Location on target:**
+``` 
+/etc/audit/rules.d/iotgw.rules
 ```
 
 **View Audit Logs:**
@@ -246,11 +249,16 @@ lynis audit system
 
 **Establishing Baseline:**
 ```bash
-# First boot audit
-lynis audit system > /data/lynis-baseline.txt
+# First boot audit (full log + normalized summary)
+lynis audit system --quick --no-colors > /data/lynis-baseline.log
+grep -E 'hardening_index=|^warning\\[\\]=|^suggestion\\[\\]=' /var/log/lynis-report.dat \
+  > /data/lynis-baseline.summary
 
 # Compare over time
-diff /data/lynis-baseline.txt <(lynis audit system)
+lynis audit system --quick --no-colors > /tmp/lynis-current.log
+grep -E 'hardening_index=|^warning\\[\\]=|^suggestion\\[\\]=' /var/log/lynis-report.dat \
+  > /tmp/lynis-current.summary
+diff -u /data/lynis-baseline.summary /tmp/lynis-current.summary
 ```
 
 ---
