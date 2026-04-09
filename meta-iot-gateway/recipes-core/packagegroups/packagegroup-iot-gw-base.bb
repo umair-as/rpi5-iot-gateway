@@ -17,6 +17,7 @@ RDEPENDS:${PN} = " \
     ota-certs \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' cryptsetup','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' iotgw-tpm-policy tpm-ops iotgw-tpm-health','',d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_ENCRYPTED_STORE_DEV','1',' iotgw-encrypted-store','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_OBSERVABILITY','1',' packagegroup-iot-gw-observability','',d)} \
 "
 

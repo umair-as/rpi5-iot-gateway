@@ -1,0 +1,12 @@
+# IoT GW encrypted-store defaults (dev profile)
+# Override via /etc/default/iotgw-encrypted-store if needed.
+
+STORE_DIR=/data/encrypted-store
+IMAGE_PATH=/data/encrypted-store/store.luks2.img
+MAPPER_NAME=igwencstore
+SIZE_MIB=1024
+RECOVERY_KEY_FILE=/data/encrypted-store/recovery.key
+TPM2_DEVICE=auto
+# Keep default PCR 7 for now. On current RPi5 flow PCR policy is effectively
+# unenforced because PCR values are all-zero; revisit after measured-boot policy.
+TPM2_PCRS=7
