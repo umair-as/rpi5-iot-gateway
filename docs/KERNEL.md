@@ -141,6 +141,22 @@ tpm2_startup -c
 
 ---
 
+### `igw_no_efi`
+
+Opt-in kernel EFI surface reduction for non-UEFI Raspberry Pi boot flow.
+
+**Features:** disables EFI runtime/stub/efivar paths in the kernel build.
+
+**Use for:** appliance deployments that boot via Raspberry Pi firmware + U-Boot
+`bootm` flow and do not require kernel EFI interfaces.
+
+**Important:** this feature intentionally does **not** disable
+`CONFIG_EFI_PARTITION`, since GPT partition parsing relies on it.
+
+**Layer gate:** `IOTGW_ENABLE_KERNEL_NO_EFI` (defaults to `1`).
+
+---
+
 ## Enabling Feature Sets
 
 ### Via KAS Overlay
@@ -179,6 +195,16 @@ local_conf_header:
     IOTGW_ENABLE_TPM_SLB9672 = "1"
     # Optional override (default "tpm-slb9670")
     # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
+```
+
+### Kernel EFI Surface Gate
+
+Enable/disable EFI surface reduction fragment:
+
+```yaml
+local_conf_header:
+  kernel_efi_gate: |
+    IOTGW_ENABLE_KERNEL_NO_EFI = "1"   # set to "0" to keep kernel EFI options enabled
 ```
 
 ## DTB Selection
