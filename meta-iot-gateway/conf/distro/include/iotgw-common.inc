@@ -101,7 +101,7 @@ ROOT_HOME ?= "/root"
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
@@ -163,6 +163,14 @@ RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1',
 # Containerized observability is paused on Scarthgap due to Rust toolchain skew
 # in netavark/aardvark-dns and will be revisited on the next Yocto LTS rebase.
 IOTGW_ENABLE_OBSERVABILITY ?= "0"
+# Telegraf dependency mode:
+#   0: local-first startup (network.target) with runtime retries (default)
+#   1: strict startup ordering via network-online.target (remote endpoints)
+IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE ?= "0"
+
+# Optional dev TPM/LUKS loopback store (/data/encstore). Keep opt-in to avoid
+# boot-time/setup overhead on images where encrypted-store testing is not active.
+IOTGW_ENABLE_ENCRYPTED_STORE_DEV ?= "0"
 
 # Raspberry Pi 5 DTB policy by kernel provider:
 # - Default to Model B only (smallest artifact set for rpi5 deployments).

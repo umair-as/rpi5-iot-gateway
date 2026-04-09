@@ -5,6 +5,9 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = " \
     file://iotgw-observability.env \
+    file://telegraf-netmode-online.conf \
+    file://mosquitto-netmode-online.conf \
+    file://influxdb-netmode-online.conf \
 "
 
 S = "${WORKDIR}"
@@ -12,6 +15,14 @@ S = "${WORKDIR}"
 do_install() {
     install -d ${D}${sysconfdir}/default
     install -m 0644 ${WORKDIR}/iotgw-observability.env ${D}${sysconfdir}/default/iotgw-observability
+
+    install -d ${D}${datadir}/iotgw-observability/netmode
+    install -m 0644 ${WORKDIR}/telegraf-netmode-online.conf \
+        ${D}${datadir}/iotgw-observability/netmode/telegraf-online.conf
+    install -m 0644 ${WORKDIR}/mosquitto-netmode-online.conf \
+        ${D}${datadir}/iotgw-observability/netmode/mosquitto-online.conf
+    install -m 0644 ${WORKDIR}/influxdb-netmode-online.conf \
+        ${D}${datadir}/iotgw-observability/netmode/influxdb-online.conf
 
     # systemd LoadCredential source files (intentionally empty defaults)
     install -d -m 0700 ${D}${sysconfdir}/credstore
@@ -23,6 +34,9 @@ do_install() {
 
 FILES:${PN} = " \
     ${sysconfdir}/default/iotgw-observability \
+    ${datadir}/iotgw-observability/netmode/telegraf-online.conf \
+    ${datadir}/iotgw-observability/netmode/mosquitto-online.conf \
+    ${datadir}/iotgw-observability/netmode/influxdb-online.conf \
     ${sysconfdir}/credstore/telegraf.service.mqtt_username \
     ${sysconfdir}/credstore/telegraf.service.mqtt_password \
     ${sysconfdir}/credstore/telegraf.service.influxdb_username \
