@@ -14,7 +14,10 @@ RDEPENDS:${PN} = " \
     bpftool \
     keyutils \
     libseccomp \
+    fio \
+    iotop \
     lsof \
+    stress-ng \
     ethtool \
     vim \
     nano \
