@@ -100,7 +100,7 @@ ROOT_HOME ?= "/root"
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
@@ -136,6 +136,7 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_containers         - namespaces, cgroups (for podman/docker)
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
+#   igw_no_efi             - disable kernel EFI runtime/stub surface (opt-in)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
@@ -144,6 +145,11 @@ IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 IOTGW_ENABLE_TPM_SLB9672 ?= "0"
 IOTGW_TPM_DTO_OVERLAY ?= "tpm-slb9670"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', ' igw_tpm_slb9672', '', d)}"
+
+# Optional kernel EFI surface reduction profile for non-UEFI RPi5 boot flow.
+# Enable to append igw_no_efi fragment set.
+IOTGW_ENABLE_KERNEL_NO_EFI ?= "1"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_KERNEL_NO_EFI', '1', ' igw_no_efi', '', d)}"
 # Mainline RPi5 DTB note:
 # - Firmware `dtparam=` keys must exist in DTB `__overrides__`.
 # - Current mainline bcm2712-rpi-5-b path exports rtc/rtc_bbat_vchg, but not
