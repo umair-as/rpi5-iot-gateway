@@ -1,0 +1,14 @@
+[Unit]
+Description=Mount IoT Gateway encrypted store
+After=iotgw-encrypted-store-setup.service
+Requires=iotgw-encrypted-store-setup.service
+ConditionPathExists=/dev/mapper/igwencstore
+
+[Mount]
+What=/dev/mapper/igwencstore
+Where=/data/encstore
+Type=ext4
+Options=defaults,noatime,nodiratime
+
+[Install]
+WantedBy=multi-user.target

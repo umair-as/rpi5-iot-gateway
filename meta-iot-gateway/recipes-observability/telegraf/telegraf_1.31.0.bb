@@ -11,6 +11,7 @@ SRCREV = "fbfaba054e62413b6a0a90372281e687d9ff1238"
 SRC_URI = " \
     git://github.com/influxdata/telegraf.git;protocol=https;nobranch=1;destsuffix=${BPN}-${PV}/src/${GO_IMPORT} \
     file://telegraf.service \
+    file://telegraf-network-online.conf \
     file://telegraf.conf \
     file://telegraf.tmpfiles \
 "
@@ -65,6 +66,11 @@ do_install:append() {
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/telegraf.service ${D}${systemd_system_unitdir}/telegraf.service
+    if [ "${IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE}" = "1" ]; then
+        install -d ${D}${systemd_system_unitdir}/telegraf.service.d
+        install -m 0644 ${WORKDIR}/telegraf-network-online.conf \
+            ${D}${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf
+    fi
 
     install -d ${D}${nonarch_libdir}/tmpfiles.d
     install -m 0644 ${WORKDIR}/telegraf.tmpfiles ${D}${nonarch_libdir}/tmpfiles.d/telegraf.conf

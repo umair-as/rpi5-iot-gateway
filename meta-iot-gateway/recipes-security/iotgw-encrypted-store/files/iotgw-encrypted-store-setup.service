@@ -1,0 +1,18 @@
+[Unit]
+Description=IoT Gateway encrypted-store setup (LUKS2 + TPM token)
+After=data.mount
+Requires=data.mount
+Before=data-encstore.mount
+ConditionPathExists=/data
+ConditionPathExists=/dev/tpmrm0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iotgw-encrypted-store-setup
+StandardOutput=journal
+StandardError=journal
+TimeoutSec=180
+
+[Install]
+WantedBy=multi-user.target

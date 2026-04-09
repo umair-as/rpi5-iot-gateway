@@ -18,6 +18,26 @@ Current defaults:
 - cleanup: `boot-backup-prune.service` runs after mark-good
 - cleanup prunes old `/boot/*.bak*` artifacts and keeps recent backups
 
+## Overlay Policy for systemd Masks
+
+For unit disable/mask policy on this gateway OS, use a two-layer approach:
+
+1. Build-time rootfs masks in `iotgw-rootfs.bbclass` establish desired state in
+   each slot image (`/etc/systemd/system/*.service -> /dev/null` symlinks).
+2. RAUC overlay reconciliation enforces the same paths in `/etc` upper layer so
+   stale runtime overlay entries cannot override the new slot policy.
+
+Rationale:
+
+- `/etc` is overlay-backed at runtime.
+- A/B slot content alone is not sufficient if upper-layer entries from older
+  slots still exist.
+- Preset-based `disable` rules are not deterministic in this Yocto flow
+  (`preset-all --preset-mode=enable-only`).
+
+This policy is used for NetworkManager-only networking mode to keep
+`systemd-networkd*` and wait-online units from reappearing after OTA.
+
 ## Install Bundle
 
 Manual install workflow (recommended):

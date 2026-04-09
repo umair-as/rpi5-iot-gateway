@@ -1,4 +1,4 @@
 require edge-healthd.inc
 
 # Pin upstream source for reproducible non-externalsrc builds.
-SRCREV = "26b8e3a6663671226d598d6d6d2709edc6cd4a56"
+SRCREV = "c5f3e504aeabe38940c50d656c08fffc93dc1675"

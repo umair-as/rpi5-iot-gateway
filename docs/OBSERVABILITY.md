@@ -54,6 +54,79 @@ local_conf_header:
     IMAGE_INSTALL:append = " iotgw-observability-stack"
 ```
 
+## Startup Dependency Mode
+
+Telegraf supports two build-time startup modes:
+
+- default (`IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE = "0"`):
+  `network.target` ordering, no hard wait on `network-online.target`.
+  Recommended for local broker/DB and robust boot on unstable links.
+- strict (`IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE = "1"`):
+  install a Telegraf systemd drop-in that switches ordering to
+  `network-online.target`. Use for remote broker/DB startup gating.
+
+Set in `kas/local.yml`:
+
+```yaml
+local_conf_header:
+  observability_netmode: |
+    IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE = "1"
+```
+
+Runtime override (no rebuild) on deployed gateway:
+
+```sh
+# Ephemeral (current boot only): use /run/systemd/system
+install -d /run/systemd/system/telegraf.service.d
+install -d /run/systemd/system/mosquitto.service.d
+install -d /run/systemd/system/influxdb.service.d
+
+ln -snf /usr/share/iotgw-observability/netmode/telegraf-online.conf \
+  /run/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+ln -snf /usr/share/iotgw-observability/netmode/mosquitto-online.conf \
+  /run/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+ln -snf /usr/share/iotgw-observability/netmode/influxdb-online.conf \
+  /run/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+
+systemctl daemon-reload
+systemctl restart mosquitto.service influxdb.service telegraf.service
+```
+
+Persistent override on RO-rootfs images (survives reboot/OTA): place the same
+links in overlay upper:
+
+```sh
+install -d /data/overlays/etc/upper/systemd/system/telegraf.service.d
+install -d /data/overlays/etc/upper/systemd/system/mosquitto.service.d
+install -d /data/overlays/etc/upper/systemd/system/influxdb.service.d
+
+ln -snf /usr/share/iotgw-observability/netmode/telegraf-online.conf \
+  /data/overlays/etc/upper/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+ln -snf /usr/share/iotgw-observability/netmode/mosquitto-online.conf \
+  /data/overlays/etc/upper/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+ln -snf /usr/share/iotgw-observability/netmode/influxdb-online.conf \
+  /data/overlays/etc/upper/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+
+systemctl daemon-reload
+systemctl restart mosquitto.service influxdb.service telegraf.service
+```
+
+Revert to local-first mode:
+
+```sh
+rm -f /run/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+rm -f /run/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+rm -f /run/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+rm -f /data/overlays/etc/upper/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+rm -f /data/overlays/etc/upper/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+rm -f /data/overlays/etc/upper/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+systemctl daemon-reload
+systemctl restart mosquitto.service influxdb.service telegraf.service
+```
+
+OTA behavior: these runtime drop-ins are marked `preserve` in overlay
+reconciliation, so operator-selected mode survives slot switches.
+
 ## Credential Flow
 
 Secrets (MQTT and InfluxDB passwords) are never stored in the Telegraf config,
@@ -174,13 +247,16 @@ All three services run with systemd security sandboxing:
 | `ProtectSystem` | — | strict | — |
 | `CapabilityBoundingSet` | `CAP_NET_BIND_SERVICE` | _(empty)_ | — |
 | `RestrictAddressFamilies` | — | `AF_UNIX AF_NETLINK AF_INET AF_INET6` | — |
-| `StartLimitIntervalSec` | 0 (retry forever) | 0 (retry forever) | 0 (retry forever) |
-| `RestartSec` | 5s | 10s | 10s |
+| `StartLimitIntervalSec` | 0 (retry forever) | 5m (burst-limited) | 0 (retry forever) |
+| `StartLimitBurst` | — | 3 | — |
+| `RestartSec` | 5s | 30s | 10s |
 
-Retry-forever (`StartLimitIntervalSec=0`) is intentional: these are critical
-infrastructure services. edge-healthd monitors restart counts and raises alerts
-when `service_restart_warn` (3) or `service_restart_crit` (10) thresholds are
-exceeded — providing bounded alerting without forcing systemd to give up.
+For Telegraf, startup is gated by systemd `ExecCondition` checks that require
+non-empty credential files under `/etc/credstore/`. This prevents crash loops
+before provisioning has applied credentials.
+
+Telegraf network dependency mode is controlled by
+`IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE` (see "Startup Dependency Mode").
 
 ## OTA Behaviour
 
