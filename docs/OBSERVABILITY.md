@@ -76,28 +76,50 @@ local_conf_header:
 Runtime override (no rebuild) on deployed gateway:
 
 ```sh
-# enable strict network-online mode for full stack
-install -d /etc/systemd/system/telegraf.service.d
-install -d /etc/systemd/system/mosquitto.service.d
-install -d /etc/systemd/system/influxdb.service.d
+# Ephemeral (current boot only): use /run/systemd/system
+install -d /run/systemd/system/telegraf.service.d
+install -d /run/systemd/system/mosquitto.service.d
+install -d /run/systemd/system/influxdb.service.d
 
 ln -snf /usr/share/iotgw-observability/netmode/telegraf-online.conf \
-  /etc/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+  /run/systemd/system/telegraf.service.d/99-runtime-netmode.conf
 ln -snf /usr/share/iotgw-observability/netmode/mosquitto-online.conf \
-  /etc/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+  /run/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
 ln -snf /usr/share/iotgw-observability/netmode/influxdb-online.conf \
-  /etc/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+  /run/systemd/system/influxdb.service.d/99-runtime-netmode.conf
 
 systemctl daemon-reload
 systemctl restart mosquitto.service influxdb.service telegraf.service
 ```
 
-Revert to local-first mode (default):
+Persistent override on RO-rootfs images (survives reboot/OTA): place the same
+links in overlay upper:
 
 ```sh
-rm -f /etc/systemd/system/telegraf.service.d/99-runtime-netmode.conf
-rm -f /etc/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
-rm -f /etc/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+install -d /data/overlays/etc/upper/systemd/system/telegraf.service.d
+install -d /data/overlays/etc/upper/systemd/system/mosquitto.service.d
+install -d /data/overlays/etc/upper/systemd/system/influxdb.service.d
+
+ln -snf /usr/share/iotgw-observability/netmode/telegraf-online.conf \
+  /data/overlays/etc/upper/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+ln -snf /usr/share/iotgw-observability/netmode/mosquitto-online.conf \
+  /data/overlays/etc/upper/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+ln -snf /usr/share/iotgw-observability/netmode/influxdb-online.conf \
+  /data/overlays/etc/upper/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+
+systemctl daemon-reload
+systemctl restart mosquitto.service influxdb.service telegraf.service
+```
+
+Revert to local-first mode:
+
+```sh
+rm -f /run/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+rm -f /run/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+rm -f /run/systemd/system/influxdb.service.d/99-runtime-netmode.conf
+rm -f /data/overlays/etc/upper/systemd/system/telegraf.service.d/99-runtime-netmode.conf
+rm -f /data/overlays/etc/upper/systemd/system/mosquitto.service.d/99-runtime-netmode.conf
+rm -f /data/overlays/etc/upper/systemd/system/influxdb.service.d/99-runtime-netmode.conf
 systemctl daemon-reload
 systemctl restart mosquitto.service influxdb.service telegraf.service
 ```
