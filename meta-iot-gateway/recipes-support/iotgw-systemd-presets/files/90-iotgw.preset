@@ -1,11 +1,11 @@
 # Enable baseline services on first boot
 enable iotgw-nftables.service
 
-# Disable wait-online services — NM manages connectivity, blocking boot is unnecessary
-disable NetworkManager-wait-online.service
-disable systemd-networkd-wait-online.service
-disable systemd-networkd.service
-disable systemd-networkd.socket
+# NOTE:
+# In this Yocto flow, preset processing is effectively enable-only, so
+# `disable ...` lines are not deterministic. Keep this file for positive
+# enables only. Mandatory disables/masks are handled in iotgw-rootfs.bbclass.
+
 enable avahi-daemon.service
 enable iotgw-provision.service
 enable systemd-timesyncd.service

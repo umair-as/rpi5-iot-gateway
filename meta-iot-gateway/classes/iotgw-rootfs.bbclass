@@ -104,6 +104,25 @@ iotgw_rootfs_mask_nm_wait_online() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_nm_wait_online;"
 
+###### Disable systemd-network-generator for NetworkManager-only gateway profile
+# We do not use systemd-networkd units in this distro profile. Keep boot path
+# lean by masking the generator that emits networkd units from kernel cmdline.
+iotgw_rootfs_mask_network_generator() {
+    install -d ${IMAGE_ROOTFS}/etc/systemd/system
+    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-network-generator.service
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_network_generator;"
+
+###### Disable systemd-networkd stack for NetworkManager-only gateway profile
+iotgw_rootfs_mask_networkd_stack() {
+    install -d ${IMAGE_ROOTFS}/etc/systemd/system
+    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd.service
+    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd.socket
+    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd-wait-online.service
+    rm -f ${IMAGE_ROOTFS}/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_networkd_stack;"
+
 ###### Optional vconsole setup masking (headless/serial-focused images)
 iotgw_rootfs_mask_vconsole_setup() {
     if [ "${IOTGW_DISABLE_VCONSOLE_SETUP}" = "1" ]; then
@@ -158,3 +177,16 @@ iotgw_rootfs_version_finalize() {
     echo "${IMAGE_NAME}" > ${IMAGE_ROOTFS}/etc/version
 }
 do_rootfs[postfuncs] += "iotgw_rootfs_version_finalize"
+
+# Ensure interactive shell defaults are present for operator users.
+# Some user-creation flows may skip /etc/skel materialization for devel.
+iotgw_rootfs_seed_bashrc() {
+    if [ -f ${IMAGE_ROOTFS}/etc/skel/.bashrc ]; then
+        if [ -d ${IMAGE_ROOTFS}/home/devel ] && [ ! -f ${IMAGE_ROOTFS}/home/devel/.bashrc ]; then
+            install -m 0644 ${IMAGE_ROOTFS}/etc/skel/.bashrc ${IMAGE_ROOTFS}/home/devel/.bashrc
+        fi
+        install -d ${IMAGE_ROOTFS}/root
+        install -m 0644 ${IMAGE_ROOTFS}/etc/skel/.bashrc ${IMAGE_ROOTFS}/root/.bashrc
+    fi
+}
+do_rootfs[postfuncs] += "iotgw_rootfs_seed_bashrc"
