@@ -104,7 +104,7 @@ When enabled, the following are included:
 - `otbr-rpi5` package (otbr-agent + dependencies)
 - `otbr-webui` package (React/Fastify web UI + Node.js runtime)
 - systemd services: `otbr-agent.service`, `otbr-webui.service`
-- Dependencies (Avahi, radvd, Node.js 22 LTS)
+- Dependencies (Avahi, radvd, Node.js runtime)
 - Firewall rules for OTBR web UI (only when `IOTGW_ENABLE_OTBR=1`)
 - Kernel features (netfilter, NAT support)
 
@@ -124,45 +124,29 @@ local_conf_header:
 
 ## Architecture
 
+```mermaid
+flowchart TD
+    subgraph HOST["Raspberry Pi 5 Host"]
+        A["otbr-agent.service\nThread management and border routing\nREST API :8081"]
+        W["otbr-webui.service\nNode.js + Fastify web UI\nHTTP :80"]
+        F["nftables\nThread/IP routing and NAT"]
+        IF["Interfaces\nwpan0 (Thread)\neth0 or wlan0 (infrastructure)"]
+    end
+
+    RCP["Thread RCP\n(e.g., ESP32-H2, nRF52840)"]
+    C["Web clients"]
+
+    A <-->|"spinel+hdlc+uart\n/dev/otbr-rcp (default)"| RCP
+    W -->|"REST proxy /api/*"| A
+    W -->|"ot-ctl operations /api/ot/*"| A
+    C -->|"HTTP/WebSocket"| W
+    A --> F
+    A --> IF
 ```
-┌──────────────────────────────────────────────────┐
-│  Raspberry Pi 5 Host                             │
-│                                                  │
-│  ┌───────────────────────────────────────────┐  │
-│  │  otbr-agent (systemd service)             │  │
-│  │  - Thread network management              │  │
-│  │  - Border routing                         │  │
-│  │  - Commissioner                           │  │
-│  │  - REST API on :8081                      │  │
-│  └────────┬──────────────────────────────────┘  │
-│           │                                      │
-│           │ spinel+hdlc+uart                     │
-│           │ (/dev/ttyUSB0, 460800)               │
-│           │                                      │
-│  ┌────────▼──────────┐                           │
-│  │  ESP32-H2 RCP     │ Thread Radio              │
-│  └───────────────────┘                           │
-│                                                  │
-│  ┌───────────────────────────────────────────┐  │
-│  │  otbr-webui (systemd service, port 80)    │  │
-│  │  Node.js + Fastify                        │  │
-│  │  ├── Static files (React SPA)             │  │
-│  │  ├── /api/* proxy → otbr-agent :8081      │  │
-│  │  ├── /api/ot/* → ot-ctl subprocess        │  │
-│  │  └── /ws WebSocket (real-time push)       │  │
-│  └───────────────────────────────────────────┘  │
-│                                                  │
-│  ┌───────────────────────────────────────────┐  │
-│  │  nftables (firewall/NAT)                  │  │
-│  │  - Thread ↔ IP routing                    │  │
-│  │  - Masquerade Thread traffic              │  │
-│  └───────────────────────────────────────────┘  │
-│                                                  │
-│  Interfaces:                                     │
-│  - wpan0: Thread network interface               │
-│  - eth0/wlan0: Infrastructure network            │
-└──────────────────────────────────────────────────┘
-```
+
+Fallback summary: `otbr-agent` controls the Thread stack and talks to the RCP
+over spinel/UART; `otbr-webui` fronts operator access on HTTP and proxies
+control/status to the agent.
 
 ---
 
@@ -186,9 +170,8 @@ and strict input validation on all ot-ctl operations).
 
 ### Resource Usage
 
-**CPU:** Low (~5% idle, ~10% active)
-**Memory:** ~60MB (otbr-agent + otbr-webui + Node.js)
-**Network:** Minimal (<1Mbps typical)
+Resource usage is workload-dependent (device count, scan activity, web usage,
+and logging level). Measure on your target profile before setting hard limits.
 
 ### Optimization
 
@@ -258,6 +241,22 @@ iotgw-otbrctl factory-reset --yes
 # Prefix and routes
 iotgw-otbrctl add-on-mesh-prefix fd00:1234::/64 --preferred true --slaac true
 iotgw-otbrctl remove-on-mesh-prefix fd00:1234::/64
+iotgw-otbrctl add-external-route 2001:db8::/64 --stable true
+iotgw-otbrctl remove-external-route 2001:db8::/64
+
+# NAT64
+iotgw-otbrctl nat64 enable
+iotgw-otbrctl nat64 disable
+
+# Border Agent + MeshCoP TXT
+iotgw-otbrctl border-agent disable
+iotgw-otbrctl border-agent enable
+iotgw-otbrctl meshcop-txt vendor=0x69746777 model=0x6f746272
+
+# Ephemeral key (ePSKc)
+iotgw-otbrctl epskc-activate 0
+iotgw-otbrctl epskc-deactivate false
+```
 
 ## OTBR REST CLI Wrappers (curl + jq)
 
@@ -278,22 +277,6 @@ You can target a remote endpoint via `BASE_URL`:
 
 ```bash
 BASE_URL=http://192.168.0.82:8081 scripts/ot-demo/otbr-api-node.sh
-```
-iotgw-otbrctl add-external-route 2001:db8::/64 --stable true
-iotgw-otbrctl remove-external-route 2001:db8::/64
-
-# NAT64
-iotgw-otbrctl nat64 enable
-iotgw-otbrctl nat64 disable
-
-# Border Agent + MeshCoP TXT
-iotgw-otbrctl border-agent disable
-iotgw-otbrctl border-agent enable
-iotgw-otbrctl meshcop-txt vendor=0x69746777 model=0x6f746272
-
-# Ephemeral key (ePSKc)
-iotgw-otbrctl epskc-activate 0
-iotgw-otbrctl epskc-deactivate false
 ```
 
 **Notes:**

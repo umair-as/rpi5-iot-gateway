@@ -2,7 +2,7 @@
 
 # 🔄 RAUC Over-The-Air Updates
 
-**Complete guide to A/B system updates with automatic rollback**
+**Guide to RAUC A/B rootfs updates and slot rollback behavior**
 
 [![RAUC](https://img.shields.io/badge/OTA-RAUC-green.svg)](https://rauc.io/)
 [![Verity](https://img.shields.io/badge/security-dm--verity-blue.svg)](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html)
@@ -14,11 +14,14 @@
 
 ## 📖 Overview
 
-This guide covers the complete OTA update workflow using RAUC on Raspberry Pi 5, including:
-- 🔀 **A/B Rootfs Updates** — Dual-partition failsafe system
+This guide covers the OTA update workflow used in this repository on Raspberry Pi 5, including:
+- 🔀 **A/B Rootfs Updates** — Dual-partition update system
 - 🥾 **Boot Asset Updates** — Kernel, DTBs, and U-Boot via bundle hooks
-- 🔙 **Automatic Rollback** — Boot failure protection
+- 🔙 **Slot Rollback** — Bootchooser-based fallback behavior
 - 🔐 **Signed Bundles** — Cryptographic verification with dm-verity
+
+Use this document for architecture and release flow.  
+For on-target operations, preflight, and troubleshooting runbooks, use [RAUC Update Runbook](RAUC_UPDATE.md).
 
 ### Update Flow
 
@@ -43,7 +46,7 @@ graph LR
 
 ## 📦 Bundle Contents
 
-RAUC bundles contain everything needed for a complete system update:
+RAUC bundles can carry the artifacts needed for a rootfs + boot-asset update flow:
 
 | File | Description |
 |------|-------------|
@@ -91,8 +94,8 @@ sequenceDiagram
 
 ### Key Properties
 
-✅ **Synchronized Updates** — Kernel/DTBs in `/boot` always match modules in rootfs
-✅ **Atomic Installation** — Hook runs after rootfs write, before reboot
+✅ **Synchronized Update Path** — Bundle hook updates `/boot` in the same install transaction
+✅ **Ordered Installation** — Hook runs after rootfs write, before reboot
 ✅ **Read-only Verification** — New slot mounted read-only during update
 
 ---
@@ -104,7 +107,7 @@ RAUC's bootchooser provides automatic failsafe:
 | Scenario | Behavior |
 |----------|----------|
 | **Boot Success** | New slot marked good, becomes default |
-| **Boot Failure** | Automatic rollback after 3 tries |
+| **Boot Failure** | Bootchooser fallback after configured retry budget |
 | **Health Check Fail** | Manual or auto rollback via `rauc status` |
 
 ### Important Considerations
@@ -137,7 +140,7 @@ reboot
 | Bundle Type | Target | Updates | Output File |
 |-------------|--------|---------|-------------|
 | **Rootfs Only** | Faster updates | Rootfs only | `iot-gw-bundle.raucb` |
-| **Full System** | Complete update | Rootfs + Kernel + DTBs | `iot-gw-bundle-full.raucb` |
+| **Full System** | Rootfs + boot assets | Rootfs + Kernel + DTBs | `iot-gw-bundle-full.raucb` |
 
 #### Build Commands
 
@@ -207,12 +210,6 @@ ssh root@device 'iotgw-rauc-install /tmp/iot-gw-bundle-full.raucb && reboot'
 # Check RAUC status
 rauc status --detailed
 
-# Verify kernel version
-uname -r
-
-# Check modules are available
-ls /lib/modules/$(uname -r)
-
 # Review installation logs
 journalctl -u rauc -b | grep "\[bundle-hook\]"
 ```
@@ -237,17 +234,17 @@ journalctl -u rauc -b | grep "\[bundle-hook\]"
 |---------|----------------|
 | **Bundle Signing** | Cryptographic signatures verified on-device |
 | **Integrity Protection** | dm-verity format for tamper detection |
-| **Secure Boot** | U-Boot + signed bundles |
+| **Boot Integrity Chain** | U-Boot FIT verification + signed RAUC bundles |
 
 ---
 
 ## 🌐 HTTPS Streaming Updates (mTLS)
 
-RAUC now supports installing bundles directly over HTTPS without pre-downloading to local storage. This uses RAUC's streaming mode (NBD + HTTP range requests) with mutual TLS authentication.
+RAUC supports installing bundles directly over HTTPS without pre-downloading to local storage. This uses streaming mode (NBD + HTTP range requests) with mutual TLS authentication.
 
 ### ✅ What This Enables
 
-- **Native streaming install**: `iotgw-rauc-install https://<server>:8443/bundles/....raucb`
+- **Native streaming install**: `iotgw-rauc-install https://<server>:8443/bundles/<bundle>.raucb`
 - **Device tracking** via headers sent by RAUC (boot-id, machine-id, transaction-id)
 - **mTLS auth** using device certificates provisioned on the gateway
 
@@ -271,21 +268,6 @@ Device certs are provisioned by `ota-certs-provision`:
 - Dev fallback: auto-generated using dev CA
 
 Server cert must include a SAN matching the OTA server IP/hostname.
-
-### 🧪 Test Flow
-
-```bash
-# Upload bundle to OTA server and activate it
-
-# On device (streaming)
-iotgw-rauc-install https://<server>:8443/bundles/<bundle>.raucb
-
-# Verify
-rauc status --detailed
-journalctl -u rauc -b | tail -n 200
-journalctl --no-pager -t iotgw-rauc-install -n 100
-```
-| **Keyring** | Device keyring at `/etc/rauc/ca.cert.pem` |
 
 ---
 
@@ -313,35 +295,11 @@ Stage bootfiles in rootfs → Copy to `/boot` only after successful boot + healt
 
 ## 🔧 Troubleshooting
 
-| Issue | Cause | Solution |
-|-------|-------|----------|
-| **Modules not loading** | `/boot` files outdated | Verify `uname -r` matches `/lib/modules/` |
-| **Hook didn't run** | Bundle missing bootfiles | Check `journalctl -u rauc -b \| grep "[bundle-hook]"` |
-| **Signature errors** | Keyring mismatch | Verify device keyring matches build cert |
-| **Boot loop** | Incompatible kernel | Automatic rollback after 3 tries |
-| **Slot not switching** | Bootchooser issue | Check `fw_printenv BOOT_ORDER` |
-
-### Debug Commands
-
-```bash
-# Check current slot and status
-rauc status
-rauc status --detailed
-
-# View boot environment
-fw_printenv | grep BOOT
-
-# Review update logs
-journalctl -u rauc --no-pager
-
-# Slot management commands
-rauc mark-good booted          # Mark current slot as good
-rauc mark-bad booted            # Mark current slot as bad
-rauc mark-active other          # Activate the other slot
-
-# Force rollback
-rauc mark-bad booted && reboot
-```
+Common troubleshooting areas include:
+- wrapper/systemd-run behavior
+- fw_env and slot switching failures
+- streaming TLS/CA consistency checks
+- adaptive update alignment checks
 
 ---
 

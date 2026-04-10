@@ -2,6 +2,10 @@
 
 This document describes the requirements and configuration needed to run OpenThread Border Router (OTBR) as a dedicated non-root user (e.g., `otbr`).
 
+Note: examples below show the model and reasoning flow. The current repository
+implementation uses a dedicated runtime socket directory (`/run/otbr`) and an
+explicit RCP device dependency in `otbr-agent.service`.
+
 ## Overview
 
 Running OTBR as a non-root user improves security by following the principle of least privilege. However, OTBR requires several elevated capabilities and permissions to function correctly.
@@ -24,8 +28,8 @@ The following capabilities must be granted to the `otbr-agent` process:
 [Unit]
 Description=OpenThread Border Router Agent
 ConditionPathExists=/usr/sbin/otbr-agent
-Requires=dbus.socket avahi-daemon.service
-After=dbus.socket avahi-daemon.service
+Requires=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
+After=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
 
 [Service]
 User=otbr
@@ -33,7 +37,7 @@ Group=otbr
 SupplementaryGroups=dialout
 EnvironmentFile=-/etc/default/otbr-agent
 ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
-ExecStartPre=+/bin/sh -c 'rm -f /run/openthread-wpan0.sock; touch /run/openthread-wpan0.lock; chown otbr:otbr /run/openthread-wpan0.lock; chmod 660 /run/openthread-wpan0.lock'
+ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed
 Restart=on-failure
@@ -53,8 +57,8 @@ WantedBy=multi-user.target
 [Unit]
 Description=OpenThread Border Router Agent
 ConditionPathExists=/usr/sbin/otbr-agent
-Requires=dbus.socket avahi-daemon.service
-After=dbus.socket avahi-daemon.service
+Requires=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
+After=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
 
 [Service]
 User=otbr
@@ -64,7 +68,7 @@ EnvironmentFile=-/etc/default/otbr-agent
 
 # Setup (runs as root due to + prefix)
 ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
-ExecStartPre=+/bin/sh -c 'rm -f /run/openthread-wpan0.sock; touch /run/openthread-wpan0.lock; chown otbr:otbr /run/openthread-wpan0.lock; chmod 660 /run/openthread-wpan0.lock'
+ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
 
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed
@@ -141,12 +145,16 @@ systemctl reload dbus
 
 ## Unix Socket Permissions
 
-OTBR creates a Unix socket at `/run/openthread-<interface>.sock` (e.g., `/run/openthread-wpan0.sock`) and a lock file at `/run/openthread-<interface>.lock`.
+In this project, OTBR uses `/run/otbr` via `OTBR_SOCKET_DIR=/run/otbr`.
+Typical runtime files:
+- `/run/otbr/openthread-wpan0.sock`
+- `/run/otbr/openthread-wpan0.lock`
 
 ### Solution 1: tmpfiles.d + socket dir override (Recommended)
 
-If you want a dedicated socket directory (instead of `/run`), set `OTBR_SOCKET_DIR` and ensure the daemon respects it.
-This may require patching upstream if the build does not honor the variable.
+If you want a dedicated socket directory (instead of `/run`), set
+`OTBR_SOCKET_DIR` and ensure the daemon respects it.
+This repository already uses that pattern in the shipped unit.
 
 Create `/usr/lib/tmpfiles.d/otbr.conf`:
 ```
@@ -239,7 +247,7 @@ capsh --user=otbr \
 
 ```bash
 # For running process
-cat /proc/$(pgrep otbr-agent)/status | grep Cap
+cat /proc/$(pgrep -x otbr-agent)/status | grep Cap
 
 # Decode capabilities
 capsh --decode=<hex_value>
@@ -250,7 +258,7 @@ capsh --decode=<hex_value>
 | Error | Cause | Solution |
 |-------|-------|----------|
 | `TUNSETIFF: Operation not permitted` | Missing `CAP_NET_ADMIN` | Add to `AmbientCapabilities` |
-| `bind: Permission denied` on Unix socket | No write access to `/run` | Use ACL: `setfacl -m u:otbr:rwx /run` |
+| `bind: Permission denied` on Unix socket | No write access to `/run/otbr` | Verify runtime dir ownership/permissions (`/run/otbr`) |
 | `DBus.Error.AccessDenied: not allowed to own the service` | Missing DBus policy | Update `/etc/dbus-1/system.d/otbr-agent.conf` |
 | `Raw socket: Permission denied` | Missing `CAP_NET_RAW` | Add to `AmbientCapabilities` |
 

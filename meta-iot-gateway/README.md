@@ -14,13 +14,12 @@
 
 ## 📖 Description
 
-This layer provides a comprehensive suite of IoT gateway packages and configurations:
+This layer provides IoT gateway packages and configurations used by this project:
 
 - 📡 **MQTT** — Mosquitto broker and clients for messaging
-- 🔄 **Node-RED** — Flow-based visual programming for IoT
 - 📊 **Time-Series Databases** — Optimized for sensor data
 - 🐳 **Container Runtime** — Podman, Buildah, Skopeo support
-- 🔌 **IoT Protocols** — MQTT, CoAP, Thread, Matter-ready
+- 🔌 **IoT Protocols** — MQTT and Thread/OTBR support
 
 ---
 
