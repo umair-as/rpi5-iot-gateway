@@ -21,6 +21,8 @@ SRC_URI:append = "${@' file://fragments/observability-dev.cfg' if 'igw_observabi
 SRC_URI:append = "${@' file://fragments/security-prod.cfg' if 'igw_security_prod' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/tpm-slb9672.cfg' if 'igw_tpm_slb9672' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/efi-surface-reduction.cfg' if 'igw_no_efi' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/selinux.cfg' if 'igw_selinux' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/ima.cfg' if 'igw_ima' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 
 # Merge present fragments into the active kernel .config.
 do_configure:append() {
