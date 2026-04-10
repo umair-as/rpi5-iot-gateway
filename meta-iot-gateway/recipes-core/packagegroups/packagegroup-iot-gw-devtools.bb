@@ -11,7 +11,6 @@ RDEPENDS:${PN} = " \
     packagegroup-iot-gw-utils \
     tcpdump \
     strace \
-    bpftool \
     keyutils \
     libseccomp \
     fio \
@@ -26,3 +25,7 @@ RDEPENDS:${PN} = " \
     systemd-dev \
     pkgconfig \
 "
+
+# bpftool from kernel tools is reliable in our mainline flow; skip it for
+# linux-raspberrypi maintenance builds where kernel tools layout differs.
+RDEPENDS:${PN}:append = "${@'' if (d.getVar('PREFERRED_PROVIDER_virtual/kernel') or '').strip() == 'linux-raspberrypi' else ' bpftool'}"

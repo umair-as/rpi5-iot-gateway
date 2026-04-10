@@ -18,6 +18,9 @@ The distribution implements defense-in-depth security across multiple layers:
 
 For FIT boot signing and verification chain setup, see the [FIT Boot and Signing Guide](FIT_BOOT_SIGNING.md).
 
+For hands-on IMA, AppArmor, and SELinux exploration notes (commands, observed behaviour,
+TPM PCR interaction, known issues), see [LSM and IMA Exploration](LSM_IMA_EXPLORATION.md).
+
 ---
 
 ## Device Identity and Build Metadata Policy
