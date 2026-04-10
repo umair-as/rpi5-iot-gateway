@@ -1,13 +1,13 @@
-# TPM 2.0 Requirements
+# TPM 2.0 Requirements (Working Draft)
 
-This document describes the requirements and work plan for Linux-side TPM enablement and
+This document is a working draft for requirements, learning notes, and a work plan for Linux-side TPM enablement and
 measured-boot design on the Raspberry Pi 5 (Infineon SLB9672). U-Boot TPM integration is
 parked pending upstream RP1/PCIe/SPI support.
 
 
 ## Overview
 
-This project has TPM building blocks in place. This document defines what problem we are
+This project has TPM building blocks in place. This draft defines what problem we are
 solving, what is already working, what we want to achieve next, and what is intentionally
 out of scope.
 
@@ -15,7 +15,7 @@ out of scope.
 - Hardware target: Infineon SLB9672 class TPM2 over SPI on RPi5.
 - Kernel/device enablement exists behind feature gate `IOTGW_ENABLE_TPM_SLB9672=1`.
 - Userspace includes TPM policy and tooling (`tpm-ops`; `tpm2-tools` in dev profile).
-- RAUC/FIT/OTA flow currently works without U-Boot TPM integration.
+- RAUC/FIT/OTA flow is currently used without U-Boot TPM integration.
 - U-Boot TPM integration attempt was parked due to upstream and stability blockers.
 
 ## Problem Statement

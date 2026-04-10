@@ -55,11 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - TPM 2.0 (Infineon SLB9672) integration with build-time gating across kernel/device-tree/userspace packaging.
-- FIT Strategy A recovery-kernel flow for signed multi-config boot updates.
+- FIT recovery-kernel flow for signed multi-config boot updates.
 - Rootfs-only dev bundle target for faster OTA iteration (`bundle-dev` path).
 
 ### Changed
-- FIT custom ITS flow advanced to Phase B (dual-kernel + dual-config policy with `conf-primary`/`conf-recovery`).
+- FIT custom ITS flow expanded to dual-kernel + dual-config policy (`conf-primary`/`conf-recovery`).
 - OTA cert provisioning and RAUC install wrapper flow reconciled for HTTPS-driven installs.
 - WIC/OTA layout moved to 128G default with 16G A/B rootfs slots and hardened streaming preflight behavior.
 

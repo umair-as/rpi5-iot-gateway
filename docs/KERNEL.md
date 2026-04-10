@@ -6,11 +6,17 @@ This document describes the kernel configuration system and available feature se
 
 The distribution uses **modular kernel configuration** based on feature fragments.
 
-**Base Kernel:** Linux 6.6 (Raspberry Pi kernel)
+**Default kernel provider:** `linux-iotgw-mainline` (Linux 6.18 series)
+
+**FIT flow provider:** `linux-iotgw-mainline-fit` (Linux 6.18 series)
 
 **Always Enabled:**
 - `branding.cfg` — Kernel version suffix (`-v8-16k-igw`)
+- `trim.cfg` — disable non-required subsystems for appliance profile
 - `storage-filesystems.cfg` — OverlayFS, dm-verity, SquashFS (required for RAUC)
+- `ikconfig.cfg` — runtime kernel config introspection support
+- `audit.cfg` — audit framework plumbing
+- `rtc-rpi.cfg` — Raspberry Pi RTC support (gated by `IOTGW_ENABLE_RPI_RTC`)
 
 **Optional Feature Sets:** Controlled via `IOTGW_KERNEL_FEATURES` variable
 
@@ -78,8 +84,12 @@ Kernel debugging and tracing (development only).
 
 **Usage:**
 ```bash
-# Trace system calls
-bpftrace -e 'tracepoint:syscalls:sys_enter_* { @[probe] = count(); }'
+# Confirm eBPF kernel plumbing is available (installed by default in dev images)
+bpftool feature probe kernel
+
+# Inspect loaded BPF programs and maps
+bpftool prog show
+bpftool map show
 
 # Function tracing
 echo function > /sys/kernel/debug/tracing/current_tracer
@@ -291,45 +301,12 @@ Custom version suffix for identification:
 CONFIG_LOCALVERSION="-v8-16k-igw"
 ```
 
-Verify:
-```bash
-uname -r
-# Output: 6.6.x-v8-16k-igw
-```
-
----
-
-## Verifying Configuration
-
-### On Running System
-
-```bash
-# Check if feature is enabled
-zcat /proc/config.gz | grep CONFIG_WIREGUARD
-
-# Check loaded modules
-lsmod | grep wireguard
-
-# Kernel version
-uname -a
-```
-
-### During Build
-
-```bash
-# Interactive kernel config
-bitbake -c menuconfig virtual/kernel
-
-# Check config in shell
-bitbake -c devshell virtual/kernel
-grep CONFIG_WIREGUARD .config
-```
-
 ---
 
 ## Additional Resources
 
 - [Yocto Kernel Development](https://docs.yoctoproject.org/kernel-dev/)
-- [Raspberry Pi Kernel](https://github.com/raspberrypi/linux)
+- [Linux Stable Kernel](https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git)
+- [Raspberry Pi Kernel (alternative provider path)](https://github.com/raspberrypi/linux)
 - [KSPP Recommendations](https://kspp.github.io/)
 - [Linux Kernel Configuration](https://www.kernel.org/doc/html/latest/admin-guide/README.html)

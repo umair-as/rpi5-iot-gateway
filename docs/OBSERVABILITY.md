@@ -129,8 +129,9 @@ reconciliation, so operator-selected mode survives slot switches.
 
 ## Credential Flow
 
-Secrets (MQTT and InfluxDB passwords) are never stored in the Telegraf config,
-environment variables, or process arguments. The flow is:
+Secrets (MQTT and InfluxDB passwords) are not stored in Telegraf config files
+and are intended to avoid environment-variable and process-argument exposure.
+The flow is:
 
 ```mermaid
 flowchart TD

@@ -12,11 +12,11 @@ The distribution implements defense-in-depth security across multiple layers:
 - **Kernel Hardening**: KSPP-aligned security configuration
 - **Compiler Hardening**: PIE, RELRO, FORTIFY_SOURCE
 - **Runtime Hardening**: Secure sysctl settings, module blacklist
-- **Audit Framework**: auditd with comprehensive rules
+- **Audit Framework**: auditd with project audit rules
 - **Firewall**: nftables enabled by default
 - **Read-only Root**: RAUC A/B slots mounted read-only
 
-For FIT boot signing and verification chain setup, see the [FIT Signing Guide](FIT_SIGNING.md).
+For FIT boot signing and verification chain setup, see the [FIT Boot and Signing Guide](FIT_BOOT_SIGNING.md).
 
 ---
 
@@ -120,7 +120,7 @@ Unnecessary kernel modules are blacklisted to reduce attack surface.
 
 ### auditd Configuration
 
-The `iotgw-audit` package provides comprehensive audit rules based on CIS benchmarks.
+The `iotgw-audit` package provides project audit rules aligned to CIS-style baselines.
 Rules are staged under `/usr/share/iotgw-audit/iotgw.rules` and deployed into
 `/etc/audit/rules.d/iotgw.rules` during rootfs post-processing to avoid package
 ownership conflicts with `auditd`.

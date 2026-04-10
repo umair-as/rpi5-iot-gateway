@@ -1,4 +1,4 @@
-# OTA Adaptive Benchmark (2026-03-03)
+# OTA Adaptive Benchmark
 
 ## Purpose
 Validate whether RAUC adaptive streaming (`block-hash-index`) materially improves OTA install performance on the Raspberry Pi 5 gateway in our real workflow (`iotgw-rauc-install` with HTTPS streaming bundle).

@@ -8,7 +8,7 @@ Keep private investigations, incident notes, and sensitive assumptions in intern
 ## Scope
 
 In scope:
-- Secure boot chain (RPI firmware -> U-Boot -> FIT -> kernel/initramfs)
+- Boot integrity chain (RPI firmware -> U-Boot -> FIT verification -> kernel/initramfs)
 - OTA update path (RAUC A/B, bundle verification, slot switching)
 - Runtime configuration persistence (`/etc` overlay reconciliation)
 - Provisioning path (`/data/iotgw` inputs -> on-device config/cred stores)
@@ -110,11 +110,3 @@ Promotion rule:
 2. OTA security verification gates (pre/post install).
 3. TPM-backed production secret model.
 4. Formal service hardening checklist enforcement in CI.
-
-## Related Documents
-
-- `docs/SECURITY.md`
-- `docs/RAUC_UPDATE.md`
-- `docs/FIT_SIGNING.md`
-- `docs/KERNEL.md`
-- `docs/NETWORKING.md`

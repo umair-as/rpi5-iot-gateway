@@ -2,6 +2,9 @@
 
 This runbook covers installing and validating RAUC A/B bundle updates.
 
+Use this document for on-target operations, validation, and troubleshooting.  
+For OTA architecture, bundle composition, and release flow, see [OTA Updates](OTA_UPDATE.md).
+
 ## Mark-Good and Cleanup Flow
 
 This image uses upstream RAUC mark-good semantics and a separate cleanup
@@ -37,6 +40,26 @@ Rationale:
 
 This policy is used for NetworkManager-only networking mode to keep
 `systemd-networkd*` and wait-online units from reappearing after OTA.
+
+Overlay reconciliation implementation notes:
+
+- Hook tool: `/usr/libexec/rauc/overlay-reconcile.py` (Python 3)
+- Hook stages:
+  - `pre`: writes transaction metadata to `/data/iotgw/overlay-reconcile/txn.json`
+  - `post`: applies managed-path policy using the newly written slot content
+- State path: `/data/iotgw/overlay-reconcile/`
+  - `state.tsv` (hash baseline for `replace_if_unmodified`)
+  - `txn.json` (last transaction status/summary)
+  - `backups/` (removed upper-layer entries)
+- Policy manifest sources in target slot:
+  - `/usr/share/iotgw/overlay-reconcile/managed-paths.conf`
+  - `/usr/share/iotgw/overlay-reconcile/managed-paths.d/*.conf`
+- Supported policies: `enforce`, `replace_if_unmodified`, `preserve`, `absent`, `enforce_meta`.
+  - `enforce_meta` is used for security-sensitive metadata drift fixes (e.g.
+    mosquitto auth files ownership/mode).
+
+For full architecture, policy tradeoffs, and data-flow diagram, see:
+- [Overlay Reconciliation](OVERLAY_RECONCILIATION.md)
 
 ## Install Bundle
 
@@ -75,16 +98,14 @@ Behavior notes:
   `connect`, `tls-verify`
 - unsafe debug flags are gated by `--debug-unsafe` and are audit-logged
 
-Security follow-up (open):
+D-Bus access model (current):
 
-- current target D-Bus policy installed by RAUC allows any local client to send
-  messages to `de.pengutronix.rauc`:
-  `/usr/share/dbus-1/system.d/de.pengutronix.rauc.conf`
-- service activation remains root-owned via:
-  `/usr/share/dbus-1/system-services/de.pengutronix.rauc.service`
-- track as hardening follow-up: tighten D-Bus policy to an explicit allow-list
-  (root/system group/service account) and verify wrapper workflows still work
-  (`iotgw-rauc-install`, `rauc status`, mark-good path)
+- RAUC installs the D-Bus policy shipped by the `rauc` package:
+  `/usr/share/dbus-1/system.d/de.pengutronix.rauc.conf`.
+- Service activation is system-owned via:
+  `/usr/share/dbus-1/system-services/de.pengutronix.rauc.service`.
+- Operational entry points in this project remain:
+  `iotgw-rauc-install`, `rauc status`, and `rauc-mark-good.service`.
 
 Track progress:
 
@@ -220,7 +241,7 @@ Restore production defaults:
 setenv iotgw_appliance 1
 setenv iotgw_enable_netboot 0
 setenv iotgw_diag 0
-setenv iotgw_bootstage 0
+setenv iotgw_bootstage 1
 saveenv
 ```
 

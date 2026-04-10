@@ -2,7 +2,7 @@
 
 #  IoT Gateway OS for Raspberry Pi 5
 
-**A production-ready Yocto-based Linux distribution for IoT gateway applications**
+**A Yocto-based Linux distribution for IoT gateway applications**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Yocto](https://img.shields.io/badge/Yocto-Scarthgap-orange.svg)](https://www.yoctoproject.org/)
@@ -18,10 +18,10 @@
 A **hardened, embedded Linux distribution** for IoT gateway deployments on Raspberry Pi 5. Built on Yocto Project with KAS tooling.
 
 **Key Features:**
-- 🔄 **A/B OTA Updates** — Atomic updates with automatic rollback via RAUC (enabled by default)
+- 🔄 **A/B OTA Updates** — Rootfs A/B updates with RAUC slot rollback semantics (enabled by default)
 - 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags, runtime hardening
 - 📦 **Container Runtime** — Podman, Buildah, and Skopeo for containerized workloads
-- 🛠️ **Developer-Friendly** — Comprehensive tooling for debugging and development
+- 🛠️ **Developer-Friendly** — Tooling for debugging and development
 
 ---
 
@@ -71,7 +71,7 @@ IOTGW_DEVEL_PASSWORD_HASH = "$6$<hash>"
 ```
 
 Generate hashes with `openssl passwd -6` or `mkpasswd -m sha-512`.
-For dev builds, you can also bake SSH keys: `docs/DEV_SSH_KEYS.md`.
+For dev builds, SSH key bake-in workflow is documented in [Operations](docs/OPERATIONS.md).
 
 ---
 
@@ -113,23 +113,6 @@ See `kas/local.yml.example` for configuration template.
 
 ---
 
-## 💿 Partition Layout
-
-### Default 128GB Layout (RAUC A/B)
-
-| Device | Label | Size | Mount | Purpose |
-|--------|-------|------|-------|---------|
-| `/dev/mmcblk0p1` | `boot` | 256M | `/boot` | Bootloader & kernel (shared) |
-| `/dev/mmcblk0p2` | `ubootenv` | 16M | `/uboot-env` | Dedicated U-Boot environment store |
-| `/dev/mmcblk0p3` | `rootA` | 16G | `/` | Root filesystem Slot A |
-| `/dev/mmcblk0p4` | `rootB` | 16G | - | Root filesystem Slot B |
-| `/dev/mmcblk0p5` | `data` | 84G base (auto-expands) | `/data` | Persistent data |
-
-**Other sizes available:** 16GB, 32GB, 64GB — see `meta-iot-gateway/wic/` for WKS files.
-**Note:** On first boot, `rauc-grow-data-partition` expands `/data` to fill remaining free space.
-
----
-
 ## 📦 Image Variants
 
 | Image | Purpose | Includes | Size |
@@ -144,98 +127,31 @@ make dev       # or kas build kas/local.yml --target iot-gw-image-dev
 make prod      # or kas build kas/local.yml --target iot-gw-image-prod
 ```
 
+Partitioning details and WKS variants are documented in [Partition Layouts](docs/PARTITIONS.md).
+
 ---
 
 ## 🎨 Customization
 
-### Layer Management
+Use these docs to customize the gateway image and runtime behavior:
 
-Two approaches:
+- [Operations](docs/OPERATIONS.md) for host build workflow, provisioning, and OTA runtime operations
+- [Partition Layouts](docs/PARTITIONS.md) for storage sizing and WKS selection
 
-| Approach | When to Use | Config File |
-|----------|-------------|-------------|
-| **Auto-Fetch** (Default) | First-time users, single project | `kas/rpi5-autofetch.yml` |
-| **Local Layer Mirrors/Clones** | Pre-synced layer workspace, CI mirrors | `rpi5.yml` (+ `kas/rauc.yml` for RAUC provider overrides) |
+Subsystem deep dives:
 
-Switch by editing the `includes:` section in `kas/local.yml`.
-For local layer paths, override the relevant entries under `repos:` in `kas/local.yml` with `path:` values.
-
-### WiFi Configuration
-
-**Option 1: Build-time injection** (in `kas/local.yml`):
-```yaml
-local_conf_header:
-  wifi: |
-    IOTGW_WIFI_SSID = "YourSSID"
-    IOTGW_WIFI_PSK = "YourPassword"
-```
-
-**Option 2: First-boot provisioning**:
-Place `.nmconnection` files in `/boot/iotgw/nm/` before first boot.
-
-### Kernel Features
-
-Enable optional kernel feature sets via `IOTGW_KERNEL_FEATURES`:
-- `igw_containers` — Namespaces, cgroups for containers
-- `igw_networking_iot` — WireGuard, CAN, VLAN
-- `igw_security_prod` — KSPP hardening (recommended for production)
-- `igw_observability_dev` — BPF, kprobes, ftrace (development only)
-- `igw_tpm_slb9672` — TPM2 over SPI baseline config for Infineon SLB9672 class devices
-
-Example (in `kas/local.yml`):
-```yaml
-local_conf_header:
-  kernel_features: |
-    IOTGW_KERNEL_FEATURES = "igw_containers igw_networking_iot igw_security_prod"
-```
-
-Optional RTC backport gate (mainline providers):
-```yaml
-local_conf_header:
-  rtc_gate: |
-    IOTGW_ENABLE_RPI_RTC = "1"   # set "0" to build without rpi-rtc backport
-```
-
-Optional TPM2 SPI profile (Infineon SLB9672 class):
-```yaml
-local_conf_header:
-  tpm_spi: |
-    IOTGW_ENABLE_TPM_SLB9672 = "1"
-    # Optional overlay override (default: tpm-slb9670)
-    # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
-```
-
-### Optional: OpenThread Border Router (OTBR)
-
-Enable OTBR support at build time (includes the React-based web UI on port 80):
-```bash
-IOTGW_ENABLE_OTBR=1 make dev
-# or
-IOTGW_ENABLE_OTBR=1 kas build kas/local.yml --target iot-gw-image-dev
-```
-
-See [docs/OTBR.md](docs/OTBR.md) for architecture, configuration, and the web UI details.
+- [Kernel Configuration](docs/KERNEL.md)
+- [OpenThread Border Router](docs/OTBR.md)
 
 ---
 
 ## 🛠️ Common Tasks
 
-### Clean Build
+For practical runbooks and command workflows:
 
-```bash
-make clean
-```
-
-### Enable Desktop/GUI (Wayland/Weston)
-
-```bash
-cp kas/desktop.yml.example kas/desktop.yml
-kas build kas/local.yml:kas/desktop.yml --target iot-gw-image-dev
-```
-
-### Build Performance Tuning
-
-Edit `BB_NUMBER_THREADS` and `PARALLEL_MAKE` in `rpi5.yml` or your local overlay.
+- Build, flash, and OTA validation: [Operations](docs/OPERATIONS.md)
+- RAUC update lifecycle checks: [RAUC Update Runbook](docs/RAUC_UPDATE.md)
+- Overlay drift-control behavior after updates: [Overlay Reconciliation](docs/OVERLAY_RECONCILIATION.md)
 
 ---
 
@@ -243,15 +159,15 @@ Edit `BB_NUMBER_THREADS` and `PARALLEL_MAKE` in `rpi5.yml` or your local overlay
 
 Detailed documentation is available in the `docs/` directory:
 
+- **[Operations](docs/OPERATIONS.md)** — Host build, networking, dev SSH keys, OTA runtime workflows
 - **[Security Hardening](docs/SECURITY.md)** — Kernel hardening, compiler flags, audit framework, validation
 - **[Kernel Configuration](docs/KERNEL.md)** — Feature sets, fragments, runtime parameters
-- **[Networking](docs/NETWORKING.md)** — WiFi, Ethernet, provisioning (network only), VPN, firewall
-- **[Dev SSH Keys](docs/DEV_SSH_KEYS.md)** — Bake developer authorized_keys into dev images
 - **[Partition Layouts](docs/PARTITIONS.md)** — RAUC A/B partitions, WKS variants, sizing
-- **[Build System](docs/BUILD.md)** — Performance tuning, layer management, CI/CD
 - **[OpenThread Border Router](docs/OTBR.md)** — OTBR setup, configuration, commissioning
-- **[OTA Updates](OTA_UPDATE.md)** — RAUC workflow, bundles, rollback (root level)
+- **[OTA Updates](docs/OTA_UPDATE.md)** — RAUC workflow, bundles, rollback
 - **[RAUC Update Runbook](docs/RAUC_UPDATE.md)** — Slot validation and adaptive update checks
+- **[FIT Boot and Signing](docs/FIT_BOOT_SIGNING.md)** — FIT flow, signing setup, and verification workflow
+- **[Overlay Reconciliation](docs/OVERLAY_RECONCILIATION.md)** — `/etc` drift-control architecture, policy model, and OTA tradeoffs
 
 ---
 

@@ -4,7 +4,7 @@ This document describes the disk partition layouts used for RAUC A/B OTA updates
 
 ## Overview
 
-The IoT Gateway OS uses **A/B partition layout** for atomic OTA updates:
+The IoT Gateway OS uses an **A/B partition layout** for RAUC rootfs slot updates:
 - Two root filesystem slots (A and B)
 - Shared boot partition (kernel, DTBs, U-Boot)
 - Persistent data partition
@@ -13,89 +13,14 @@ The IoT Gateway OS uses **A/B partition layout** for atomic OTA updates:
 
 ---
 
-## Available Layouts
+## Default Layout
 
-Four pre-configured layouts for different SD card sizes. The `/data` partition
-starts at the base size shown below and is **expanded to fill remaining space**
-on first boot by `rauc-grow-data-partition`.
+This project defaults to a single production layout:
 
-| Card Size | WKS File | RootA/B Size | /data Base Size | Remaining (for auto-grow) |
-|-----------|----------|--------------|-----------------|---------------------------|
-| **16GB** | `iot-gw-rauc-16g.wks.in` | 4G / 4G (fixed) | 2G | ~5GB |
-| **32GB** | `iot-gw-rauc-32g.wks.in` | 6G / 6G | 12G | ~8GB |
-| **64GB** | `iot-gw-rauc-64g.wks.in` | 8G / 8G | 36G | ~12GB |
-| **128GB** (default) | `iot-gw-rauc-128g.wks.in` | 16G / 16G | 84G | ~20GB |
+- `WKS_FILE = "iot-gw-rauc-128g.wks.in"`
 
----
-
-## 16GB Layout
-
-**Total Allocated (base):** ~10.3GB
-**Target Card:** 16GB SD card
-**File:** `iot-gw-rauc-16g.wks.in`
-
-| # | Device | Label | Size | Type | Mount | Purpose |
-|---|--------|-------|------|------|-------|---------|
-| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
-| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
-| 3 | `/dev/mmcblk0p3` | `rootA` | 4G (fixed) | ext4 | `/` | Root filesystem Slot A |
-| 4 | `/dev/mmcblk0p4` | `rootB` | 4G (fixed) | ext4 | - | Root filesystem Slot B |
-| 5 | `/dev/mmcblk0p5` | `data` | 2G | ext4 | `/data` | Persistent user data |
-
-**Remaining Space:** ~5GB reserved for auto-grow
-**After First Boot:** `/data` expands to fill remaining free space
-
-**Use Case:** Compact IoT gateway, minimal storage requirements
-
----
-
-## 32GB Layout
-
-**Total Allocated (base):** ~24.3GB
-**Target Card:** 32GB SD card
-**File:** `iot-gw-rauc-32g.wks.in`
-
-| # | Device | Label | Size | Type | Mount | Purpose |
-|---|--------|-------|------|------|-------|---------|
-| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
-| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
-| 3 | `/dev/mmcblk0p3` | `rootA` | 6G | ext4 | `/` | Root filesystem Slot A |
-| 4 | `/dev/mmcblk0p4` | `rootB` | 6G | ext4 | - | Root filesystem Slot B |
-| 5 | `/dev/mmcblk0p5` | `data` | 12G | ext4 | `/data` | Persistent user data |
-
-**Remaining Space:** ~8GB reserved for auto-grow
-**After First Boot:** `/data` expands to fill remaining free space
-
-**Use Case:** Gateway with moderate storage needs, more data partition space
-
----
-
-## 64GB Layout
-
-**Total Allocated (base):** ~52.3GB
-**Target Card:** 64GB SD card
-**File:** `iot-gw-rauc-64g.wks.in`
-
-| # | Device | Label | Size | Type | Mount | Purpose |
-|---|--------|-------|------|------|-------|---------|
-| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
-| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
-| 3 | `/dev/mmcblk0p3` | `rootA` | 8G | ext4 | `/` | Root filesystem Slot A |
-| 4 | `/dev/mmcblk0p4` | `rootB` | 8G | ext4 | - | Root filesystem Slot B |
-| 5 | `/dev/mmcblk0p5` | `data` | 36G | ext4 | `/data` | Persistent user data |
-
-**Remaining Space:** ~12GB reserved for auto-grow
-**After First Boot:** `/data` expands to fill remaining free space
-
-**Use Case:** Gateway with heavy data logging, container images, media storage
-
----
-
-## 128GB Layout (Default)
-
-**Total Allocated (base):** ~100.3GB
-**Target Card:** 128GB SD card
-**File:** `iot-gw-rauc-128g.wks.in`
+The `/data` partition starts at a base size and is expanded to fill remaining
+space on first boot by `rauc-grow-data-partition`.
 
 | # | Device | Label | Size | Type | Mount | Purpose |
 |---|--------|-------|------|------|-------|---------|
@@ -108,7 +33,13 @@ on first boot by `rauc-grow-data-partition`.
 **Remaining Space:** ~20GB reserved for auto-grow
 **After First Boot:** `/data` expands to fill remaining free space
 
-**Use Case:** 128GB media with larger A/B root slots for growth while keeping substantial persistent storage
+Optional variants:
+- `iot-gw-rauc-16g.wks.in`
+- `iot-gw-rauc-32g.wks.in`
+- `iot-gw-rauc-64g.wks.in`
+
+Legacy template note:
+- `iot-gw-rauc.wks.in` exists for generic/bring-up use and is not the default production layout in this project.
 
 ---
 
@@ -128,9 +59,8 @@ on first boot by `rauc-grow-data-partition`.
 - Device tree blobs (`bcm2712-rpi-5-b.dtb`)
 - Device tree overlays (`overlays/`)
 - Boot splash image (`splash.bmp`, optional)
-- First-boot provisioning (`iotgw/` directory)
 
-**RAUC Updates:** This partition is updated by RAUC bundle post-install hooks (bootfiles.tar.gz).
+**RAUC Updates:** This partition is updated by RAUC bundle post-install hooks using the configured bootfiles archive (`bootfiles.tar.gz` or `bootfiles-fit.tar.gz` depending on bundle type).
 
 ---
 
@@ -194,50 +124,11 @@ local_conf_header:
 - `iot-gw-rauc-32g.wks.in`
 - `iot-gw-rauc-64g.wks.in`
 - `iot-gw-rauc-128g.wks.in` (default)
+- `iot-gw-rauc.wks.in` (legacy/generic template)
 
 ### Default Behavior
 
 If `WKS_FILE` is not set, the 128GB layout is used automatically.
-
----
-
-## Runtime Information
-
-### Check Current Layout
-
-```bash
-# List partitions
-lsblk
-
-# Partition details
-fdisk -l /dev/mmcblk0
-
-# Filesystem info
-df -h
-
-# Mount points
-mount | grep mmcblk0
-```
-
-**Example Output:**
-```
-/dev/mmcblk0p3 on / type ext4 (ro,relatime)
-/dev/mmcblk0p1 on /boot type vfat (rw,noatime,nodiratime)
-/dev/mmcblk0p5 on /data type ext4 (rw,noatime,nodiratime,commit=60)
-```
-
-### RAUC Slot Status
-
-```bash
-rauc status
-
-# Output shows:
-# - Active slot (A or B)
-# - Inactive slot
-# - Boot attempts remaining
-```
-
----
 
 ## Data Partition Auto-resize
 
@@ -253,16 +144,6 @@ On first boot, the `rauc-grow-data-partition` service automatically expands the 
 3. Resize ext4 filesystem
 4. Write stamp file `/boot/.rauc-grow-done`
 5. On subsequent boots, service is skipped via `ConditionPathExists=!/boot/.rauc-grow-done`
-
-**Logs:**
-```bash
-journalctl -u rauc-grow-data-partition
-```
-
-**Verify:**
-```bash
-df -h /data
-```
 
 ---
 
