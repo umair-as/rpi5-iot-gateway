@@ -104,6 +104,7 @@ ROOT_HOME ?= "/root"
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
@@ -167,6 +168,15 @@ IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_SELINUX', '1'
 # Measurement-only by default (no appraise) — safe without signed xattrs.
 IOTGW_ENABLE_IMA ?= "0"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_IMA', '1', ' igw_ima', '', d)}"
+
+# Optional Raspberry Pi EEPROM tooling stack (rpi-eeprom + policy wrapper).
+# Keep enabled by default for gateway fleet maintenance; developers can disable
+# it for lean bring-up images and when VCIO carry patches are not desired.
+IOTGW_ENABLE_RPI_EEPROM ?= "1"
+
+# VCIO (/dev/vcio) enables vcgencmd and full rpi-eeprom-update status path.
+# Default follows EEPROM tooling gate, but can be overridden explicitly.
+IOTGW_ENABLE_VCIO ?= "${IOTGW_ENABLE_RPI_EEPROM}"
 
 # Mainline RPi5 DTB note:
 # - Firmware `dtparam=` keys must exist in DTB `__overrides__`.

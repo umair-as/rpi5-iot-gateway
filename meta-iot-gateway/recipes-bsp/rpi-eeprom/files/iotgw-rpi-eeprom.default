@@ -1,0 +1,21 @@
+# IoT Gateway policy for Raspberry Pi EEPROM updates.
+# 0 = disabled (default, safest)
+# 1 = enabled
+IOTGW_RPI_EEPROM_POLICY_ENABLE=0
+
+# If enabled, stage updates automatically when an update is available.
+# Equivalent to: rpi-eeprom-update -a
+IOTGW_RPI_EEPROM_POLICY_AUTO_STAGE=0
+
+# If enabled with AUTO_STAGE=1, reboot immediately after staging.
+IOTGW_RPI_EEPROM_POLICY_AUTO_REBOOT=0
+
+# Optional release channel override for rpi-eeprom-update.
+# Leave empty to use recipe defaults.
+# Typical values: default, latest
+IOTGW_RPI_EEPROM_POLICY_RELEASE_STATUS=
+
+# Mainline-kernel compatibility mode:
+# 1 = use rpi-eeprom-update -d (default EEPROM config) for status/stage.
+# 0 = preserve current EEPROM config when tooling can read it.
+IOTGW_RPI_EEPROM_USE_DEFAULT_CONFIG=1

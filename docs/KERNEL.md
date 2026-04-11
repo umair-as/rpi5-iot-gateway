@@ -195,6 +195,17 @@ local_conf_header:
     IOTGW_ENABLE_RPI_RTC = "1"   # set to "0" to disable rtc-rpi patch/fragment
 ```
 
+### Raspberry Pi EEPROM / VCIO Gate
+
+Enable/disable EEPROM maintenance tooling and VCIO carry patch:
+
+```yaml
+local_conf_header:
+  rpi_eeprom_gate: |
+    IOTGW_ENABLE_RPI_EEPROM = "1"  # set to "0" to exclude rpi-eeprom tooling packages
+    IOTGW_ENABLE_VCIO = "1"        # default follows IOTGW_ENABLE_RPI_EEPROM
+```
+
 ### TPM SPI Gate
 
 Enable TPM2-over-SPI profile and firmware overlay:

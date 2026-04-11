@@ -14,5 +14,5 @@ RDEPENDS:${PN} = " \
     spidev-test \
     libgpiod-tools \
     raspi-gpio \
+    ${@bb.utils.contains('IOTGW_ENABLE_RPI_EEPROM', '1', 'rpi-eeprom iotgw-rpi-eeprom', '', d)} \
 "
-

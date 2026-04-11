@@ -1,0 +1,26 @@
+[Unit]
+Description=IoT Gateway Raspberry Pi EEPROM Update Policy
+After=local-fs.target
+Wants=local-fs.target
+ConditionPathExists=/usr/sbin/rpi-eeprom-update
+ConditionPathExists=/usr/sbin/iotgw-rpi-eeprom
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/iotgw-rpi-eeprom policy
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/boot /var/lib/raspberrypi/bootloader
+
+[Install]
+WantedBy=multi-user.target
