@@ -1,0 +1,122 @@
+#!/bin/sh
+set -eu
+
+DEFAULTS_FILE="/etc/default/iotgw-rpi-eeprom"
+
+IOTGW_RPI_EEPROM_POLICY_ENABLE=0
+IOTGW_RPI_EEPROM_POLICY_AUTO_STAGE=0
+IOTGW_RPI_EEPROM_POLICY_AUTO_REBOOT=0
+IOTGW_RPI_EEPROM_POLICY_RELEASE_STATUS=""
+IOTGW_RPI_EEPROM_USE_DEFAULT_CONFIG=1
+
+if [ -f "${DEFAULTS_FILE}" ]; then
+    # shellcheck disable=SC1090
+    . "${DEFAULTS_FILE}"
+fi
+
+if [ -n "${IOTGW_RPI_EEPROM_POLICY_RELEASE_STATUS}" ]; then
+    export FIRMWARE_RELEASE_STATUS="${IOTGW_RPI_EEPROM_POLICY_RELEASE_STATUS}"
+fi
+
+log() {
+    echo "[iotgw-rpi-eeprom] $*" >&2
+}
+
+need_root() {
+    if [ "$(id -u)" -ne 0 ]; then
+        log "must be run as root"
+        exit 1
+    fi
+}
+
+do_status() {
+    rc=0
+    if [ "${IOTGW_RPI_EEPROM_USE_DEFAULT_CONFIG}" = "1" ]; then
+        rpi-eeprom-update -d || rc=$?
+    else
+        rpi-eeprom-update || rc=$?
+    fi
+    return "${rc}"
+}
+
+do_stage() {
+    need_root
+    if [ "${IOTGW_RPI_EEPROM_USE_DEFAULT_CONFIG}" = "1" ]; then
+        rpi-eeprom-update -d -a
+    else
+        rpi-eeprom-update -a
+    fi
+}
+
+do_cancel() {
+    need_root
+    rpi-eeprom-update -r
+}
+
+do_policy() {
+    if [ "${IOTGW_RPI_EEPROM_POLICY_ENABLE}" != "1" ]; then
+        log "policy disabled (IOTGW_RPI_EEPROM_POLICY_ENABLE=0)"
+        exit 0
+    fi
+
+    rc=0
+    do_status || rc=$?
+
+    if [ "${rc}" -eq 0 ]; then
+        log "no EEPROM update required"
+        exit 0
+    fi
+
+    if [ "${rc}" -ne 1 ]; then
+        log "status check failed (exit ${rc})"
+        exit "${rc}"
+    fi
+
+    if [ "${IOTGW_RPI_EEPROM_POLICY_AUTO_STAGE}" != "1" ]; then
+        log "update available; auto stage disabled"
+        log "run manually: sudo iotgw-rpi-eeprom stage"
+        exit 0
+    fi
+
+    log "staging EEPROM update files to boot partition"
+    do_stage
+    log "staged successfully; update will apply on next reboot"
+
+    if [ "${IOTGW_RPI_EEPROM_POLICY_AUTO_REBOOT}" = "1" ]; then
+        log "auto reboot enabled; rebooting now"
+        sync || true
+        systemctl reboot
+    fi
+}
+
+usage() {
+    cat <<'EOF'
+Usage: iotgw-rpi-eeprom <command>
+
+Commands:
+  status   Show EEPROM update status (passes through rpi-eeprom-update output)
+  stage    Stage available EEPROM update files for next reboot
+  cancel   Remove any staged EEPROM update files
+  policy   Run policy from /etc/default/iotgw-rpi-eeprom
+EOF
+}
+
+cmd="${1:-}"
+case "${cmd}" in
+    status)
+        do_status
+        ;;
+    stage)
+        do_stage
+        ;;
+    cancel)
+        do_cancel
+        ;;
+    policy)
+        do_policy
+        ;;
+    *)
+        usage
+        exit 1
+        ;;
+esac

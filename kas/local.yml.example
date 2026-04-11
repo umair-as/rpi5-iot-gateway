@@ -46,3 +46,18 @@ local_conf_header:
     # IOTGW_FIT_RECOVERY_KERNEL_PATH:fitflow = "${DEPLOY_DIR_IMAGE}/linux-recovery.bin"
     # Compression of the payload above: none|gzip|lzo
     # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG:fitflow = "none"
+
+  buildhistory_downgrade_notes: |
+    # Developer note: for intentional downgrade/maintenance tests (for example
+    # switching kernel line 6.18 -> 6.12), package-history QA can trigger:
+    #   version-going-backwards
+    # Preferred temporary knob (demote to warning):
+    # ERROR_QA:remove = "version-going-backwards"
+    # WARN_QA:append = " version-going-backwards"
+    #
+    # Recipe-scoped alternative:
+    # ERROR_QA:remove:pn-perf = "version-going-backwards"
+    # WARN_QA:append:pn-perf = " version-going-backwards"
+    #
+    # Broader alternative (keeps image history but skips package history):
+    # BUILDHISTORY_FEATURES:remove = "package"

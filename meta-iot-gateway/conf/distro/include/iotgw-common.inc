@@ -70,6 +70,9 @@ VIRTUAL-RUNTIME_init_manager ?= "systemd"
 # Journald-only policy: do not pull classic syslog daemons from packagegroups.
 VIRTUAL-RUNTIME_base-utils-syslog = ""
 DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
+# AppArmor distro feature kept for reference while LSM default decision is pending.
+# Remove once SELinux is confirmed as the production default LSM.
+# DISTRO_FEATURES:append = " apparmor"
 # RAUC is mandatory in this distro
 DISTRO_FEATURES:append = " rauc"
 DISTRO_FEATURES:append = " luks"
@@ -101,6 +104,8 @@ ROOT_HOME ?= "/root"
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
@@ -137,6 +142,8 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
 #   igw_no_efi             - disable kernel EFI runtime/stub surface (opt-in)
+#   igw_selinux            - SELinux compiled in, AppArmor remains default LSM
+#   igw_ima                - IMA measurement (PCR10, SHA256, ima-ng template)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
@@ -150,6 +157,27 @@ IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672',
 # Enable to append igw_no_efi fragment set.
 IOTGW_ENABLE_KERNEL_NO_EFI ?= "1"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_KERNEL_NO_EFI', '1', ' igw_no_efi', '', d)}"
+
+# Optional SELinux kernel support. Compiled in alongside AppArmor; AppArmor
+# remains the default LSM until meta-selinux userspace is available and policy
+# is ready. Switch at runtime: lsm=selinux on the kernel cmdline.
+IOTGW_ENABLE_SELINUX ?= "0"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_SELINUX', '1', ' igw_selinux', '', d)}"
+
+# Optional IMA measurement support. Requires TPM for replay-protected log.
+# Measurement-only by default (no appraise) — safe without signed xattrs.
+IOTGW_ENABLE_IMA ?= "0"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_IMA', '1', ' igw_ima', '', d)}"
+
+# Optional Raspberry Pi EEPROM tooling stack (rpi-eeprom + policy wrapper).
+# Keep enabled by default for gateway fleet maintenance; developers can disable
+# it for lean bring-up images and when VCIO carry patches are not desired.
+IOTGW_ENABLE_RPI_EEPROM ?= "1"
+
+# VCIO (/dev/vcio) enables vcgencmd and full rpi-eeprom-update status path.
+# Default follows EEPROM tooling gate, but can be overridden explicitly.
+IOTGW_ENABLE_VCIO ?= "${IOTGW_ENABLE_RPI_EEPROM}"
+
 # Mainline RPi5 DTB note:
 # - Firmware `dtparam=` keys must exist in DTB `__overrides__`.
 # - Current mainline bcm2712-rpi-5-b path exports rtc/rtc_bbat_vchg, but not

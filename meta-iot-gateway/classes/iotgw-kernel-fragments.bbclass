@@ -3,6 +3,13 @@
 # Gate Raspberry Pi firmware RTC support for providers that carry the backport.
 IOTGW_ENABLE_RPI_RTC ?= "1"
 
+# Gate Raspberry Pi EEPROM tooling stack (shared with packagegroup gating).
+IOTGW_ENABLE_RPI_EEPROM ?= "1"
+
+# Gate VCIO mailbox chardev (/dev/vcio) needed by vcgencmd and rpi-eeprom-update.
+# Default follows EEPROM tooling gate; developers can override independently.
+IOTGW_ENABLE_VCIO ?= "${IOTGW_ENABLE_RPI_EEPROM}"
+
 # Base fragments always applied.
 SRC_URI:append = " \
     file://fragments/branding.cfg \
@@ -12,6 +19,7 @@ SRC_URI:append = " \
     file://fragments/audit.cfg \
 "
 SRC_URI:append = "${@' file://fragments/rtc-rpi.cfg' if d.getVar('IOTGW_ENABLE_RPI_RTC') == '1' else ''}"
+SRC_URI:append = "${@' file://fragments/vcio-rpi.cfg' if d.getVar('IOTGW_ENABLE_VCIO') == '1' else ''}"
 
 # Optional fragments toggled via IOTGW_KERNEL_FEATURES (space/comma-separated).
 SRC_URI:append = "${@' file://fragments/compute-media.cfg' if 'igw_compute_media' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
@@ -21,6 +29,8 @@ SRC_URI:append = "${@' file://fragments/observability-dev.cfg' if 'igw_observabi
 SRC_URI:append = "${@' file://fragments/security-prod.cfg' if 'igw_security_prod' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/tpm-slb9672.cfg' if 'igw_tpm_slb9672' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/efi-surface-reduction.cfg' if 'igw_no_efi' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/selinux.cfg' if 'igw_selinux' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/ima.cfg' if 'igw_ima' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 
 # Merge present fragments into the active kernel .config.
 do_configure:append() {
