@@ -61,3 +61,20 @@ local_conf_header:
     #
     # Broader alternative (keeps image history but skips package history):
     # BUILDHISTORY_FEATURES:remove = "package"
+
+  tpm_crypto_providers: |
+    # Optional TPM crypto provider userspace integrations:
+    # tpm2-pkcs11, tpm2-openssl, tpm2-tss-engine
+    # Effective when TPM SPI profile is enabled on your build.
+    # IOTGW_ENABLE_TPM_SLB9672 = "1"
+    # IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS = "1"
+
+  ota_tpm_mtls: |
+    # Optional OTA updater TPM-backed mTLS key flow (disabled by default).
+    # When enabled:
+    # - ota-updater uses TPM key handle URI instead of /etc/ota/device.key
+    # - ota-certs allows keyless cert provisioning (device.crt + ca.crt)
+    # IOTGW_ENABLE_OTA_TPM_MTLS = "1"
+    # IOTGW_OTA_TPM_KEY_URI = "handle:0x81000001"
+    # IOTGW_OTA_TPM_KEY_ENGINE = "tpm2tss"
+    # IOTGW_OTA_OPENSSL_CONF = "/etc/ota/openssl-tpm2.cnf"

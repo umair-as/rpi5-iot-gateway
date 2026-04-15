@@ -16,6 +16,7 @@ readonly BOOT_SRC="/boot/iotgw/ota"
 readonly BOOT_META="${BOOT_SRC}/meta.json"
 readonly DATA_SRC="/data/ota/certs"
 readonly STATE_FILE="/var/lib/ota-certs-provision.state"
+readonly ALLOW_KEYLESS_DEVICE_CERTS="${OTA_CERTS_ALLOW_KEYLESS_DEVICE_CERTS:-0}"
 
 get_device_id() {
     local mid=""
@@ -65,9 +66,12 @@ boot_meta_get_provision_id() {
 # Check if valid certs exist in an arbitrary directory
 certs_valid_in_dir() {
     local dir="$1"
-    [[ -f "$dir/device.crt" ]] && \
-    [[ -f "$dir/device.key" ]] && \
-    [[ -f "$dir/ca.crt" ]] && \
+    [[ -f "$dir/device.crt" ]] || return 1
+    [[ -f "$dir/ca.crt" ]] || return 1
+    if [[ "$ALLOW_KEYLESS_DEVICE_CERTS" != "1" ]]; then
+        [[ -f "$dir/device.key" ]] || return 1
+    fi
+
     openssl x509 -in "$dir/device.crt" -noout -checkend 86400 2>/dev/null && \
     openssl verify -CAfile "$dir/ca.crt" "$dir/device.crt" >/dev/null 2>&1
 }
@@ -118,7 +122,9 @@ backup_certs_to_data() {
     mkdir -p "$DATA_SRC"
     install -m 0644 "$CERT_DIR/ca.crt" "$DATA_SRC/ca.crt"
     install -m 0644 "$CERT_DIR/device.crt" "$DATA_SRC/device.crt"
-    install -m 0640 "$CERT_DIR/device.key" "$DATA_SRC/device.key"
+    if [[ -f "$CERT_DIR/device.key" ]]; then
+        install -m 0640 "$CERT_DIR/device.key" "$DATA_SRC/device.key"
+    fi
 }
 
 write_state() {
@@ -146,19 +152,27 @@ copy_certs() {
     local src="$1"
     local desc="$2"
 
-    if [[ -f "$src/device.crt" && -f "$src/device.key" && -f "$src/ca.crt" ]]; then
+    if [[ -f "$src/device.crt" && -f "$src/ca.crt" ]] && [[ -f "$src/device.key" || "$ALLOW_KEYLESS_DEVICE_CERTS" == "1" ]]; then
         log_info "Provisioning certificates from $desc"
 
         install -m 0644 "$src/ca.crt" "$CERT_DIR/ca.crt"
         install -m 0644 "$src/device.crt" "$CERT_DIR/device.crt"
-        install -m 0640 "$src/device.key" "$CERT_DIR/device.key"
+        if [[ -f "$src/device.key" ]]; then
+            install -m 0640 "$src/device.key" "$CERT_DIR/device.key"
+        elif [[ "$ALLOW_KEYLESS_DEVICE_CERTS" == "1" ]]; then
+            log_info "Source has no device.key; keyless mode is enabled"
+        fi
 
         # Set ownership for ota user
-        chown root:ota "$CERT_DIR/device.key" 2>/dev/null || true
+        if [[ -f "$CERT_DIR/device.key" ]]; then
+            chown root:ota "$CERT_DIR/device.key" 2>/dev/null || true
+        fi
         chown root:ota "$CERT_DIR/device.crt" 2>/dev/null || true
         chown root:ota "$CERT_DIR/ca.crt" 2>/dev/null || true
         chmod 0750 "$CERT_DIR"
-        chmod 0640 "$CERT_DIR/device.key"
+        if [[ -f "$CERT_DIR/device.key" ]]; then
+            chmod 0640 "$CERT_DIR/device.key"
+        fi
         chmod 0644 "$CERT_DIR/device.crt" "$CERT_DIR/ca.crt"
         if ! cert_chain_valid; then
             log_error "Provisioned certificates from $desc do not chain to $CERT_DIR/ca.crt"
@@ -171,6 +185,9 @@ copy_certs() {
 
 main() {
     log_info "OTA certificate provisioning starting"
+    if [[ "$ALLOW_KEYLESS_DEVICE_CERTS" == "1" ]]; then
+        log_info "Keyless device-certificate mode enabled (TPM key expected at runtime)"
+    fi
 
     # Create cert directory
     install -d -m 0750 "$CERT_DIR"

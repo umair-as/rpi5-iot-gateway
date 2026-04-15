@@ -6,6 +6,12 @@
 
     "device_cert": "/etc/ota/device.crt",
     "device_key": "/etc/ota/device.key",
+    "_device_key_uri_comment": "Optional OpenSSL key URI (e.g. handle:0x81000001 for tpm2-openssl). Overrides device_key when set.",
+    "device_key_uri": "@IOTGW_OTA_DEVICE_KEY_URI@",
+    "_device_key_engine_comment": "Engine for TPM handle mode on curl builds that support ENG (default: tpm2tss).",
+    "device_key_engine": "@IOTGW_OTA_DEVICE_KEY_ENGINE@",
+    "_openssl_conf_comment": "Optional OpenSSL config file used by curl for provider loading (e.g. /etc/ota/openssl-tpm2.cnf).",
+    "openssl_conf": "@IOTGW_OTA_OPENSSL_CONF@",
     "ca_cert": "/etc/ota/ca.crt",
 
     "connect_timeout": 30,

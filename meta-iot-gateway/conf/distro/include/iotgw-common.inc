@@ -104,6 +104,8 @@ ROOT_HOME ?= "/root"
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OTA_TPM_MTLS IOTGW_OTA_TPM_KEY_URI IOTGW_OTA_TPM_KEY_ENGINE IOTGW_OTA_OPENSSL_CONF"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
@@ -152,6 +154,21 @@ IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 IOTGW_ENABLE_TPM_SLB9672 ?= "0"
 IOTGW_TPM_DTO_OVERLAY ?= "tpm-slb9670"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', ' igw_tpm_slb9672', '', d)}"
+
+# Optional TPM crypto provider stack (userspace integrations):
+#  - tpm2-pkcs11
+#  - tpm2-openssl
+#  - tpm2-tss-engine
+# Keep disabled by default until app/client integration is wired.
+IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS ?= "0"
+
+# Optional OTA mTLS TPM key mode (ota-updater + ota-certs behavior):
+# - 0: default file-key flow (/etc/ota/device.key required)
+# - 1: TPM key-handle flow (keyless cert provisioning allowed; updater uses TPM key URI)
+IOTGW_ENABLE_OTA_TPM_MTLS ?= "0"
+IOTGW_OTA_TPM_KEY_URI ?= "handle:0x81000001"
+IOTGW_OTA_TPM_KEY_ENGINE ?= "tpm2tss"
+IOTGW_OTA_OPENSSL_CONF ?= "/etc/ota/openssl-tpm2.cnf"
 
 # Optional kernel EFI surface reduction profile for non-UEFI RPi5 boot flow.
 # Enable to append igw_no_efi fragment set.
