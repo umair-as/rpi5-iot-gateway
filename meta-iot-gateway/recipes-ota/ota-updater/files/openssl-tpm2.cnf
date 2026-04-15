@@ -1,0 +1,20 @@
+# OpenSSL 3 provider configuration for TPM-backed key operations.
+#
+# Usage with ota-update-check:
+# - Set "device_key_uri": "handle:0x81000001" in /etc/ota/updater.conf
+# - Set "openssl_conf": "/etc/ota/openssl-tpm2.cnf"
+
+openssl_conf = openssl_init
+
+[openssl_init]
+providers = provider_sect
+
+[provider_sect]
+default = default_sect
+tpm2 = tpm2_sect
+
+[default_sect]
+activate = 1
+
+[tpm2_sect]
+activate = 1

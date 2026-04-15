@@ -283,6 +283,25 @@ When `IOTGW_ENABLE_TPM_SLB9672=1`, the following TPM security components are inc
 - **`tpm2-tools`** — Low-level TPM2 CLI (dev image only)
 - Default TCTI policy is pinned to `device:/dev/tpmrm0` to avoid simulator/fallback ambiguity.
 
+### Optional TPM Crypto Providers
+
+Enable extra userspace integrations for PKCS#11/OpenSSL consumers:
+
+- `tpm2-pkcs11`
+- `tpm2-openssl`
+- `tpm2-tss-engine`
+
+Build-time gate:
+
+```bash
+IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS=1 make dev
+```
+
+Notes:
+- Gate is additive and only effective when `IOTGW_ENABLE_TPM_SLB9672=1`.
+- On OpenSSL 3 builds, provider-based integration is preferred; `openssl engine`
+  output may stay minimal even when TPM crypto provider packages are installed.
+
 ### Kernel Support
 - Fragment: `meta-iot-gateway/recipes-kernel/linux/files/fragments/tpm-slb9672.cfg`
 - TIS-SPI stack over RP1 DesignWare SPI controller

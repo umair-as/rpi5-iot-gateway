@@ -27,6 +27,7 @@ S = "${WORKDIR}"
 PACKAGES =+ "${PN}-devca"
 
 RAUC_OTA_CA_DIR ?= ""
+IOTGW_ENABLE_OTA_TPM_MTLS ?= "0"
 
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "ota-certs-provision.service"
@@ -41,6 +42,10 @@ do_install() {
     # Install systemd service
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/ota-certs-provision.service ${D}${systemd_system_unitdir}/
+    if ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', 'true', 'false', d)}; then
+        sed -i '/^\[Service\]/a Environment=OTA_CERTS_ALLOW_KEYLESS_DEVICE_CERTS=1' \
+            ${D}${systemd_system_unitdir}/ota-certs-provision.service
+    fi
 
     # Create certificate directory structure
     install -d ${D}${sysconfdir}/ota

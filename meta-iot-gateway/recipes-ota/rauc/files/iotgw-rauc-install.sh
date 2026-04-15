@@ -221,29 +221,48 @@ _reconcile_ota_certs() {
 # full CA chain in one shot.  TLS config is read from system.conf [streaming].
 _preflight_url() {
     local label="Server  ${URL_HOST}:${URL_PORT}" curl_rc=0
+    local key_is_uri=0
+    local key_is_handle=0
+    local key_for_curl="${TLS_KEY}"
+    local -a key_opts=(--key "${TLS_KEY}")
 
     command -v curl >/dev/null 2>&1 || die "curl not found"
     _read_streaming_tls \
         || die "cannot read TLS config from /etc/rauc/system.conf [streaming]"
 
-    for f in "${TLS_CA}" "${TLS_CERT}" "${TLS_KEY}"; do
+    for f in "${TLS_CA}" "${TLS_CERT}"; do
         [ -r "${f}" ] || { _check_fail "${label}" "missing: $(basename "${f}")"; return 1; }
     done
+    if [[ "${TLS_KEY}" == *:* ]]; then
+        key_is_uri=1
+        if [[ "${TLS_KEY}" =~ ^handle:(0x[0-9A-Fa-f]+)$ ]]; then
+            key_is_handle=1
+            key_for_curl="${BASH_REMATCH[1]}"
+            key_opts=(--engine tpm2tss --key-type ENG --key "${key_for_curl}")
+        fi
+    elif [ ! -r "${TLS_KEY}" ]; then
+        _check_fail "${label}" "missing: $(basename "${TLS_KEY}")"
+        return 1
+    fi
 
     _spin_start "${label}"
     _log "preflight connect starting host=${URL_HOST} port=${URL_PORT}"
+    [ "${key_is_uri}" -eq 1 ] && _log "preflight using key URI from system.conf"
+    [ "${key_is_handle}" -eq 1 ] && _log "preflight using tpm2tss engine key=${key_for_curl}"
 
     if curl --fail --silent --show-error --location \
             --output /dev/null \
             --connect-timeout 5 --max-time 15 \
             --range 0-0 \
-            --cacert "${TLS_CA}" --cert "${TLS_CERT}" --key "${TLS_KEY}" \
+            --cacert "${TLS_CA}" --cert "${TLS_CERT}" \
+            "${key_opts[@]}" \
             "${BUNDLE_INPUT}" >/dev/null 2>&1; then
         _log "preflight connect ok"
         _check_ok "${label}"
         return 0
+    else
+        curl_rc=$?
     fi
-    curl_rc=$?
     _log "preflight connect failed curl_rc=${curl_rc}"
     _check_fail "${label}" "curl_rc=${curl_rc}"
     return 1

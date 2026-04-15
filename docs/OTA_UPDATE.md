@@ -265,9 +265,35 @@ send-headers=boot-id;machine-id;transaction-id
 
 Device certs are provisioned by `ota-certs-provision`:
 - Production: `/boot/iotgw/ota/` or `/data/ota/certs/`
-- Dev fallback: auto-generated using dev CA
+- Existing certs in `/etc/ota` are kept when still valid
 
 Server cert must include a SAN matching the OTA server IP/hostname.
+
+### TPM-backed client key (OTA updater manifest polling)
+
+`ota-update-check` can use a TPM-backed OpenSSL key URI instead of a filesystem
+private key. Configure `/etc/ota/updater.conf`:
+
+```json
+{
+  "device_cert": "/etc/ota/device.crt",
+  "device_key_uri": "handle:0x81000001",
+  "openssl_conf": "/etc/ota/openssl-tpm2.cnf",
+  "ca_cert": "/etc/ota/ca.crt"
+}
+```
+
+Notes:
+- `device_key_uri` takes precedence over `device_key`.
+- TPM mode is build-gated by `IOTGW_ENABLE_OTA_TPM_MTLS = "1"` (default `0`,
+  preserving non-TPM file-key flow).
+- On current gateway curl builds (`--key-type` supports `ENG`, not `PROV`), TPM
+  handles are used via OpenSSL engine mode (`tpm2tss`) when
+  `device_key_uri` is `handle:0x...`.
+- `openssl_conf` remains optional for provider-based tooling and future curl
+  builds with provider key support.
+- With TPM mode enabled, `ota-updater.service` gets supplementary `iotgwtpm`
+  group access for `/dev/tpmrm0`.
 
 ---
 

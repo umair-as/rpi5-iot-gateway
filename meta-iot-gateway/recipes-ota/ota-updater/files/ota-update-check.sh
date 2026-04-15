@@ -15,7 +15,7 @@ set -euo pipefail
 readonly CONFIG_FILE="${OTA_CONFIG:-/etc/ota/updater.conf}"
 readonly STATE_DIR="/data/ota"
 readonly STATE_FILE="${STATE_DIR}/last-check"
-readonly LOCK_FILE="/run/ota-updater.lock"
+readonly LOCK_FILE="${STATE_DIR}/updater.lock"
 readonly RAUC_DBUS_SERVICE="de.pengutronix.rauc"
 readonly RAUC_DBUS_PATH="/"
 readonly RAUC_DBUS_IFACE="de.pengutronix.rauc.Installer"
@@ -90,7 +90,10 @@ load_config() {
         MANIFEST_PATH=$(jq -r '.manifest_path // "/manifest.json"' "$CONFIG_FILE")
         DEVICE_CERT=$(jq -r '.device_cert // "/etc/ota/device.crt"' "$CONFIG_FILE")
         DEVICE_KEY=$(jq -r '.device_key // "/etc/ota/device.key"' "$CONFIG_FILE")
+        DEVICE_KEY_URI=$(jq -r '.device_key_uri // empty' "$CONFIG_FILE")
+        DEVICE_KEY_ENGINE=$(jq -r '.device_key_engine // "tpm2tss"' "$CONFIG_FILE")
         CA_CERT=$(jq -r '.ca_cert // "/etc/ota/ca.crt"' "$CONFIG_FILE")
+        OPENSSL_CONF_PATH=$(jq -r '.openssl_conf // empty' "$CONFIG_FILE")
         CONNECT_TIMEOUT=$(jq -r '.connect_timeout // 30' "$CONFIG_FILE")
         MAX_TIME=$(jq -r '.max_time // 300' "$CONFIG_FILE")
         FETCH_RETRIES=$(jq -r '.fetch_retries // 5' "$CONFIG_FILE")
@@ -107,6 +110,9 @@ load_config() {
     FETCH_RETRIES=${FETCH_RETRIES:-5}
     RETRY_BASE_SEC=${RETRY_BASE_SEC:-2}
     RETRY_MAX_SEC=${RETRY_MAX_SEC:-60}
+    DEVICE_KEY_URI=${DEVICE_KEY_URI:-}
+    DEVICE_KEY_ENGINE=${DEVICE_KEY_ENGINE:-tpm2tss}
+    OPENSSL_CONF_PATH=${OPENSSL_CONF_PATH:-}
 
     # Validate required settings
     if [[ -z "${SERVER_URL:-}" ]]; then
@@ -152,6 +158,10 @@ get_installed_version() {
 # Fetch manifest from update server using mTLS
 fetch_manifest_once() {
     local manifest_url="${SERVER_URL}${MANIFEST_PATH}"
+    local key_for_curl=""
+    local key_mode="none"
+    local key_arg=""
+    local -a curl_env=()
     local curl_opts=(
         --silent
         --show-error
@@ -160,10 +170,54 @@ fetch_manifest_once() {
         --max-time "${MAX_TIME:-300}"
     )
 
-    # Add mTLS options if certs are configured
-    if [[ -f "${DEVICE_CERT:-}" && -f "${DEVICE_KEY:-}" ]]; then
-        curl_opts+=(--cert "$DEVICE_CERT" --key "$DEVICE_KEY")
-        log_info "Using device certificate: $DEVICE_CERT"
+    # Add mTLS options if cert/key are configured.
+    # key selection precedence:
+    #   1. device_key_uri (explicit OpenSSL key URI, e.g. handle:0x81000001)
+    #   2. device_key if it points to a file
+    #   3. device_key if it looks like a URI scheme
+    if [[ -f "${DEVICE_CERT:-}" ]]; then
+        if [[ -n "${DEVICE_KEY_URI:-}" ]]; then
+            key_arg="${DEVICE_KEY_URI}"
+        elif [[ -n "${DEVICE_KEY:-}" && -f "${DEVICE_KEY}" ]]; then
+            key_arg="${DEVICE_KEY}"
+        elif [[ -n "${DEVICE_KEY:-}" && "${DEVICE_KEY}" == *:* ]]; then
+            key_arg="${DEVICE_KEY}"
+        fi
+
+        if [[ -n "${key_arg}" ]]; then
+            if [[ "${key_arg}" =~ ^handle:(0x[0-9A-Fa-f]+)$ ]]; then
+                key_for_curl="${BASH_REMATCH[1]}"
+                curl_opts+=(--engine "${DEVICE_KEY_ENGINE}" --key-type ENG --key "${key_for_curl}")
+                key_mode="engine"
+            elif [[ "${key_arg}" =~ ^0x[0-9A-Fa-f]+$ ]]; then
+                key_for_curl="${key_arg}"
+                curl_opts+=(--engine "${DEVICE_KEY_ENGINE}" --key-type ENG --key "${key_for_curl}")
+                key_mode="engine"
+            else
+                key_for_curl="${key_arg}"
+                curl_opts+=(--key "${key_for_curl}")
+                key_mode="file-or-uri"
+            fi
+
+            curl_opts+=(--cert "$DEVICE_CERT")
+            log_info "Using device certificate: $DEVICE_CERT"
+            if [[ "${key_mode}" == "engine" ]]; then
+                log_info "Using TPM key via engine: ${DEVICE_KEY_ENGINE} key=${key_for_curl}"
+            fi
+        else
+            log_warn "Device certificate is present but no usable private key/URI configured"
+        fi
+    elif [[ -n "${DEVICE_CERT:-}" ]]; then
+        log_warn "Configured device certificate is missing: ${DEVICE_CERT}"
+    fi
+
+    if [[ -n "${OPENSSL_CONF_PATH:-}" ]]; then
+        if [[ -r "${OPENSSL_CONF_PATH}" ]]; then
+            curl_env+=(OPENSSL_CONF="${OPENSSL_CONF_PATH}")
+            log_info "Using OpenSSL config: ${OPENSSL_CONF_PATH}"
+        else
+            die "Configured openssl_conf is not readable: ${OPENSSL_CONF_PATH}"
+        fi
     fi
 
     if [[ -f "${CA_CERT:-}" ]]; then
@@ -171,7 +225,11 @@ fetch_manifest_once() {
     fi
 
     log_info "Fetching manifest from: $manifest_url"
-    curl "${curl_opts[@]}" "$manifest_url"
+    if [[ ${#curl_env[@]} -gt 0 ]]; then
+        env "${curl_env[@]}" curl "${curl_opts[@]}" "$manifest_url"
+    else
+        curl "${curl_opts[@]}" "$manifest_url"
+    fi
 }
 
 # Exponential backoff with jitter (seconds)
@@ -370,26 +428,34 @@ record_check() {
 
 derive_manifest_version() {
     local manifest_json="$1"
+    local manifest_entry="$2"
     local v=""
 
-    v=$(echo "$manifest_json" | jq -r '.version // empty')
+    v=$(echo "$manifest_entry" | jq -r '.version // empty')
     if [[ -n "$v" ]]; then
         echo "$v"
         return 0
     fi
 
-    v=$(echo "$manifest_json" | jq -r '.released_at // empty')
+    v=$(echo "$manifest_entry" | jq -r '.released_at // empty')
     if [[ -n "$v" ]]; then
         echo "$v"
         return 0
     fi
 
-    v=$(echo "$manifest_json" | jq -r '.filename // empty')
+    v=$(echo "$manifest_entry" | jq -r '.filename // empty')
     if [[ -n "$v" ]]; then
         echo "$v"
         return 0
     fi
 
+    v=$(echo "$manifest_entry" | jq -r '.sha256 // empty')
+    if [[ -n "$v" ]]; then
+        echo "$v"
+        return 0
+    fi
+
+    # Fallback for object-only responses that provide a top-level hash/token.
     v=$(echo "$manifest_json" | jq -r '.sha256 // empty')
     if [[ -n "$v" ]]; then
         echo "$v"
@@ -397,6 +463,35 @@ derive_manifest_version() {
     fi
 
     echo "unknown"
+}
+
+select_manifest_entry() {
+    local manifest_json="$1"
+    local entry=""
+
+    # Support both:
+    # - object manifest: { "bundle_url": "...", ... }
+    # - list manifest: [ { "bundle_url": "...", ... }, ... ]
+    # For list manifests, prefer active entries when present, then the first item.
+    entry="$(echo "$manifest_json" | jq -c '
+        if type == "object" then
+            .
+        elif type == "array" then
+            (
+              [ .[] | select((.active // true) == true and (.bundle_url // .url // empty) != "") ][0]
+              // [ .[] | select((.bundle_url // .url // empty) != "") ][0]
+              // .[0]
+            )
+        else
+            empty
+        end
+    ')"
+
+    if [[ -z "$entry" || "$entry" == "null" ]]; then
+        return 1
+    fi
+
+    echo "$entry"
 }
 
 # Main
@@ -419,11 +514,12 @@ main() {
     local manifest
     manifest=$(fetch_manifest) || die "Failed to fetch manifest"
 
-    # Parse manifest
-    local available_version bundle_url compatible
-    available_version="$(derive_manifest_version "$manifest")"
-    bundle_url=$(echo "$manifest" | jq -r '.bundle_url // empty')
-    compatible=$(echo "$manifest" | jq -r '.compatible // empty')
+    # Parse manifest (supports object and array API shapes)
+    local manifest_entry available_version bundle_url compatible
+    manifest_entry="$(select_manifest_entry "$manifest")" || die "Invalid manifest: no usable entry"
+    available_version="$(derive_manifest_version "$manifest" "$manifest_entry")"
+    bundle_url=$(echo "$manifest_entry" | jq -r '.bundle_url // .url // empty')
+    compatible=$(echo "$manifest_entry" | jq -r '.compatible // empty')
 
     if [[ -z "$bundle_url" ]]; then
         die "Invalid manifest: missing bundle_url"
