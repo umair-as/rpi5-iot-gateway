@@ -223,8 +223,8 @@ _preflight_url() {
     local label="Server  ${URL_HOST}:${URL_PORT}" curl_rc=0
     local key_is_uri=0
     local key_is_handle=0
-    local key_for_curl="${TLS_KEY}"
-    local -a key_opts=(--key "${TLS_KEY}")
+    local key_for_curl=""
+    local -a key_opts=()
 
     command -v curl >/dev/null 2>&1 || die "curl not found"
     _read_streaming_tls \
@@ -239,10 +239,16 @@ _preflight_url() {
             key_is_handle=1
             key_for_curl="${BASH_REMATCH[1]}"
             key_opts=(--engine tpm2tss --key-type ENG --key "${key_for_curl}")
+        else
+            key_for_curl="${TLS_KEY}"
+            key_opts=(--key "${key_for_curl}")
         fi
     elif [ ! -r "${TLS_KEY}" ]; then
         _check_fail "${label}" "missing: $(basename "${TLS_KEY}")"
         return 1
+    else
+        key_for_curl="${TLS_KEY}"
+        key_opts=(--key "${key_for_curl}")
     fi
 
     _spin_start "${label}"
