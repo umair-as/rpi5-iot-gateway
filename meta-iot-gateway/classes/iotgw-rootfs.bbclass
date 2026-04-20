@@ -141,6 +141,24 @@ iotgw_rootfs_mask_rauc_mark_good() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_rauc_mark_good;"
 
+###### OTA updater config ownership/mode
+# ota-updater runs as User=ota/Group=ota and needs read access to /etc/ota/updater.conf.
+# Enforce deterministic rootfs permissions here to avoid host-dependent group resolution.
+iotgw_rootfs_ota_updater_config_perms() {
+    cfg="${IMAGE_ROOTFS}/etc/ota/updater.conf"
+    grp_file="${IMAGE_ROOTFS}/etc/group"
+
+    [ -e "${cfg}" ] || return 0
+
+    if [ ! -e "${grp_file}" ] || ! grep -q '^ota:' "${grp_file}"; then
+        bbfatal "Expected ota group in rootfs when ${cfg} is present"
+    fi
+
+    chown root:ota "${cfg}"
+    chmod 0640 "${cfg}"
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_ota_updater_config_perms;"
+
 ###### Deterministic build info (/etc/buildinfo)
 iotgw_rootfs_buildinfo() {
     install -d ${IMAGE_ROOTFS}/etc
