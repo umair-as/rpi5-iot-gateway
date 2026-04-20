@@ -66,6 +66,81 @@ parse_rauc_progress() {
     echo "$pct|$msg|$depth"
 }
 
+pubkey_sha256_from_cert() {
+    local cert_path="$1"
+    openssl x509 -in "$cert_path" -pubkey -noout 2>/dev/null \
+        | openssl pkey -pubin -outform der 2>/dev/null \
+        | sha256sum 2>/dev/null \
+        | awk '{print $1}'
+}
+
+pubkey_sha256_from_key() {
+    local key_path="$1"
+    openssl pkey -in "$key_path" -pubout -outform der 2>/dev/null \
+        | sha256sum 2>/dev/null \
+        | awk '{print $1}'
+}
+
+pubkey_sha256_from_tpm_handle() {
+    local handle="$1"
+    local tmp_pub=""
+    local pub_fp=""
+
+    tmp_pub="$(mktemp /tmp/ota-tpm-pub.XXXXXX.pem)"
+    if ! tpm2_readpublic -c "$handle" -f pem -o "$tmp_pub" >/dev/null 2>&1; then
+        rm -f "$tmp_pub"
+        return 1
+    fi
+
+    if ! pub_fp="$(openssl pkey -pubin -in "$tmp_pub" -outform der 2>/dev/null \
+        | sha256sum 2>/dev/null \
+        | awk '{print $1}')"; then
+        rm -f "$tmp_pub"
+        return 1
+    fi
+
+    rm -f "$tmp_pub"
+    echo "$pub_fp"
+}
+
+validate_engine_key_matches_cert() {
+    local cert_path="$1"
+    local key_handle="$2"
+    local cert_pub=""
+    local tpm_pub=""
+    local file_pub=""
+
+    if [[ -z "$cert_path" || ! -f "$cert_path" || -z "$key_handle" ]]; then
+        return 0
+    fi
+
+    if ! command -v openssl >/dev/null 2>&1 || ! command -v tpm2_readpublic >/dev/null 2>&1; then
+        return 0
+    fi
+
+    cert_pub="$(pubkey_sha256_from_cert "$cert_path" || true)"
+    tpm_pub="$(pubkey_sha256_from_tpm_handle "$key_handle" || true)"
+    if [[ -z "$cert_pub" || -z "$tpm_pub" ]]; then
+        log_warn "Skipping TPM key/cert preflight (could not extract public key fingerprints)"
+        return 0
+    fi
+
+    if [[ "$cert_pub" == "$tpm_pub" ]]; then
+        return 0
+    fi
+
+    if [[ -n "${DEVICE_KEY:-}" && -f "${DEVICE_KEY}" ]]; then
+        file_pub="$(pubkey_sha256_from_key "${DEVICE_KEY}" || true)"
+        if [[ -n "$file_pub" && "$file_pub" == "$cert_pub" ]]; then
+            log_error "TPM handle key ($key_handle) does not match ${DEVICE_CERT}; certificate matches ${DEVICE_KEY}. Disable device_key_uri or provision a certificate for TPM key"
+            return 42
+        fi
+    fi
+
+    log_error "TPM handle key ($key_handle) does not match ${DEVICE_CERT}; reprovision certificate for the TPM key handle"
+    return 42
+}
+
 get_system_compatible() {
     local compat=""
     if rauc_dbus_available; then
@@ -187,10 +262,12 @@ fetch_manifest_once() {
         if [[ -n "${key_arg}" ]]; then
             if [[ "${key_arg}" =~ ^handle:(0x[0-9A-Fa-f]+)$ ]]; then
                 key_for_curl="${BASH_REMATCH[1]}"
+                validate_engine_key_matches_cert "${DEVICE_CERT}" "${key_for_curl}" || return $?
                 curl_opts+=(--engine "${DEVICE_KEY_ENGINE}" --key-type ENG --key "${key_for_curl}")
                 key_mode="engine"
             elif [[ "${key_arg}" =~ ^0x[0-9A-Fa-f]+$ ]]; then
                 key_for_curl="${key_arg}"
+                validate_engine_key_matches_cert "${DEVICE_CERT}" "${key_for_curl}" || return $?
                 curl_opts+=(--engine "${DEVICE_KEY_ENGINE}" --key-type ENG --key "${key_for_curl}")
                 key_mode="engine"
             else
@@ -257,11 +334,22 @@ fetch_manifest() {
     local attempt=1
     local max_attempts="$FETCH_RETRIES"
     local manifest=""
+    local rc=0
 
     while [[ "$attempt" -le "$max_attempts" ]]; do
-        if manifest=$(fetch_manifest_once); then
+        if manifest="$(fetch_manifest_once)"; then
+            rc=0
+        else
+            rc=$?
+        fi
+
+        if [[ "$rc" -eq 0 ]]; then
             echo "$manifest"
             return 0
+        fi
+
+        if [[ "$rc" -eq 42 ]]; then
+            die "TPM key/certificate preflight failed"
         fi
 
         log_warn "Fetch manifest failed (attempt ${attempt}/${max_attempts})"
