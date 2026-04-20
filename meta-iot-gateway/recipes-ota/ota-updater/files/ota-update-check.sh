@@ -84,15 +84,23 @@ pubkey_sha256_from_key() {
 pubkey_sha256_from_tpm_handle() {
     local handle="$1"
     local tmp_pub=""
+    local pub_fp=""
+
     tmp_pub="$(mktemp /tmp/ota-tpm-pub.XXXXXX.pem)"
     if ! tpm2_readpublic -c "$handle" -f pem -o "$tmp_pub" >/dev/null 2>&1; then
         rm -f "$tmp_pub"
         return 1
     fi
-    openssl pkey -pubin -in "$tmp_pub" -outform der 2>/dev/null \
+
+    if ! pub_fp="$(openssl pkey -pubin -in "$tmp_pub" -outform der 2>/dev/null \
         | sha256sum 2>/dev/null \
-        | awk '{print $1}'
+        | awk '{print $1}')"; then
+        rm -f "$tmp_pub"
+        return 1
+    fi
+
     rm -f "$tmp_pub"
+    echo "$pub_fp"
 }
 
 validate_engine_key_matches_cert() {
@@ -110,7 +118,7 @@ validate_engine_key_matches_cert() {
         return 0
     fi
 
-    cert_pub="$(pubkey_sha256_from_cert "$cert_path")"
+    cert_pub="$(pubkey_sha256_from_cert "$cert_path" || true)"
     tpm_pub="$(pubkey_sha256_from_tpm_handle "$key_handle" || true)"
     if [[ -z "$cert_pub" || -z "$tpm_pub" ]]; then
         log_warn "Skipping TPM key/cert preflight (could not extract public key fingerprints)"
@@ -329,8 +337,11 @@ fetch_manifest() {
     local rc=0
 
     while [[ "$attempt" -le "$max_attempts" ]]; do
-        manifest="$(fetch_manifest_once 2>&1)"
-        rc=$?
+        if manifest="$(fetch_manifest_once)"; then
+            rc=0
+        else
+            rc=$?
+        fi
 
         if [[ "$rc" -eq 0 ]]; then
             echo "$manifest"
@@ -338,7 +349,6 @@ fetch_manifest() {
         fi
 
         if [[ "$rc" -eq 42 ]]; then
-            [[ -n "$manifest" ]] && echo "$manifest" >&2
             die "TPM key/certificate preflight failed"
         fi
 

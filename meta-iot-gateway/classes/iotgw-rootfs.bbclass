@@ -147,6 +147,7 @@ ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_rauc_mark_good;"
 iotgw_rootfs_ota_updater_config_perms() {
     cfg="${IMAGE_ROOTFS}/etc/ota/updater.conf"
     grp_file="${IMAGE_ROOTFS}/etc/group"
+    ota_gid=""
 
     [ -e "${cfg}" ] || return 0
 
@@ -154,7 +155,12 @@ iotgw_rootfs_ota_updater_config_perms() {
         bbfatal "Expected ota group in rootfs when ${cfg} is present"
     fi
 
-    chown root:ota "${cfg}"
+    ota_gid="$(awk -F: '/^ota:/{print $3; exit}' "${grp_file}")"
+    if [ -z "${ota_gid}" ]; then
+        bbfatal "Failed to resolve ota group id from ${grp_file}"
+    fi
+
+    chown "root:${ota_gid}" "${cfg}"
     chmod 0640 "${cfg}"
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_ota_updater_config_perms;"
