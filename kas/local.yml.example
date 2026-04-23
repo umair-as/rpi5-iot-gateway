@@ -78,3 +78,41 @@ local_conf_header:
     # IOTGW_OTA_TPM_KEY_URI = "handle:0x81000001"
     # IOTGW_OTA_TPM_KEY_ENGINE = "tpm2tss"
     # IOTGW_OTA_OPENSSL_CONF = "/etc/ota/openssl-tpm2.cnf"
+
+  rauc_pkcs11_streaming: |
+    # Optional RAUC streaming PKCS#11 key flow (disabled by default).
+    # IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
+    # IOTGW_RAUC_PKCS11_BACKEND = "tpm2"
+    # TPM2 preset (defaults in layer):
+    # IOTGW_RAUC_PKCS11_TLS_KEY_TPM2 = "pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin"
+    # TPM2 PKCS#11 DB location for RAUC sandbox-helper:
+    # IOTGW_TPM2_PKCS11_STORE = "/var/lib/tpm2_pkcs11"
+    # Custom backend example:
+    # IOTGW_RAUC_PKCS11_TLS_KEY_CUSTOM = "pkcs11:token=<token>;object=<key>;type=private"
+    # IOTGW_RAUC_PKCS11_MODULE_CUSTOM = "/usr/lib/pkcs11/<provider>.so"
+    # IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES_CUSTOM = "<provider-package>"
+
+  rauc_bundle_encryption: |
+    # Optional encrypted RAUC bundle flow.
+    # IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"
+    # IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/home/you/rauc-keys/ota-dev-ca/device-filekey.crt"
+    # IOTGW_RAUC_ENCRYPTION_KEY = "/etc/ota/device.key"
+    # IOTGW_RAUC_ENCRYPTION_CERT = "/etc/ota/device.crt"
+
+  ota_feature_profiles: |
+    # Profile A: baseline verity + file-key (no TPM required)
+    # IOTGW_ENABLE_OTA_TPM_MTLS = "0"
+    # IOTGW_RAUC_STREAMING_KEY_MODE = "file"
+    # IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "0"
+    # Profile B: full TPM + PKCS#11 + encrypted-bundle lane
+    # IOTGW_ENABLE_TPM_SLB9672 = "1"
+    # IOTGW_ENABLE_OTA_TPM_MTLS = "1"
+    # IOTGW_OTA_TPM_KEY_URI = "handle:0x81000001"
+    # IOTGW_OTA_TPM_KEY_ENGINE = "tpm2tss"
+    # IOTGW_OTA_OPENSSL_CONF = "/etc/ota/openssl-tpm2.cnf"
+    # IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
+    # IOTGW_RAUC_PKCS11_BACKEND = "tpm2"
+    # IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"
+    # IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/home/you/rauc-keys/ota-dev-ca/device-filekey.crt"
+    # IOTGW_RAUC_ENCRYPTION_KEY = "/etc/ota/device.key"
+    # IOTGW_RAUC_ENCRYPTION_CERT = "/etc/ota/device.crt"

@@ -295,6 +295,48 @@ Notes:
 - With TPM mode enabled, `ota-updater.service` gets supplementary `iotgwtpm`
   group access for `/dev/tpmrm0`.
 
+### Feature-Gating Matrix (Verity / TPM / PKCS#11 / Encrypted Bundles)
+
+All advanced OTA paths are opt-in. Default remains `verity + file-key`.
+
+| Profile | `IOTGW_ENABLE_OTA_TPM_MTLS` | `IOTGW_RAUC_STREAMING_KEY_MODE` | `IOTGW_RAUC_PKCS11_BACKEND` | `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION` | Result |
+|--------|---|---|---|---|---|
+| **Baseline (default)** | `0` | `file` | `-` | `0` | Verity bundle, file-key mTLS, no TPM requirement |
+| **Updater TPM only** | `1` | `file` | `-` | `0` | `ota-updater` uses TPM key URI; RAUC streaming still uses file key |
+| **RAUC PKCS#11 (custom provider)** | `0` | `pkcs11` | `custom` | `0` | RAUC streaming uses `tls-key=pkcs11:...` without TPM |
+| **RAUC PKCS#11 (TPM2 backend)** | `0` | `pkcs11` | `tpm2` | `0` | RAUC streaming uses TPM2-backed PKCS#11 token/object |
+| **Encrypted bundle only** | `0` | `file` | `-` | `1` | `crypt` bundle + `[encryption]` in `system.conf`; no TPM required |
+| **Full TPM + PKCS#11 + crypt** | `1` | `pkcs11` | `tpm2` | `1` | TPM updater path + TPM2 PKCS#11 RAUC streaming + encrypted bundles |
+
+Required companion variables when enabling feature gates:
+
+- `IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"`:
+  - `IOTGW_RAUC_PKCS11_BACKEND` (`tpm2` or `custom`)
+  - `IOTGW_RAUC_PKCS11_TLS_KEY` (for example `pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin`)
+  - provision token/object for the selected backend (`tpm2` requires `IOTGW_TPM2_PKCS11_STORE` as needed)
+- `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"`:
+  - `IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS`
+  - `IOTGW_RAUC_ENCRYPTION_KEY` (optional `IOTGW_RAUC_ENCRYPTION_CERT`)
+- `IOTGW_ENABLE_OTA_TPM_MTLS = "1"`:
+  - `IOTGW_OTA_TPM_KEY_URI`
+  - `IOTGW_OTA_TPM_KEY_ENGINE`
+  - optional `IOTGW_OTA_OPENSSL_CONF`
+
+Important compatibility notes:
+
+- PKCS#11 streaming and encrypted bundle decryption are independent.
+- To return to classic verity/non-TPM behavior, set:
+  - `IOTGW_ENABLE_OTA_TPM_MTLS = "0"`
+  - `IOTGW_RAUC_STREAMING_KEY_MODE = "file"`
+  - `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "0"`
+
+### Security Note: PKCS#11 PIN Handling
+
+- Prefer `pin-source=file:/etc/ota/pkcs11-pin` over inline `pin-value`.
+- Keep `/etc/ota/pkcs11-pin` permission-restricted (`root:ota 0640`).
+- For TPM2 backend, keep `module-path` out of URI when `PKCS11_MODULE_PATH` is
+  provided via `rauc.service` environment.
+
 ---
 
 ## ⚠️ Limitations & Considerations
