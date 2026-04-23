@@ -17,6 +17,12 @@ readonly BOOT_META="${BOOT_SRC}/meta.json"
 readonly DATA_SRC="/data/ota/certs"
 readonly STATE_FILE="/var/lib/ota-certs-provision.state"
 readonly ALLOW_KEYLESS_DEVICE_CERTS="${OTA_CERTS_ALLOW_KEYLESS_DEVICE_CERTS:-0}"
+readonly REQUIRE_PKCS11_PIN="${OTA_CERTS_REQUIRE_PKCS11_PIN:-0}"
+readonly PKCS11_PIN_FILE="${CERT_DIR}/pkcs11-pin"
+readonly PKCS11_MODULE="${OTA_CERTS_PKCS11_MODULE:-/usr/lib/pkcs11/libtpm2_pkcs11.so}"
+readonly PKCS11_STORE="${OTA_CERTS_PKCS11_STORE:-/var/lib/tpm2_pkcs11}"
+readonly PKCS11_TOKEN_LABEL="${OTA_CERTS_PKCS11_TOKEN_LABEL:-iotgw}"
+readonly PKCS11_KEY_LABEL="${OTA_CERTS_PKCS11_KEY_LABEL:-rauc-client-key}"
 
 get_device_id() {
     local mid=""
@@ -52,6 +58,65 @@ cert_chain_valid() {
     openssl verify -CAfile "$CERT_DIR/ca.crt" "$CERT_DIR/device.crt" >/dev/null 2>&1
 }
 
+normalize_pkcs11_pin_file() {
+    local path="$1"
+    local pin=""
+    [ -f "$path" ] || return 0
+    pin="$(head -n 1 "$path" 2>/dev/null | tr -d '\r\n' || true)"
+    if [[ -z "$pin" ]]; then
+        return 1
+    fi
+    printf '%s' "$pin" > "$path"
+    return 0
+}
+
+pkcs11_pin_read() {
+    [ -r "$PKCS11_PIN_FILE" ] || return 1
+    head -n 1 "$PKCS11_PIN_FILE" | tr -d '\r\n'
+}
+
+pkcs11_preflight_check() {
+    local pin=""
+    local msg_file="/tmp/ota-certs-pkcs11-msg.bin"
+    local sig_file="/tmp/ota-certs-pkcs11-sig.bin"
+    local su_cmd=""
+
+    if [[ "$REQUIRE_PKCS11_PIN" != "1" ]]; then
+        return 0
+    fi
+
+    if ! command -v pkcs11-tool >/dev/null 2>&1; then
+        log_error "PKCS#11 preflight failed: pkcs11-tool not found"
+        return 1
+    fi
+    if ! id ota >/dev/null 2>&1; then
+        log_error "PKCS#11 preflight failed: ota user not found"
+        return 1
+    fi
+    if [ ! -r "$PKCS11_MODULE" ]; then
+        log_error "PKCS#11 preflight failed: module missing (${PKCS11_MODULE})"
+        return 1
+    fi
+
+    pin="$(pkcs11_pin_read || true)"
+    if [[ -z "$pin" ]]; then
+        log_error "PKCS#11 preflight failed: missing or empty ${PKCS11_PIN_FILE}"
+        return 1
+    fi
+
+    printf 'ota-pkcs11-preflight\n' > "$msg_file"
+    su_cmd="TPM2_PKCS11_STORE=${PKCS11_STORE} pkcs11-tool --module ${PKCS11_MODULE} --token-label ${PKCS11_TOKEN_LABEL} --login --pin '${pin}' --label ${PKCS11_KEY_LABEL} --sign --mechanism RSA-PKCS --input-file ${msg_file} --output-file ${sig_file}"
+    if ! su -s /bin/sh ota -c "$su_cmd" >/dev/null 2>&1; then
+        log_error "PKCS#11 preflight failed: unable to sign with token='${PKCS11_TOKEN_LABEL}' key='${PKCS11_KEY_LABEL}' as ota user"
+        rm -f "$msg_file" "$sig_file"
+        return 1
+    fi
+    rm -f "$msg_file" "$sig_file"
+
+    log_info "PKCS#11 preflight passed for token='${PKCS11_TOKEN_LABEL}' key='${PKCS11_KEY_LABEL}'"
+    return 0
+}
+
 state_get() {
     local key="$1"
     [ -r "$STATE_FILE" ] || return 1
@@ -70,6 +135,9 @@ certs_valid_in_dir() {
     [[ -f "$dir/ca.crt" ]] || return 1
     if [[ "$ALLOW_KEYLESS_DEVICE_CERTS" != "1" ]]; then
         [[ -f "$dir/device.key" ]] || return 1
+    fi
+    if [[ "$REQUIRE_PKCS11_PIN" == "1" ]]; then
+        [[ -f "$dir/pkcs11-pin" ]] || return 1
     fi
 
     openssl x509 -in "$dir/device.crt" -noout -checkend 86400 2>/dev/null && \
@@ -97,6 +165,10 @@ ensure_cert_permissions() {
         chown root:ota "$CERT_DIR/device.key" 2>/dev/null || true
         chmod 0640 "$CERT_DIR/device.key"
     fi
+    if [[ -f "$PKCS11_PIN_FILE" ]]; then
+        chown root:ota "$PKCS11_PIN_FILE" 2>/dev/null || true
+        chmod 0640 "$PKCS11_PIN_FILE"
+    fi
 }
 
 same_cert_material() {
@@ -115,7 +187,17 @@ same_cert_material() {
     dst_dev_fp=$(cert_fingerprint "$CERT_DIR/device.crt")
 
     [[ -n "$src_ca_fp" && -n "$src_dev_fp" && -n "$dst_ca_fp" && -n "$dst_dev_fp" ]] || return 1
-    [[ "$src_ca_fp" == "$dst_ca_fp" && "$src_dev_fp" == "$dst_dev_fp" ]]
+    [[ "$src_ca_fp" == "$dst_ca_fp" && "$src_dev_fp" == "$dst_dev_fp" ]] || return 1
+
+    if [[ "$REQUIRE_PKCS11_PIN" == "1" ]]; then
+        local src_pin=""
+        local dst_pin=""
+        [[ -f "$src/pkcs11-pin" && -f "$PKCS11_PIN_FILE" ]] || return 1
+        src_pin="$(head -n 1 "$src/pkcs11-pin" 2>/dev/null | tr -d '\r\n' || true)"
+        dst_pin="$(head -n 1 "$PKCS11_PIN_FILE" 2>/dev/null | tr -d '\r\n' || true)"
+        [[ -n "$src_pin" && -n "$dst_pin" && "$src_pin" == "$dst_pin" ]] || return 1
+    fi
+    return 0
 }
 
 backup_certs_to_data() {
@@ -124,6 +206,13 @@ backup_certs_to_data() {
     install -m 0644 "$CERT_DIR/device.crt" "$DATA_SRC/device.crt"
     if [[ -f "$CERT_DIR/device.key" ]]; then
         install -m 0640 "$CERT_DIR/device.key" "$DATA_SRC/device.key"
+    fi
+    if [[ -f "$PKCS11_PIN_FILE" ]]; then
+        install -m 0640 "$PKCS11_PIN_FILE" "$DATA_SRC/pkcs11-pin"
+        normalize_pkcs11_pin_file "$DATA_SRC/pkcs11-pin" || {
+            log_error "Invalid PKCS#11 PIN content in ${PKCS11_PIN_FILE}"
+            return 1
+        }
     fi
 }
 
@@ -162,16 +251,29 @@ copy_certs() {
         elif [[ "$ALLOW_KEYLESS_DEVICE_CERTS" == "1" ]]; then
             log_info "Source has no device.key; keyless mode is enabled"
         fi
+        if [[ -f "$src/pkcs11-pin" ]]; then
+            install -m 0640 "$src/pkcs11-pin" "$PKCS11_PIN_FILE"
+            normalize_pkcs11_pin_file "$PKCS11_PIN_FILE" || {
+                log_error "Invalid PKCS#11 PIN content in source ${src}/pkcs11-pin"
+                return 1
+            }
+        fi
 
         # Set ownership for ota user
         if [[ -f "$CERT_DIR/device.key" ]]; then
             chown root:ota "$CERT_DIR/device.key" 2>/dev/null || true
+        fi
+        if [[ -f "$PKCS11_PIN_FILE" ]]; then
+            chown root:ota "$PKCS11_PIN_FILE" 2>/dev/null || true
         fi
         chown root:ota "$CERT_DIR/device.crt" 2>/dev/null || true
         chown root:ota "$CERT_DIR/ca.crt" 2>/dev/null || true
         chmod 0750 "$CERT_DIR"
         if [[ -f "$CERT_DIR/device.key" ]]; then
             chmod 0640 "$CERT_DIR/device.key"
+        fi
+        if [[ -f "$PKCS11_PIN_FILE" ]]; then
+            chmod 0640 "$PKCS11_PIN_FILE"
         fi
         chmod 0644 "$CERT_DIR/device.crt" "$CERT_DIR/ca.crt"
         if ! cert_chain_valid; then
@@ -188,6 +290,9 @@ main() {
     if [[ "$ALLOW_KEYLESS_DEVICE_CERTS" == "1" ]]; then
         log_info "Keyless device-certificate mode enabled (TPM key expected at runtime)"
     fi
+    if [[ "$REQUIRE_PKCS11_PIN" == "1" ]]; then
+        log_info "PKCS#11 PIN mode enabled (expects ${PKCS11_PIN_FILE})"
+    fi
 
     # Create cert directory
     install -d -m 0750 "$CERT_DIR"
@@ -200,6 +305,12 @@ main() {
 
     # Normalize ownership/modes first, especially for baked-in certs.
     ensure_cert_permissions
+    if [[ "$REQUIRE_PKCS11_PIN" == "1" ]] && [[ -f "$PKCS11_PIN_FILE" ]]; then
+        if ! normalize_pkcs11_pin_file "$PKCS11_PIN_FILE"; then
+            log_error "Invalid PKCS#11 PIN content in ${PKCS11_PIN_FILE}"
+            exit 1
+        fi
+    fi
 
     # Try sources in priority order
     local provisioned=0
@@ -277,6 +388,9 @@ main() {
     if certs_valid; then
         log_info "Certificate verification passed"
         backup_certs_to_data
+        if ! pkcs11_preflight_check; then
+            exit 1
+        fi
         write_state "$source_used" "$source_provision_id"
         touch "$STAMP"
     else

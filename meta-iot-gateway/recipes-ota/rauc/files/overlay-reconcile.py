@@ -297,7 +297,8 @@ def do_post() -> int:
 
     for policy, managed_path, optional, _manifest, metadata in entries:
         desired = slot_mount / managed_path.lstrip("/")
-        if policy != "absent" and not desired.is_file():
+        requires_desired_file = policy not in {"absent", "enforce_meta"}
+        if requires_desired_file and not desired.is_file():
             if optional:
                 log("info", f"optional managed path absent in target slot: {desired}")
                 skipped_optional_missing += 1
@@ -307,7 +308,7 @@ def do_post() -> int:
             continue
 
         desired_hash = ""
-        if policy != "absent":
+        if policy != "absent" and desired.is_file():
             desired_hash = sha256_file(desired)
         prev_hash = old_state.get(managed_path, "")
         upper = upper_path_for(managed_path)

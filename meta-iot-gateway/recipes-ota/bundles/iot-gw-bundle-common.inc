@@ -30,8 +30,10 @@ RAUC_SLOT_rootfs[hooks] = "pre-install;post-install"
 # when installing near-identical rootfs images.
 RAUC_SLOT_rootfs[adaptive] = "${@bb.utils.contains('IOTGW_RAUC_ADAPTIVE','1','block-hash-index','',d)}"
 
-# Bundle format
-RAUC_BUNDLE_FORMAT = "verity"
+# Bundle format (opt-in encrypted `crypt` mode)
+IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION ?= "0"
+IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS ?= ""
+RAUC_BUNDLE_FORMAT = "${@bb.utils.contains('IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION', '1', 'crypt', 'verity', d)}"
 
 # Include bootfiles archive and a hook to update /boot (conditional)
 RAUC_BUNDLE_EXTRA_DEPENDS += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' ${IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE}','',d)}"
@@ -75,3 +77,39 @@ SRC_URI:append = " \
 # Output name
 BUNDLE_BASENAME = "${BUNDLE_IMAGE}-bundle"
 BUNDLE_NAME = "${BUNDLE_BASENAME}"
+
+do_bundle:append() {
+    keyring=""
+
+    if [ "${IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION}" != "1" ]; then
+        exit 0
+    fi
+
+    if [ -z "${IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS}" ]; then
+        bbfatal "'IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS' not set while encrypted bundle mode is enabled"
+    fi
+    if [ ! -f "${IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS}" ]; then
+        bbfatal "Encrypted bundle recipients file not found: ${IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS}"
+    fi
+    keyring="${RAUC_KEYRING_FILE}"
+    if [ -z "${keyring}" ] || [ ! -f "${keyring}" ]; then
+        if [ -n "${RAUC_DEVICE_KEYRING}" ] && [ -f "${RAUC_DEVICE_KEYRING}" ]; then
+            keyring="${RAUC_DEVICE_KEYRING}"
+        elif [ -n "${RAUC_CERT_FILE}" ] && [ -f "${RAUC_CERT_FILE}" ]; then
+            keyring="${RAUC_CERT_FILE}"
+        fi
+    fi
+    if [ -z "${keyring}" ] || [ ! -f "${keyring}" ]; then
+        bbfatal "No usable RAUC keyring file found for encrypted bundle workflow (tried RAUC_KEYRING_FILE='${RAUC_KEYRING_FILE}', RAUC_DEVICE_KEYRING='${RAUC_DEVICE_KEYRING}', RAUC_CERT_FILE='${RAUC_CERT_FILE}')"
+    fi
+
+    ${STAGING_BINDIR_NATIVE}/rauc encrypt \
+        --to="${IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS}" \
+        --keyring="${keyring}" \
+        ${B}/bundle.raucb \
+        ${B}/bundle-encrypted.raucb
+
+    mv -f ${B}/bundle-encrypted.raucb ${B}/bundle.raucb
+}
+
+do_bundle[vardeps] += "IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS RAUC_KEYRING_FILE RAUC_DEVICE_KEYRING RAUC_CERT_FILE"

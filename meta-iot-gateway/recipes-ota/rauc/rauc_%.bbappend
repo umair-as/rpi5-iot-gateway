@@ -9,7 +9,15 @@ SRC_URI:append = " \
     file://managed-paths.d/observability.conf \
     file://overlay-reconcile.py \
     file://99-iotgw-rauc-slots.rules \
+    file://rauc-tpm2-pkcs11-store.service.conf \
 "
+
+IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "file"
+IOTGW_RAUC_PKCS11_USES_TPM2 ?= "0"
+# rauc.inc has no PACKAGECONFIG[pkcs11]; use the meson option directly.
+# pkcs11_engine defaults to true in 1.15.x — disable it when not needed to
+# avoid pulling in the OpenSSL engine for builds that don't use PKCS#11 keys.
+EXTRA_OEMESON:append = "${@bb.utils.contains('IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE', 'pkcs11', '', ' -Dpkcs11_engine=false', d)}"
 
 # grow-data-partition.sh requires bash/e2fsprogs plus util-linux (lsblk, partprobe),
 # udev (udevadm), and sgdisk for GPT backup header relocation.
@@ -46,13 +54,25 @@ do_install:append() {
     install -d ${D}${sysconfdir}/udev/rules.d
     install -m 0644 ${WORKDIR}/99-iotgw-rauc-slots.rules \
         ${D}${sysconfdir}/udev/rules.d/99-iotgw-rauc-slots.rules
+
+    if ${@bb.utils.contains('IOTGW_RAUC_PKCS11_USES_TPM2', '1', 'true', 'false', d)}; then
+        install -d ${D}${sysconfdir}/systemd/system/rauc.service.d
+        sed -e "s|@IOTGW_TPM2_PKCS11_STORE@|${IOTGW_TPM2_PKCS11_STORE}|g" \
+            -e "s|@IOTGW_RAUC_PKCS11_MODULE@|${IOTGW_RAUC_PKCS11_MODULE}|g" \
+            ${WORKDIR}/rauc-tpm2-pkcs11-store.service.conf \
+            > ${D}${sysconfdir}/systemd/system/rauc.service.d/10-tpm2-pkcs11-store.conf
+        chmod 0644 ${D}${sysconfdir}/systemd/system/rauc.service.d/10-tpm2-pkcs11-store.conf
+    fi
+
 }
 
 # Ensure the script is placed with the grow subpackage
 FILES:rauc-grow-data-part:append = " ${sbindir}/grow-data-partition.sh"
 FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/observability.conf ${libexecdir}/rauc/overlay-reconcile.py"
 FILES:${PN}:append = " ${sysconfdir}/udev/rules.d/99-iotgw-rauc-slots.rules"
+FILES:${PN}-service:append = "${@bb.utils.contains('IOTGW_RAUC_PKCS11_USES_TPM2', '1', ' ${sysconfdir}/systemd/system/rauc.service.d/10-tpm2-pkcs11-store.conf', '', d)}"
 RDEPENDS:${PN}-service:append = " python3-core"
+RDEPENDS:${PN}-service:append = "${@bb.utils.contains('IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE', 'pkcs11', ' openssl-engines libp11', '', d)}"
 
 # Keep RAUC available for D-Bus activation, but don't start it by default
 SYSTEMD_AUTO_ENABLE:${PN}-service = "disable"

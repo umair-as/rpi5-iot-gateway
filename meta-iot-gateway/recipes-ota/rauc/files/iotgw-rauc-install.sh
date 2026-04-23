@@ -173,12 +173,28 @@ _read_streaming_tls() {
     local conf="/etc/rauc/system.conf"
     [ -r "${conf}" ] || return 1
     local vals
-    vals="$(awk -F'[[:space:]]*=[[:space:]]*' '
+    vals="$(awk '
+        function ltrim(s) { sub(/^[[:space:]]+/, "", s); return s }
+        function rtrim(s) { sub(/[[:space:]]+$/, "", s); return s }
+        function trim(s)  { return rtrim(ltrim(s)) }
         /^\[streaming\]/   { in_s=1; next }
         /^\[/              { in_s=0 }
-        in_s && NF==2 && $1=="tls-ca"   { print "TLS_CA="$2 }
-        in_s && NF==2 && $1=="tls-cert" { print "TLS_CERT="$2 }
-        in_s && NF==2 && $1=="tls-key"  { print "TLS_KEY="$2 }
+        in_s {
+            line=$0
+            sub(/[[:space:]]*#.*/, "", line)
+            line=trim(line)
+            if (line == "") next
+
+            pos=index(line, "=")
+            if (pos < 1) next
+
+            key=trim(substr(line, 1, pos-1))
+            val=trim(substr(line, pos+1))
+
+            if (key=="tls-ca")   print "TLS_CA=" val
+            if (key=="tls-cert") print "TLS_CERT=" val
+            if (key=="tls-key")  print "TLS_KEY=" val
+        }
     ' "${conf}" 2>/dev/null)"
     TLS_CA="$(printf '%s\n'   "${vals}" | sed -n 's/^TLS_CA=//p')"
     TLS_CERT="$(printf '%s\n' "${vals}" | sed -n 's/^TLS_CERT=//p')"
@@ -223,6 +239,7 @@ _preflight_url() {
     local label="Server  ${URL_HOST}:${URL_PORT}" curl_rc=0
     local key_is_uri=0
     local key_is_handle=0
+    local key_is_pkcs11=0
     local key_for_curl=""
     local -a key_opts=()
 
@@ -239,6 +256,8 @@ _preflight_url() {
             key_is_handle=1
             key_for_curl="${BASH_REMATCH[1]}"
             key_opts=(--engine tpm2tss --key-type ENG --key "${key_for_curl}")
+        elif [[ "${TLS_KEY}" == pkcs11:* ]]; then
+            key_is_pkcs11=1
         else
             key_for_curl="${TLS_KEY}"
             key_opts=(--key "${key_for_curl}")
@@ -255,6 +274,11 @@ _preflight_url() {
     _log "preflight connect starting host=${URL_HOST} port=${URL_PORT}"
     [ "${key_is_uri}" -eq 1 ] && _log "preflight using key URI from system.conf"
     [ "${key_is_handle}" -eq 1 ] && _log "preflight using tpm2tss engine key=${key_for_curl}"
+    if [ "${key_is_pkcs11}" -eq 1 ]; then
+        _log "preflight skipped for pkcs11 tls-key URI; RAUC handles PKCS#11 path during install"
+        _check_ok "${label}"
+        return 0
+    fi
 
     if curl --fail --silent --show-error --location \
             --output /dev/null \

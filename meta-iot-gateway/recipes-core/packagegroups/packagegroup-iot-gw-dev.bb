@@ -17,6 +17,8 @@ RDEPENDS:${PN} = " \
     kernel-hardening-checker \
     ota-certs-devca \
     ota-updater \
+    ${@bb.utils.contains('IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE','pkcs11',' opensc','',d)} \
+    ${@bb.utils.contains('IOTGW_RAUC_PKCS11_USES_TPM2','1',' tpm2-pkcs11-tools','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' tpm2-tools tpm2-tss','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',bb.utils.contains('IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS','1',' tpm2-pkcs11 tpm2-openssl tpm2-tss-engine','',d),'',d)} \
 "

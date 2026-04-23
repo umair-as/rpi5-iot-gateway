@@ -33,6 +33,9 @@ IOTGW_ENABLE_OBSERVABILITY=1 make dev
 IOTGW_KERNEL_FEATURES="igw_containers igw_networking_iot igw_security_prod" make prod
 ```
 
+For OTA feature-gate combinations (verity vs crypt bundle, file-key vs TPM vs
+PKCS#11 streaming), see the matrix in [OTA Updates](OTA_UPDATE.md#feature-gating-matrix-verity--tpm--pkcs11--encrypted-bundles).
+
 Release version override example:
 
 ```bash
