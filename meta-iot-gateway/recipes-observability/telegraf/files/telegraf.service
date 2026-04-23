@@ -3,6 +3,10 @@ Description=Telegraf metrics agent
 Documentation=https://github.com/influxdata/telegraf
 After=network.target mosquitto.service
 Wants=mosquitto.service
+ConditionFileNotEmpty=/etc/credstore/telegraf.service.mqtt_username
+ConditionFileNotEmpty=/etc/credstore/telegraf.service.mqtt_password
+ConditionFileNotEmpty=/etc/credstore/telegraf.service.influxdb_username
+ConditionFileNotEmpty=/etc/credstore/telegraf.service.influxdb_password
 # Bound restart storms when credentials are missing or invalid.
 StartLimitIntervalSec=5min
 StartLimitBurst=3
@@ -22,11 +26,6 @@ LoadCredential=mqtt_username:/etc/credstore/telegraf.service.mqtt_username
 LoadCredential=mqtt_password:/etc/credstore/telegraf.service.mqtt_password
 LoadCredential=influxdb_username:/etc/credstore/telegraf.service.influxdb_username
 LoadCredential=influxdb_password:/etc/credstore/telegraf.service.influxdb_password
-# Skip service start until required credentials are non-empty.
-ExecCondition=/bin/sh -c 'test -s /etc/credstore/telegraf.service.mqtt_username'
-ExecCondition=/bin/sh -c 'test -s /etc/credstore/telegraf.service.mqtt_password'
-ExecCondition=/bin/sh -c 'test -s /etc/credstore/telegraf.service.influxdb_username'
-ExecCondition=/bin/sh -c 'test -s /etc/credstore/telegraf.service.influxdb_password'
 ExecStart=/usr/bin/telegraf --config /etc/telegraf/telegraf.conf
 Restart=on-failure
 RestartSec=30
