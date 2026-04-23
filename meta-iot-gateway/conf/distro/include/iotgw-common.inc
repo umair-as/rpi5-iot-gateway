@@ -30,6 +30,9 @@ PREFERRED_RPROVIDER_virtual-rauc-conf ?= "rauc-conf-iotgw"
 
 # Avoid parsing meta-rauc's reference rauc-conf which expects certs not present here
 SKIP_RECIPE[rauc-conf] = "replaced with rauc-conf-iotgw"
+PREFERRED_VERSION_rauc ?= "1.15.2"
+PREFERRED_VERSION_rauc-native ?= "1.15.2"
+PREFERRED_VERSION_nativesdk-rauc ?= "1.15.2"
 
 # RAUC keyring default for device verification (bundle signing keys are set in bundle recipes or kas/local.yml)
 RAUC_KEYRING_FILE ?= "dev-cert.pem"
@@ -106,6 +109,8 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OT
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OTA_TPM_MTLS IOTGW_OTA_TPM_KEY_URI IOTGW_OTA_TPM_KEY_ENGINE IOTGW_OTA_OPENSSL_CONF"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_STREAMING_KEY_MODE IOTGW_RAUC_PKCS11_BACKEND IOTGW_RAUC_PKCS11_TLS_KEY IOTGW_RAUC_PKCS11_MODULE IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES IOTGW_TPM2_PKCS11_STORE"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
@@ -169,6 +174,51 @@ IOTGW_ENABLE_OTA_TPM_MTLS ?= "0"
 IOTGW_OTA_TPM_KEY_URI ?= "handle:0x81000001"
 IOTGW_OTA_TPM_KEY_ENGINE ?= "tpm2tss"
 IOTGW_OTA_OPENSSL_CONF ?= "/etc/ota/openssl-tpm2.cnf"
+# Effective TPM mTLS gate: auto-disable when TPM hardware/profile is disabled.
+IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE ?= "${@'1' if ((d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') == '1' and (d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS') or '0') == '1') else '0'}"
+
+# RAUC streaming TLS key mode:
+# - file:   tls-key=/etc/ota/device.key (default)
+# - pkcs11: tls-key=<pkcs11:...> via configured PKCS#11 backend
+IOTGW_RAUC_STREAMING_KEY_MODE ?= "file"
+
+# PKCS#11 backend selector used when IOTGW_RAUC_STREAMING_KEY_MODE=pkcs11:
+# - tpm2:  tpm2-pkcs11 provider + TPM2 token/object
+# - custom: externally supplied provider/token/object
+IOTGW_RAUC_PKCS11_BACKEND ?= "tpm2"
+
+# Built-in profile preset: TPM2-backed PKCS#11 token.
+# Module selection is provided by PKCS11_MODULE_PATH env from rauc.service drop-in.
+IOTGW_RAUC_PKCS11_TLS_KEY_TPM2 ?= "pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin"
+# Module path is retained as profile metadata for tooling/provisioning flows.
+# RAUC streaming itself relies on libp11 + p11-kit discovery.
+IOTGW_RAUC_PKCS11_MODULE_TPM2 ?= "/usr/lib/pkcs11/libtpm2_pkcs11.so"
+IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES_TPM2 ?= "tpm2-pkcs11"
+# TPM2 PKCS#11 token DB location used by sandboxed RAUC streaming helper.
+IOTGW_TPM2_PKCS11_STORE ?= "/var/lib/tpm2_pkcs11"
+
+# Custom profile preset: override these in kas/local.yml for other backends.
+IOTGW_RAUC_PKCS11_TLS_KEY_CUSTOM ?= ""
+IOTGW_RAUC_PKCS11_MODULE_CUSTOM ?= ""
+IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES_CUSTOM ?= ""
+
+# Effective runtime values consumed by recipes/services.
+IOTGW_RAUC_PKCS11_TLS_KEY ?= "${@d.getVar('IOTGW_RAUC_PKCS11_TLS_KEY_%s' % ((d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').upper())) or ''}"
+IOTGW_RAUC_PKCS11_MODULE ?= "${@d.getVar('IOTGW_RAUC_PKCS11_MODULE_%s' % ((d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').upper())) or ''}"
+# Provider package(s) for the active PKCS#11 backend profile.
+IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES ?= "${@d.getVar('IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES_%s' % ((d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').upper())) or ''}"
+# Effective key mode: auto-disable TPM2 PKCS#11 path when TPM profile is off.
+IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "${@'file' if ((d.getVar('IOTGW_RAUC_STREAMING_KEY_MODE') or 'file') != 'pkcs11' or (((d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').lower() == 'tpm2') and (d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') != '1')) else 'pkcs11'}"
+# Internal helper gate used by OTA/RAUC recipes for TPM-only behavior.
+IOTGW_RAUC_PKCS11_USES_TPM2 ?= "${@'1' if ((d.getVar('IOTGW_RAUC_STREAMING_KEY_MODE') or 'file') == 'pkcs11' and (d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').lower() == 'tpm2' and (d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') == '1') else '0'}"
+
+# Optional encrypted RAUC bundle support (disabled by default):
+# - build side: create `crypt` bundles and encrypt to recipient cert set
+# - target side: populate /etc/rauc/system.conf [encryption] for decrypt key
+IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION ?= "0"
+IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS ?= ""
+IOTGW_RAUC_ENCRYPTION_KEY ?= ""
+IOTGW_RAUC_ENCRYPTION_CERT ?= ""
 
 # Optional kernel EFI surface reduction profile for non-UEFI RPi5 boot flow.
 # Enable to append igw_no_efi fragment set.
