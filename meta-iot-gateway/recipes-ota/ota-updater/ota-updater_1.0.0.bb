@@ -12,7 +12,7 @@ RECIPE_MAINTAINER = "Umair A.S <umair-as@users.noreply.github.com>"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-inherit systemd useradd
+inherit systemd
 
 SRC_URI = " \
     file://ota-update-check.sh \
@@ -28,29 +28,14 @@ S = "${WORKDIR}"
 
 IOTGW_OTA_SERVER_URL ?= "https://updates.example.com:8443"
 IOTGW_OTA_MANIFEST_PATH ?= "/api/v1/manifest.json"
-IOTGW_ENABLE_OTA_TPM_MTLS ?= "0"
+IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE ?= "0"
 IOTGW_OTA_TPM_KEY_URI ?= "handle:0x81000001"
 IOTGW_OTA_TPM_KEY_ENGINE ?= "tpm2tss"
 IOTGW_OTA_OPENSSL_CONF ?= "/etc/ota/openssl-tpm2.cnf"
 
-IOTGW_OTA_DEVICE_KEY_URI = "${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', d.getVar('IOTGW_OTA_TPM_KEY_URI') or '', '', d)}"
-IOTGW_OTA_DEVICE_KEY_ENGINE = "${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', d.getVar('IOTGW_OTA_TPM_KEY_ENGINE') or 'tpm2tss', 'tpm2tss', d)}"
-IOTGW_OTA_OPENSSL_CONF_VALUE = "${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', d.getVar('IOTGW_OTA_OPENSSL_CONF') or '', '', d)}"
-
-# -----------------------------------------------------------------------------
-# User/Group creation (least privilege)
-# -----------------------------------------------------------------------------
-USERADD_PACKAGES = "${PN}"
-GROUPADD_PARAM:${PN} = "-r ota"
-USERADD_PARAM:${PN} = " \
-    --system \
-    --home /nonexistent \
-    --no-create-home \
-    --shell /bin/false \
-    --gid ota \
-    --comment 'OTA Update Daemon' \
-    ota \
-"
+IOTGW_OTA_DEVICE_KEY_URI = "${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', d.getVar('IOTGW_OTA_TPM_KEY_URI') or '', '', d)}"
+IOTGW_OTA_DEVICE_KEY_ENGINE = "${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', d.getVar('IOTGW_OTA_TPM_KEY_ENGINE') or 'tpm2tss', 'tpm2tss', d)}"
+IOTGW_OTA_OPENSSL_CONF_VALUE = "${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', d.getVar('IOTGW_OTA_OPENSSL_CONF') or '', '', d)}"
 
 # -----------------------------------------------------------------------------
 # Installation
@@ -75,7 +60,7 @@ do_install() {
         ${WORKDIR}/ota-updater.conf.in > ${D}${sysconfdir}/ota/updater.conf
     chmod 0640 ${D}${sysconfdir}/ota/updater.conf
 
-    if ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', 'true', 'false', d)}; then
+    if ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', 'true', 'false', d)}; then
         install -m 0644 ${WORKDIR}/openssl-tpm2.cnf ${D}${sysconfdir}/ota/openssl-tpm2.cnf
         install -d ${D}${sysconfdir}/systemd/system/ota-updater.service.d
         install -m 0644 ${WORKDIR}/ota-updater-tpm.service.conf \
@@ -102,15 +87,15 @@ FILES:${PN} = " \
     ${systemd_system_unitdir}/ota-updater.service \
     ${systemd_system_unitdir}/ota-updater.timer \
     ${sysconfdir}/ota/updater.conf \
-    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', '${sysconfdir}/ota/openssl-tpm2.cnf', '', d)} \
-    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', '${sysconfdir}/systemd/system/ota-updater.service.d/10-tpm.conf', '', d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', '${sysconfdir}/ota/openssl-tpm2.cnf', '', d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', '${sysconfdir}/systemd/system/ota-updater.service.d/10-tpm.conf', '', d)} \
     ${sysconfdir}/tmpfiles.d/ota-updater.conf \
 "
 
 CONFFILES:${PN} = " \
     ${sysconfdir}/ota/updater.conf \
-    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', '${sysconfdir}/ota/openssl-tpm2.cnf', '', d)} \
-    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', '${sysconfdir}/systemd/system/ota-updater.service.d/10-tpm.conf', '', d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', '${sysconfdir}/ota/openssl-tpm2.cnf', '', d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', '${sysconfdir}/systemd/system/ota-updater.service.d/10-tpm.conf', '', d)} \
 "
 
 RDEPENDS:${PN} = " \
@@ -120,5 +105,6 @@ RDEPENDS:${PN} = " \
     rauc \
     systemd \
     ca-certificates \
-    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS', '1', 'iotgw-tpm-policy', '', d)} \
+    iotgw-ota-user \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', 'tpm2-tss-engine tpm2-openssl', '', d)} \
 "

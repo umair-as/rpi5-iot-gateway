@@ -15,6 +15,7 @@ RDEPENDS:${PN} = " \
     systemd-extra-utils \
     lynis \
     ota-certs \
+    ${@bb.utils.contains('IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE','pkcs11',' %s' % (d.getVar('IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES') or ''),'',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' cryptsetup','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' iotgw-tpm-policy tpm-ops iotgw-tpm-health','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_ENCRYPTED_STORE_DEV','1',' iotgw-encrypted-store','',d)} \
