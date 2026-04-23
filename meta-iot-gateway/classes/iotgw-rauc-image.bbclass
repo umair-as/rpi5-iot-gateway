@@ -10,6 +10,11 @@ IMAGE_FSTYPES = "tar.bz2 ext4 wic.bz2 wic.bmap"
 # Use strong assignment to override meta-raspberrypi's default WKS_FILE
 WKS_FILE = "iot-gw-rauc-128g.wks.in"
 
+# Keep stock /etc/fstab from base-files intact.
+# WIC's imager-level fstab update appends mount lines globally and can create
+# duplicates even when part-level --no-fstab-update is set in the .wks file.
+WIC_CREATE_EXTRA_ARGS:append = " --no-fstab-update"
+
 # Packages required for RAUC flow
 IMAGE_INSTALL += " \
     rauc \
