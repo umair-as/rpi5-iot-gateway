@@ -269,6 +269,33 @@ Device certs are provisioned by `ota-certs-provision`:
 
 Server cert must include a SAN matching the OTA server IP/hostname.
 
+### First boot after fresh flash
+
+After flashing a new SD card image, the OTA certificate and TPM PKCS#11
+state must be (re-)provisioned before `rauc install` or streaming updates
+will work. This is expected — the data partition is blank and the overlay
+`/etc/ota` directory contains only build-time files (CA cert,
+`openssl-tpm2.cnf`, `updater.conf`), not per-device credentials.
+
+**Provisioning steps:**
+
+1. **Sync device certs** (from host):
+   ```bash
+   ./scripts/ota-certs-sync.sh          # uploads ca/device cert+key to /data/ota/certs/
+   ```
+2. **Reboot** so the `/etc` overlay mounts cleanly with the new upper-dir files.
+3. **Verify** cert chain on target:
+   ```bash
+   openssl verify -CAfile /etc/ota/ca.crt /etc/ota/device.crt
+   ```
+4. **(If TPM/PKCS#11 enabled)** Re-provision the TPM2 PKCS#11 token and PIN:
+   ```bash
+   ./scripts/ota-pkcs11-provision-check.sh   # shows status and next steps
+   ```
+
+Until step 2 completes, `ota-certs-provision.service` will fail — this is
+harmless and self-resolves after the reboot with certs in place.
+
 ### TPM-backed client key (OTA updater manifest polling)
 
 `ota-update-check` can use a TPM-backed OpenSSL key URI instead of a filesystem

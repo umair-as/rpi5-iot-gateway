@@ -22,24 +22,40 @@ This project defaults to a single production layout:
 The `/data` partition starts at a base size and is expanded to fill remaining
 space on first boot by `rauc-grow-data-partition`.
 
+```
+ mmcblk0 (128 GiB SD card — default production layout)
+ +----------+----------+------------------+------------------+-----------+
+ |   boot   | ubootenv |      rootA       |      rootB       |   data    |
+ |   (p1)   |   (p2)   |       (p3)       |       (p4)       |   (p5)   |
+ |  256 MiB |  16 MiB  |     16 GiB       |     16 GiB       |  84 GiB  |
+ |   vfat   |   vfat   |       ext4       |       ext4       |   ext4   |
+ +----------+----------+------------------+------------------+-----------+
+ | /boot    |/uboot-env|     / (active)   |    (standby)     |  /data   |
+ | FIT,DTB, | fw_env   | read-only rootfs | RAUC update      |persistent|
+ | config.txt| RAUC vars|                 | target           | storage  |
+ +----------+----------+------------------+------------------+-----------+
+                                      OTA swap ^---------------^
+```
+
 | # | Device | Label | Size | Type | Mount | Purpose |
 |---|--------|-------|------|------|-------|---------|
-| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | U-Boot, kernel, DTBs (shared) |
-| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | Dedicated U-Boot environment store |
+| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | FIT image, DTBs, config.txt (shared) |
+| 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | U-Boot env store (`fw_env.config` points here) |
 | 3 | `/dev/mmcblk0p3` | `rootA` | 16G | ext4 | `/` | Root filesystem Slot A |
 | 4 | `/dev/mmcblk0p4` | `rootB` | 16G | ext4 | - | Root filesystem Slot B |
 | 5 | `/dev/mmcblk0p5` | `data` | 84G | ext4 | `/data` | Persistent user data |
 
-**Remaining Space:** ~20GB reserved for auto-grow
-**After First Boot:** `/data` expands to fill remaining free space
+**After First Boot:** `/data` expands to fill remaining free space via `rauc-grow-data-partition`.
 
-Optional variants:
-- `iot-gw-rauc-16g.wks.in`
-- `iot-gw-rauc-32g.wks.in`
-- `iot-gw-rauc-64g.wks.in`
+### Size Variants
 
-Legacy template note:
-- `iot-gw-rauc.wks.in` exists for generic/bring-up use and is not the default production layout in this project.
+| WKS File | Card | boot | ubootenv | rootA/B | data | Notes |
+|----------|------|------|----------|---------|------|-------|
+| `iot-gw-rauc-16g.wks.in` | 16 GiB | 256M | 16M | 4G | 2G | Minimal/testing |
+| `iot-gw-rauc-32g.wks.in` | 32 GiB | 256M | 16M | 6G | 12G | |
+| `iot-gw-rauc-64g.wks.in` | 64 GiB | 256M | 16M | 8G | 36G | |
+| `iot-gw-rauc-128g.wks.in` | 128 GiB | 256M | 16M | 16G | 84G | **Default** |
+| `iot-gw-rauc.wks.in` | Generic | 512M | 16M | 8G | 10G | Bring-up/dev only |
 
 ---
 
@@ -54,13 +70,29 @@ Legacy template note:
 
 **Contents:**
 - U-Boot bootloader (`u-boot.bin`)
-- Boot script (`boot.scr`)
-- Linux kernel (`kernel_2712.img`, `Image`)
+- FIT image (`fitImage` or per-slot `fitImage-a`/`fitImage-b`)
 - Device tree blobs (`bcm2712-rpi-5-b.dtb`)
 - Device tree overlays (`overlays/`)
-- Boot splash image (`splash.bmp`, optional)
+- RPi firmware config (`config.txt`, `cmdline.txt`)
 
 **RAUC Updates:** This partition is updated by RAUC bundle post-install hooks using the configured bootfiles archive (`bootfiles.tar.gz` or `bootfiles-fit.tar.gz` depending on bundle type).
+
+---
+
+### Partition 2: U-Boot Environment (`ubootenv`)
+
+**Format:** FAT32 (vfat)
+**Size:** 16MB
+**Mount:** `/uboot-env`
+**Read/Write:** Read-write
+
+**Purpose:** Dedicated writable partition for U-Boot environment variables, kept separate from `/boot` so the boot partition can remain clean. `fw_env.config` points to device `0:2` (`ENV_FAT_DEVICE_AND_PART`).
+
+**Key variables stored here:**
+- `BOOT_ORDER` — RAUC slot priority (`A B` or `B A`)
+- `BOOT_A_LEFT` / `BOOT_B_LEFT` — remaining boot attempts per slot
+- `rauc_slot` — currently selected slot
+- `bootcount` — boot attempt counter
 
 ---
 
@@ -119,16 +151,9 @@ local_conf_header:
     WKS_FILE = "iot-gw-rauc-32g.wks.in"
 ```
 
-**Options:**
-- `iot-gw-rauc-16g.wks.in`
-- `iot-gw-rauc-32g.wks.in`
-- `iot-gw-rauc-64g.wks.in`
-- `iot-gw-rauc-128g.wks.in` (default)
-- `iot-gw-rauc.wks.in` (legacy/generic template)
+See the **Size Variants** table above for all available options.
 
-### Default Behavior
-
-If `WKS_FILE` is not set, the 128GB layout is used automatically.
+If `WKS_FILE` is not set, the 128 GiB layout is used automatically.
 
 ## Data Partition Auto-resize
 
