@@ -128,16 +128,15 @@ boot_meta_get_provision_id() {
     sed -nE 's/.*"provision_id"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' "$BOOT_META" | head -n 1
 }
 
-# Check if valid certs exist in an arbitrary directory
+# Check if valid certs exist in an arbitrary directory.
+# This validates identity material only (CA chain + expiry + key presence).
+# PKCS#11 readiness is a transport concern checked separately.
 certs_valid_in_dir() {
     local dir="$1"
     [[ -f "$dir/device.crt" ]] || return 1
     [[ -f "$dir/ca.crt" ]] || return 1
     if [[ "$ALLOW_KEYLESS_DEVICE_CERTS" != "1" ]]; then
         [[ -f "$dir/device.key" ]] || return 1
-    fi
-    if [[ "$REQUIRE_PKCS11_PIN" == "1" ]]; then
-        [[ -f "$dir/pkcs11-pin" ]] || return 1
     fi
 
     openssl x509 -in "$dir/device.crt" -noout -checkend 86400 2>/dev/null && \
@@ -189,10 +188,9 @@ same_cert_material() {
     [[ -n "$src_ca_fp" && -n "$src_dev_fp" && -n "$dst_ca_fp" && -n "$dst_dev_fp" ]] || return 1
     [[ "$src_ca_fp" == "$dst_ca_fp" && "$src_dev_fp" == "$dst_dev_fp" ]] || return 1
 
-    if [[ "$REQUIRE_PKCS11_PIN" == "1" ]]; then
+    if [[ "$REQUIRE_PKCS11_PIN" == "1" && -f "$src/pkcs11-pin" && -f "$PKCS11_PIN_FILE" ]]; then
         local src_pin=""
         local dst_pin=""
-        [[ -f "$src/pkcs11-pin" && -f "$PKCS11_PIN_FILE" ]] || return 1
         src_pin="$(head -n 1 "$src/pkcs11-pin" 2>/dev/null | tr -d '\r\n' || true)"
         dst_pin="$(head -n 1 "$PKCS11_PIN_FILE" 2>/dev/null | tr -d '\r\n' || true)"
         [[ -n "$src_pin" && -n "$dst_pin" && "$src_pin" == "$dst_pin" ]] || return 1
@@ -389,7 +387,15 @@ main() {
         log_info "Certificate verification passed"
         backup_certs_to_data
         if ! pkcs11_preflight_check; then
-            exit 1
+            log_warn "──────────────────────────────────────────────────────"
+            log_warn "TPM PKCS#11 preflight failed — running in degraded mode."
+            log_warn "File-based certificates are valid and OTA will work,"
+            log_warn "but RAUC streaming requires a provisioned TPM token."
+            log_warn ""
+            log_warn "To bootstrap the TPM PKCS#11 store, run on the host:"
+            log_warn "  ./scripts/ota-pkcs11-provision-check.sh"
+            log_warn "then follow the provisioning steps printed on target."
+            log_warn "──────────────────────────────────────────────────────"
         fi
         write_state "$source_used" "$source_provision_id"
         touch "$STAMP"
