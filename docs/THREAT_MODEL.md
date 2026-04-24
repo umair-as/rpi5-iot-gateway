@@ -87,23 +87,6 @@ Every new or modified service should be reviewed for:
 - Syscall and namespace restrictions when compatible
 - Secret handling path (no secrets in image defaults; avoid argv leaks)
 
-## Public vs Private Documentation Policy
-
-Use `docs/` for:
-- Architecture and control objectives
-- Threat categories, boundaries, and mitigations
-- Non-sensitive operational guidance
-
-Use private/internal notes (not committed) for:
-- Incident details, exploit hypotheses, and live debugging artifacts
-- Temporary risk acceptance notes
-- Sensitive assumptions not ready for publication
-
-Promotion rule:
-- Start in private/internal notes when uncertain.
-- Promote to `docs/` after sanitization and validation.
-- Keep sensitive values, hostnames, private endpoints, and exploit specifics out of `docs/`.
-
 ## Current Focus Areas
 
 1. Credential lifecycle hardening across all services.

@@ -2,7 +2,7 @@
 
 # 🔄 RAUC Over-The-Air Updates
 
-**Guide to RAUC A/B rootfs updates and slot rollback behavior**
+**Architecture and design reference for RAUC A/B rootfs updates**
 
 [![RAUC](https://img.shields.io/badge/OTA-RAUC-green.svg)](https://rauc.io/)
 [![Verity](https://img.shields.io/badge/security-dm--verity-blue.svg)](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html)
@@ -14,20 +14,18 @@
 
 ## 📖 Overview
 
-This guide covers the OTA update workflow used in this repository on Raspberry Pi 5, including:
-- 🔀 **A/B Rootfs Updates** — Dual-partition update system
-- 🥾 **Boot Asset Updates** — Kernel, DTBs, and U-Boot via bundle hooks
-- 🔙 **Slot Rollback** — Bootchooser-based fallback behavior
-- 🔐 **Signed Bundles** — Cryptographic verification with dm-verity
+The IoT Gateway uses RAUC with an A/B partition layout for atomic,
+rollback-capable system updates. Updates are delivered as signed bundles
+containing a rootfs image and boot assets (kernel, DTBs, U-Boot).
 
-Use this document for architecture and release flow.  
-For on-target operations, preflight, and troubleshooting runbooks, use [RAUC Update Runbook](RAUC_UPDATE.md).
+For on-target operations, preflight, and troubleshooting runbooks, see
+[RAUC Update Runbook](RAUC_UPDATE.md).
 
 ### Update Flow
 
 ```mermaid
 graph LR
-    A[Boot active slot A/B] --> I[Install signed bundle to inactive slot]
+    A[Boot active slot] --> I[Install signed bundle to inactive slot]
     I --> R[Reboot to updated slot]
     R --> H{Health OK?}
     H -->|Yes| G[Mark slot good]
@@ -39,31 +37,9 @@ graph LR
 | Component | Type | Purpose |
 |-----------|------|---------|
 | **Root Filesystem** | A/B (dual ext4) | Only one active at boot |
-| **/boot Partition** | Shared FAT | Firmware, U-Boot, kernel, DTBs |
-| **Bundle Format** | dm-verity | Signed, integrity-protected |
-
----
-
-## 📦 Bundle Contents
-
-RAUC bundles can carry the artifacts needed for a rootfs + boot-asset update flow:
-
-| File | Description |
-|------|-------------|
-| `*.rootfs.ext4` | 🗂️ Root filesystem image for inactive slot |
-| `bootfiles.tar.gz` | 🥾 Boot assets (kernel, DTBs, U-Boot) |
-| `bundle-hooks.sh` | 🪝 Post-install hook script |
-
-### Boot Files Archive
-
-The `bootfiles.tar.gz` includes:
-- `boot.scr` — U-Boot boot script
-- `u-boot.bin` — U-Boot bootloader
-- `Image` — Linux kernel
-- `kernel_2712.img` — Raspberry Pi 5 kernel
-- `bcm2712-rpi-5-b.dtb` — Device Tree Blob
-- `overlays/` — Device Tree overlays
-- `splash.bmp` — Boot splash screen (optional)
+| **/boot Partition** | Shared FAT | FIT images, DTBs, U-Boot, config.txt |
+| **Bundle Format** | dm-verity | Signed, integrity-protected, optionally encrypted |
+| **Bootloader** | U-Boot | Env-based slot selection with bootcount rollback |
 
 ---
 
@@ -74,167 +50,54 @@ sequenceDiagram
     participant T as Target
     participant R as RAUC
     participant U as U-Boot
-    participant Hook as Hook Script
+    participant Hook as Bundle Hook
     participant Boot as /boot
-    participant Kernel as Kernel
-    participant RootfsB as RootFS B
 
     T->>R: iotgw-rauc-install bundle.raucb
     R->>R: Verify signature + mount verity
-    R->>RootfsB: Write rootfs.ext4 to inactive slot
-    R->>RootfsB: Mount new slot read-only
-    R->>Hook: Run slot-post-install bundle-hooks.sh
-    Hook->>Boot: Copy boot.scr, Image, DTBs, overlays if changed
-    R->>U: Set bootchooser activate Slot B
+    R->>R: Write rootfs to inactive slot
+    R->>Hook: Run slot-post-install hook
+    Hook->>Boot: Update FIT image, DTBs, overlays if changed
+    Hook->>Hook: Run overlay reconciliation
+    R->>U: Activate inactive slot (fw_setenv BOOT_ORDER)
     T->>T: Reboot
-    U->>Kernel: Load kernel/DTBs from /boot
-    Kernel->>RootfsB: Boot with rauc.slot=B
-    T->>R: Mark good auto service or rollback on failure
+    U->>U: Select slot, decrement boot counter
+    Note over T: Mark good on healthy boot, rollback otherwise
 ```
 
 ### Key Properties
 
 ✅ **Synchronized Update Path** — Bundle hook updates `/boot` in the same install transaction
-✅ **Ordered Installation** — Hook runs after rootfs write, before reboot
-✅ **Read-only Verification** — New slot mounted read-only during update
+✅ **Per-Slot FIT Naming** — Each slot writes its own kernel (`fitImage-a` / `fitImage-b`) on the shared boot partition
+✅ **Overlay Reconciliation** — Post-install hook manages `/etc` overlay entries according to policy
 
 ---
 
 ## 🔙 Rollback Behavior
 
-RAUC's bootchooser provides automatic failsafe:
+RAUC's bootchooser provides automatic failsafe via U-Boot bootcount:
 
 | Scenario | Behavior |
 |----------|----------|
-| **Boot Success** | New slot marked good, becomes default |
-| **Boot Failure** | Bootchooser fallback after configured retry budget |
-| **Health Check Fail** | Manual or auto rollback via `rauc status` |
+| **Boot Success** | `rauc-mark-good` marks slot, becomes default |
+| **Boot Failure** | Bootcount exhausted → U-Boot falls back to previous slot |
+| **Explicit Rollback** | `rauc mark-active other && reboot` |
 
-### Important Considerations
+### ⚠️ Important
 
-> ⚠️ **Shared /boot Partition**: Kernel/DTBs copied by the hook remain after rollback
-
-**Design Implications:**
-- Keep kernel ABI compatible across releases
-- Test kernel updates thoroughly before deployment
-- Advanced option: Stage bootfiles in rootfs, copy only after marking good
-
-### Rollback Commands
-
-```bash
-# Mark current slot as bad (triggers rollback on next boot)
-rauc mark-bad booted
-reboot
-
-# Or mark the other slot as active
-rauc mark-active other
-reboot
-```
-
----
-
-## 🛠️ Building Bundles
-
-### Bundle Types
-
-| Bundle Type | Target | Updates | Output File |
-|-------------|--------|---------|-------------|
-| **Rootfs Only** | Faster updates | Rootfs only | `iot-gw-bundle.raucb` |
-| **Full System** | Rootfs + boot assets | Rootfs + Kernel + DTBs | `iot-gw-bundle-full.raucb` |
-
-#### Build Commands
-
-<table>
-<tr><th>Rootfs Only</th><th>Rootfs + Kernel</th></tr>
-<tr>
-<td>
-
-```bash
-# Development
-make bundle-dev
-
-# Standard
-make bundle
-
-# Production
-make bundle-prod
-```
-
-</td>
-<td>
-
-```bash
-# Development
-make bundle-dev-full
-
-# Standard
-make bundle-full
-
-# Production
-make bundle-prod-full
-```
-
-</td>
-</tr>
-</table>
-
-> 💡 **Note**: Bundle filename is based on the recipe name, not the image variant. Makefile handles variant selection via `BUNDLE_IMAGE_NAME`.
-
----
-
-## ✅ Verification & Deployment
-
-### 1. Verify Bundle (Optional)
-
-```bash
-# Verify signature and contents
-oe-run-native rauc-native rauc info \
-  --keyring meta-iot-gateway/recipes-ota/rauc/files/dev-cert.pem \
-  build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full.raucb
-```
-
-### 2. Deploy to Device
-
-```bash
-# Copy bundle to target
-scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full.raucb \
-  root@device:/tmp/
-
-# Install (wrapper handles temporary /boot rw remount + restore to ro)
-ssh root@device 'iotgw-rauc-install /tmp/iot-gw-bundle-full.raucb && reboot'
-```
-
-### 3. Verify Update
-
-```bash
-# Check RAUC status
-rauc status --detailed
-
-# Review installation logs
-journalctl -u rauc -b | grep "\[bundle-hook\]"
-```
-
----
-
-## 📁 Implementation Files
-
-| Component | Path |
-|-----------|------|
-| **Bundle Recipes** | `meta-iot-gateway/recipes-ota/bundles/*.bb` |
-| **Common Config** | `meta-iot-gateway/recipes-ota/bundles/iot-gw-bundle-common.inc` |
-| **Hook Script** | `meta-iot-gateway/recipes-ota/rauc/files/bundle-hooks.sh` |
-| **Bootfiles Archive** | `meta-iot-gateway/recipes-bsp/bootimage/rpi-bootfiles-archive.bb` |
-| **RAUC Config** | `meta-iot-gateway/recipes-ota/rauc/rauc-conf.bb` |
+> The `/boot` partition is **not A/B**. Kernel and DTB updates are applied in-place by the bundle hook. On rollback, the rootfs reverts but boot assets remain. This requires kernel ABI compatibility across releases.
 
 ---
 
 ## 🔐 Security
 
-| Feature | Implementation |
-|---------|----------------|
-| **Bundle Signing** | Cryptographic signatures verified on-device |
-| **Integrity Protection** | dm-verity format for tamper detection |
-| **Boot Integrity Chain** | U-Boot FIT verification + signed RAUC bundles |
+| Feature | Description |
+|---------|-------------|
+| **Bundle Signing** | Cryptographic signatures verified on-device before installation |
+| **Integrity Protection** | dm-verity format provides tamper detection |
+| **Boot Integrity Chain** | U-Boot FIT signature verification + signed RAUC bundles |
+| **Bundle Encryption** | Optional `crypt` format with per-device decryption key |
+| **mTLS Streaming** | Device identity verified via client certificate |
 
 ---
 
@@ -242,11 +105,9 @@ journalctl -u rauc -b | grep "\[bundle-hook\]"
 
 RAUC supports installing bundles directly over HTTPS without pre-downloading to local storage. This uses streaming mode (NBD + HTTP range requests) with mutual TLS authentication.
 
-### ✅ What This Enables
-
-- **Native streaming install**: `iotgw-rauc-install https://<server>:8443/bundles/<bundle>.raucb`
-- **Device tracking** via headers sent by RAUC (boot-id, machine-id, transaction-id)
-- **mTLS auth** using device certificates provisioned on the gateway
+- 📡 **Native streaming**: `iotgw-rauc-install https://<server>:8443/bundles/<bundle>.raucb`
+- 🏷️ **Device tracking** via RAUC headers (boot-id, machine-id, transaction-id)
+- 🔑 **mTLS auth** using device certificates provisioned on the gateway
 
 ### 🔧 Device Configuration
 
@@ -269,34 +130,35 @@ Device certs are provisioned by `ota-certs-provision`:
 
 Server cert must include a SAN matching the OTA server IP/hostname.
 
-### First boot after fresh flash
+### 🆕 First Boot After Fresh Flash
 
-After flashing a new SD card image, the OTA certificate and TPM PKCS#11
-state must be (re-)provisioned before `rauc install` or streaming updates
-will work. This is expected — the data partition is blank and the overlay
-`/etc/ota` directory contains only build-time files (CA cert,
-`openssl-tpm2.cnf`, `updater.conf`), not per-device credentials.
+After flashing a new SD card image, OTA certificate and TPM PKCS#11
+state must be (re-)provisioned before streaming updates will work. This
+is expected — the data partition is blank and `/etc/ota` contains only
+build-time files (CA cert, `openssl-tpm2.cnf`, `updater.conf`).
 
 **Provisioning steps:**
 
 1. **Sync device certs** (from host):
    ```bash
-   ./scripts/ota-certs-sync.sh          # uploads ca/device cert+key to /data/ota/certs/
+   ./scripts/ota-certs-sync.sh
    ```
-2. **Reboot** so the `/etc` overlay mounts cleanly with the new upper-dir files.
+2. **Reboot** so the `/etc` overlay mounts cleanly with new files.
 3. **Verify** cert chain on target:
    ```bash
    openssl verify -CAfile /etc/ota/ca.crt /etc/ota/device.crt
    ```
-4. **(If TPM/PKCS#11 enabled)** Re-provision the TPM2 PKCS#11 token and PIN:
+4. **(If TPM/PKCS#11 enabled)** Re-provision the TPM2 PKCS#11 token:
    ```bash
-   ./scripts/ota-pkcs11-provision-check.sh   # shows status and next steps
+   ./scripts/ota-pkcs11-provision-check.sh
    ```
 
-Until step 2 completes, `ota-certs-provision.service` will fail — this is
-harmless and self-resolves after the reboot with certs in place.
+Until step 2 completes, `ota-certs-provision.service` will log a
+degraded-mode warning — this is harmless and self-resolves after reboot.
 
-### TPM-backed client key (OTA updater manifest polling)
+---
+
+## 🔑 TPM-Backed Client Key
 
 `ota-update-check` can use a TPM-backed OpenSSL key URI instead of a filesystem
 private key. Configure `/etc/ota/updater.conf`:
@@ -314,50 +176,54 @@ Notes:
 - `device_key_uri` takes precedence over `device_key`.
 - TPM mode is build-gated by `IOTGW_ENABLE_OTA_TPM_MTLS = "1"` (default `0`,
   preserving non-TPM file-key flow).
-- On current gateway curl builds (`--key-type` supports `ENG`, not `PROV`), TPM
-  handles are used via OpenSSL engine mode (`tpm2tss`) when
-  `device_key_uri` is `handle:0x...`.
-- `openssl_conf` remains optional for provider-based tooling and future curl
-  builds with provider key support.
+- Current curl builds use OpenSSL engine mode (`tpm2tss`) for TPM handles.
+  Provider-based key support is deferred to future curl builds.
 - With TPM mode enabled, `ota-updater.service` gets supplementary `iotgwtpm`
   group access for `/dev/tpmrm0`.
 
-### Feature-Gating Matrix (Verity / TPM / PKCS#11 / Encrypted Bundles)
+---
+
+## ⚙️ Feature-Gating Profiles
 
 All advanced OTA paths are opt-in. Default remains `verity + file-key`.
 
-| Profile | `IOTGW_ENABLE_OTA_TPM_MTLS` | `IOTGW_RAUC_STREAMING_KEY_MODE` | `IOTGW_RAUC_PKCS11_BACKEND` | `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION` | Result |
-|--------|---|---|---|---|---|
-| **Baseline (default)** | `0` | `file` | `-` | `0` | Verity bundle, file-key mTLS, no TPM requirement |
-| **Updater TPM only** | `1` | `file` | `-` | `0` | `ota-updater` uses TPM key URI; RAUC streaming still uses file key |
-| **RAUC PKCS#11 (custom provider)** | `0` | `pkcs11` | `custom` | `0` | RAUC streaming uses `tls-key=pkcs11:...` without TPM |
-| **RAUC PKCS#11 (TPM2 backend)** | `0` | `pkcs11` | `tpm2` | `0` | RAUC streaming uses TPM2-backed PKCS#11 token/object |
-| **Encrypted bundle only** | `0` | `file` | `-` | `1` | `crypt` bundle + `[encryption]` in `system.conf`; no TPM required |
-| **Full TPM + PKCS#11 + crypt** | `1` | `pkcs11` | `tpm2` | `1` | TPM updater path + TPM2 PKCS#11 RAUC streaming + encrypted bundles |
+**Baseline (default)** — no additional variables required.
+Verity bundle, file-key mTLS, no TPM.
 
-Required companion variables when enabling feature gates:
+**Updater TPM only** — `ota-updater` uses a TPM key URI for manifest
+polling; RAUC streaming still uses the file key.
+```
+IOTGW_ENABLE_OTA_TPM_MTLS = "1"
+IOTGW_OTA_TPM_KEY_URI     = "handle:0x81000001"
+IOTGW_OTA_TPM_KEY_ENGINE  = "tpm2tss"
+```
 
-- `IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"`:
-  - `IOTGW_RAUC_PKCS11_BACKEND` (`tpm2` or `custom`)
-  - `IOTGW_RAUC_PKCS11_TLS_KEY` (for example `pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin`)
-  - provision token/object for the selected backend (`tpm2` requires `IOTGW_TPM2_PKCS11_STORE` as needed)
-- `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"`:
-  - `IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS`
-  - `IOTGW_RAUC_ENCRYPTION_KEY` (optional `IOTGW_RAUC_ENCRYPTION_CERT`)
-- `IOTGW_ENABLE_OTA_TPM_MTLS = "1"`:
-  - `IOTGW_OTA_TPM_KEY_URI`
-  - `IOTGW_OTA_TPM_KEY_ENGINE`
-  - optional `IOTGW_OTA_OPENSSL_CONF`
+**RAUC PKCS#11 streaming** — RAUC streaming authenticates via a PKCS#11
+token. Backend is `tpm2` (hardware-backed) or `custom` (software token).
+```
+IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
+IOTGW_RAUC_PKCS11_BACKEND    = "tpm2"
+IOTGW_RAUC_PKCS11_TLS_KEY    = "pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin"
+```
 
-Important compatibility notes:
+**Encrypted bundles** — RAUC `crypt` format with per-device decryption
+key. Independent of streaming key mode.
+```
+IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"
+IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/path/to/device-filekey.crt"
+IOTGW_RAUC_ENCRYPTION_KEY            = "/etc/ota/device.key"
+```
 
-- PKCS#11 streaming and encrypted bundle decryption are independent.
-- To return to classic verity/non-TPM behavior, set:
-  - `IOTGW_ENABLE_OTA_TPM_MTLS = "0"`
-  - `IOTGW_RAUC_STREAMING_KEY_MODE = "file"`
-  - `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "0"`
+**Full TPM + PKCS#11 + crypt** — combines all three. Set all variables
+from the profiles above.
 
-### Security Note: PKCS#11 PIN Handling
+> 💡 **Compatibility notes:**
+> - PKCS#11 streaming and encrypted bundle decryption are independent.
+> - To return to baseline: set `IOTGW_ENABLE_OTA_TPM_MTLS = "0"`,
+>   `IOTGW_RAUC_STREAMING_KEY_MODE = "file"`, and
+>   `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "0"`.
+
+### 🔒 PKCS#11 PIN Handling
 
 - Prefer `pin-source=file:/etc/ota/pkcs11-pin` over inline `pin-value`.
 - Keep `/etc/ota/pkcs11-pin` permission-restricted (`root:ota 0640`).
@@ -366,40 +232,28 @@ Important compatibility notes:
 
 ---
 
-## ⚠️ Limitations & Considerations
+## ⚠️ Design Considerations
 
-### Current Design
+**Shared /boot partition** — kernel and DTB updates are applied in-place
+by the bundle hook. On rollback, the rootfs reverts but boot assets
+remain. Maintain kernel ABI compatibility across releases.
 
-| Aspect | Behavior |
-|--------|----------|
-| **/boot Partition** | ❌ Not A/B — updates applied in-place |
-| **Kernel Updates** | Applied immediately via hook |
-| **Rollback** | Rootfs rolls back, kernel/DTBs remain |
+**Overlay reconciliation** — OTA updates trigger the overlay reconciler
+which manages `/etc` overlay entries according to policy (`enforce`,
+`replace_if_unmodified`, `preserve`, `absent`). See
+[Overlay Reconciliation](OVERLAY_RECONCILIATION.md).
 
-### Recommendations
-
-- ✅ Maintain kernel ABI compatibility between releases
-- ✅ Test kernel updates in development environment
-- ⚠️ For fully failsafe boot: Consider GPT/MBR boot slot switching
-
-### Advanced Option (Future)
-
-Stage bootfiles in rootfs → Copy to `/boot` only after successful boot + health check → Fully transactional kernel updates
-
----
-
-## 🔧 Troubleshooting
-
-Common troubleshooting areas include:
-- wrapper/systemd-run behavior
-- fw_env and slot switching failures
-- streaming TLS/CA consistency checks
-- adaptive update alignment checks
+**Future: transactional boot updates** — stage boot assets in rootfs,
+copy to `/boot` only after successful boot and health check, enabling
+fully atomic kernel updates.
 
 ---
 
 ## 📚 References
 
+- [RAUC Update Runbook](RAUC_UPDATE.md) — on-target operations and troubleshooting
+- [U-Boot Hardening](UBOOT_HARDENING.md) — bootloader hardening and env-based slot selection
+- [Partition Layouts](PARTITIONS.md) — A/B partition sizing
+- [Overlay Reconciliation](OVERLAY_RECONCILIATION.md) — post-OTA config management
 - [RAUC Documentation](https://rauc.readthedocs.io/)
-- [U-Boot Bootchooser](https://rauc.readthedocs.io/en/latest/integration.html#u-boot)
 - [dm-verity](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html)
