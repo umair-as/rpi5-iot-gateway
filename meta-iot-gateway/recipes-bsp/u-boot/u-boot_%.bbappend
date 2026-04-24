@@ -21,7 +21,7 @@ SRC_URI:append = "${@' file://iotgw-uboot-fit-enforce.cfg' \
 SRC_URI:append = "${@' file://iotgw-uboot-prod.cfg' \
     if 'appliance_lockdown' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
 
-# ── R6: Production key guard ─────────────────────────────────────────────────
+# ── Production key guard ─────────────────────────────────────────────────────
 inherit iotgw-uboot-prod-key-guard
 
 # ── Boot delay override ──────────────────────────────────────────────────────

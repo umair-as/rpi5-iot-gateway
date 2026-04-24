@@ -1,6 +1,5 @@
 # ── Production FIT signing key guard ─────────────────────────────────────────
 # Prevents iot-gw-image-prod from being built with a development signing key.
-# Mirrors iotgw-rauc-adaptive-guard.bbclass.
 
 python do_iotgw_uboot_key_guard() {
     # No-op when FIT signing is disabled entirely
