@@ -221,8 +221,17 @@ install_if_changed() {
   return 0
 }
 
-# FIT variant: stage fitImage first; keep Image/kernel_2712 for compatibility.
-FILES=(boot.scr u-boot.bin splash.bmp fitImage Image kernel_2712.img bcm2712-rpi-5-b.dtb)
+# Slot-specific FIT installation: each slot writes its own named FIT image so
+# U-Boot can load the correct one without touching the other slot's kernel.
+FIT_DEST_NAME="fitImage"
+case "${RAUC_SLOT_NAME:-}" in
+  rootfs.0) FIT_DEST_NAME="fitImage-a" ;;
+  rootfs.1) FIT_DEST_NAME="fitImage-b" ;;
+esac
+log_info "FIT destination: ${FIT_DEST_NAME} (slot=${RAUC_SLOT_NAME:-unknown})"
+
+# FIT variant: fitImage handled separately above; keep Image/kernel_2712 for compatibility.
+FILES=(boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
 for f in "${FILES[@]}"; do
   if [ -f "$tmpdir/$f" ]; then
     label="$f"
@@ -234,6 +243,13 @@ for f in "${FILES[@]}"; do
     fi
   fi
 done
+
+# Install FIT image under slot-specific name (fitImage-a or fitImage-b)
+if [ -f "$tmpdir/fitImage" ]; then
+  if install_if_changed "$tmpdir/fitImage" "$BOOT_MP/$FIT_DEST_NAME" 0644 "$FIT_DEST_NAME"; then
+    updated=1
+  fi
+fi
 
 # Include any additional Raspberry Pi 5 family DTBs shipped in bundle.
 for dtb in "$tmpdir"/bcm2712-rpi-*.dtb; do
