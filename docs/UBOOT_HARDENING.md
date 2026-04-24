@@ -69,7 +69,9 @@ Fragments give policy flexibility without touching the base.
 | `iot-gw-image-prod` | `surface_reduce fit_enforce appliance_lockdown` | `-2` (no interactive window) |
 
 The `IOTGW_UBOOT_BOOTDELAY` variable handles the meta-raspberrypi
-BOOTDELAY override (see [Constraints](#constraints) below).
+BOOTDELAY override — meta-raspberrypi forces `-2` via
+`do_configure:append`; our layer counteracts with a higher-priority
+append that restores `2` for dev and keeps `-2` for prod.
 
 ---
 
@@ -181,41 +183,6 @@ diagnostic pointing to the key ceremony procedure.
 
 ---
 
-## Constraints
-
-### meta-raspberrypi BOOTDELAY override
-
-meta-raspberrypi's `u-boot_%.bbappend` forces `CONFIG_BOOTDELAY=-2` via
-`do_configure:append:raspberrypi5()` to work around a U-Boot hang when
-no debug UART is connected
-([opensuse#1251192](https://bugzilla.opensuse.org/show_bug.cgi?id=1251192)).
-
-Our layer counteracts this with `IOTGW_UBOOT_BOOTDELAY`, set via a
-higher-priority `do_configure:append:raspberrypi5()` that runs after
-meta-raspberrypi's. Dev builds restore `BOOTDELAY=2`; prod builds
-(with `appliance_lockdown`) keep `-2`.
-
-### meta-rauc-community squashfs patch
-
-The `rpi_arm64_defconfig.patch` from meta-rauc-community applies before
-our defconfig patch, adding squashfs support. Our `0003` patch was
-generated against the post-squashfs state. On U-Boot version bumps,
-regenerate via the devtool workflow documented in the
-[defconfig regeneration](#defconfig-regeneration) section.
-
-### Single env file
-
-U-Boot is configured with `CONFIG_ENV_IS_IN_FAT=y` pointing to a single
-file (`uboot.env` on partition `0:2`). Redundant environment
-(`CONFIG_SYS_REDUNDAND_ENVIRONMENT`) is explicitly disabled. The
-`fw_env.config` on the target must have a single entry matching this.
-
-The overlay reconciler enforces this via `managed-paths.conf` to ensure
-OTA updates from older images (which may have had a two-line config)
-correctly replace the stale overlay entry.
-
----
-
 ## Explicit deferrals
 
 These items were evaluated and deliberately excluded:
@@ -227,22 +194,6 @@ These items were evaluated and deliberately excluded:
 | Measured boot (PCR extend in U-Boot) | TPM SPI access requires PCIe/RP1 driver chain not upstream in U-Boot |
 | UEFI Secure Boot via EDK2 | Inappropriate for appliance-class gateway; adds complexity without security benefit |
 | ECDSA FIT signing | RPi5 U-Boot `UCLASS_ECDSA` verify backend not validated; RSA-2048 is the supported path |
-
----
-
-## File map
-
-| File | Purpose |
-|------|---------|
-| `recipes-bsp/u-boot/u-boot_%.bbappend` | Feature gating, BOOTDELAY override, key guard inherit |
-| `recipes-bsp/u-boot/files/0003-defconfig-iotgw-base.patch` | Kconfig-validated base defconfig |
-| `recipes-bsp/u-boot/files/iotgw-uboot-hardening.cfg` | Surface reduction fragment |
-| `recipes-bsp/u-boot/files/iotgw-uboot-fit-enforce.cfg` | FIT enforcement fragment |
-| `recipes-bsp/u-boot/files/iotgw-uboot-prod.cfg` | Production lockdown fragment |
-| `classes/iotgw-uboot-prod-key-guard.bbclass` | Build-time dev-key guard |
-| `kas/uboot-prod-hardening.yml` | KAS overlay for production U-Boot profile |
-| `recipes-bsp/u-boot/files/0001-rpi-env-*.patch` | RAUC A/B boot env + boot_targets reduction |
-| `recipes-bsp/u-boot/files/0002-rpi-iotgw-*.patch` | Appliance fast-path and netboot gate |
 
 ---
 
@@ -278,24 +229,6 @@ devtool finish u-boot meta-iot-gateway/
 The `--no-overrides` flag is required because the bbappend uses
 conditional `SRC_URI:append` expressions that break devtool's default
 override-branch processing.
-
----
-
-## Validation checklist
-
-| Test | Expected |
-|------|----------|
-| `bitbake u-boot -c patch` | All patches apply cleanly |
-| `bitbake u-boot -c compile` | Build succeeds |
-| `devtool modify --no-overrides u-boot` + `devtool build u-boot` | Passes |
-| Serial log: `(IoT-Gateway)` in banner | Ident string present |
-| Serial log: `Autoboot in 2s - type 'igw' to stop` (dev) | Keyed autoboot works |
-| Serial log: `sha256,rsa2048:iotgw-fit-dev+ OK` | FIT signature verified |
-| `cat /proc/cmdline` contains `rauc.slot=` | RAUC slot selected |
-| `fw_printenv boot_targets` returns `mmc` | No USB/PXE/DHCP |
-| `rauc install` + reboot + `rauc status` shows new slot good | OTA cycle works |
-| Prod build with dev key | `bb.fatal` with diagnostic |
-| `IOTGW_UBOOT_BOOTDELAY` resolves to `2` (dev) / `-2` (prod) | BOOTDELAY correct per image |
 
 ---
 
