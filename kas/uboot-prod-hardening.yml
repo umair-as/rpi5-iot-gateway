@@ -1,0 +1,8 @@
+header:
+  version: 18
+
+local_conf_header:
+  uboot_prod_hardening: |
+    # Production U-Boot profile: keep command-surface reduction enabled and
+    # enforce signed FIT images with appliance lockdown.
+    IOTGW_UBOOT_FEATURES = "surface_reduce fit_enforce appliance_lockdown"

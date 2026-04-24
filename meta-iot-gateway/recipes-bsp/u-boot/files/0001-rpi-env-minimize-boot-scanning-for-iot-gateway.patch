@@ -1,5 +1,5 @@
 diff --git a/board/raspberrypi/rpi/rpi.env b/board/raspberrypi/rpi/rpi.env
-index 30228285edd..e6867e443d5 100644
+index 30228285edd..a1b2c3d4e5f 100644
 --- a/board/raspberrypi/rpi/rpi.env
 +++ b/board/raspberrypi/rpi/rpi.env
 @@ -2,10 +2,10 @@
@@ -15,9 +15,20 @@ index 30228285edd..e6867e443d5 100644
  stdout=serial,vidconsole
  stderr=serial,vidconsole
  
-@@ -74,4 +74,4 @@ pxefile_addr_r=0x02500000
+@@ -74,4 +74,14 @@ pxefile_addr_r=0x02500000
  fdt_addr_r=0x02600000
  ramdisk_addr_r=0x02700000
  
 -boot_targets=mmc usb pxe dhcp
++iotgw_fit_conf_default=conf-primary
++iotgw_fit_conf=conf-primary
++iotgw_fit_addr_r=0x08000000
++iotgw_try_a=if test -z "${rauc_slot}"; then if itest ${BOOT_A_LEFT} -gt 0; then setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1; setenv rauc_slot A; setenv rootpartnum 3; fi; fi
++iotgw_try_b=if test -z "${rauc_slot}"; then if itest ${BOOT_B_LEFT} -gt 0; then setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1; setenv rauc_slot B; setenv rootpartnum 4; fi; fi
++iotgw_rauc_select=test -n "${BOOT_ORDER}" || setenv BOOT_ORDER A B; test -n "${BOOT_A_LEFT}" || setenv BOOT_A_LEFT 3; test -n "${BOOT_B_LEFT}" || setenv BOOT_B_LEFT 3; setenv rauc_slot; for BOOT_SLOT in ${BOOT_ORDER}; do if test x${BOOT_SLOT} = xA; then run iotgw_try_a; else run iotgw_try_b; fi; done
++iotgw_set_bootargs=if part uuid mmc 0:${rootpartnum} rootpartuuid; then fdt addr ${fdt_addr}; fdt get value bootargs /chosen bootargs; setenv bootargs ${bootargs} root=PARTUUID=${rootpartuuid} rootwait rauc.slot=${rauc_slot}; else echo [RAUC] part uuid failed; reset; fi
++iotgw_load_boot=if test x${rauc_slot} = xA; then setenv _fitimg fitImage-a; else setenv _fitimg fitImage-b; fi; if fatload mmc 0:1 ${iotgw_fit_addr_r} ${_fitimg}; then echo [IOTGW] FIT loaded (${_fitimg}); elif fatload mmc 0:1 ${iotgw_fit_addr_r} fitImage; then echo [IOTGW] FIT loaded (fallback); else echo [IOTGW] FIT load failed; reset; fi
++iotgw_exec_fit=test -n "${iotgw_fit_conf}" || setenv iotgw_fit_conf ${iotgw_fit_conf_default}; bootm ${iotgw_fit_addr_r}#${iotgw_fit_conf} - ${fdt_addr}; echo [IOTGW] bootm returned; reset
++bootcmd=run iotgw_rauc_select; if test -z "${rauc_slot}"; then setenv BOOT_A_LEFT 3; setenv BOOT_B_LEFT 3; saveenv; reset; fi; run iotgw_set_bootargs; run iotgw_load_boot; saveenv; run iotgw_exec_fit
 +boot_targets=mmc
+ 
