@@ -5,6 +5,7 @@
 KAS ?= kas
 RAUC ?= kas/rauc.yml
 LOCAL ?= kas/local.yml
+UBOOT_PROD_HARDENING_KAS ?= kas/uboot-prod-hardening.yml
 # Default to RAUC builds always; prefer local RAUC config if present
 BASE ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
 
@@ -51,7 +52,12 @@ dev:
 	$(call image_cmd,iot-gw-image-dev)
 
 prod:
-	$(call image_cmd,iot-gw-image-prod)
+	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY" \
+			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
+			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
+			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
+			   IOTGW_ENABLE_OBSERVABILITY=$(IOTGW_ENABLE_OBSERVABILITY) \
+			   bitbake iot-gw-image-prod' $(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),$(BASE):$(UBOOT_PROD_HARDENING_KAS),$(BASE))
 
 desktop:
 	# Prefer dedicated desktop KAS config; include local.yml if present for keys
@@ -86,7 +92,13 @@ bundle-base-full-fit-fast:
 			   bitbake iot-gw-bundle-full-fit' $(BASE)
 
 bundle-prod-full:
-	$(call bundle_cmd,iot-gw-image-prod,iot-gw-bundle-full)
+	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY" \
+			   BUNDLE_IMAGE_NAME=iot-gw-image-prod \
+			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
+			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
+			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
+			   IOTGW_ENABLE_OBSERVABILITY=$(IOTGW_ENABLE_OBSERVABILITY) \
+			   bitbake iot-gw-bundle-full' $(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),$(BASE):$(UBOOT_PROD_HARDENING_KAS),$(BASE))
 
 bundle-desktop-full:
 	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY" \
