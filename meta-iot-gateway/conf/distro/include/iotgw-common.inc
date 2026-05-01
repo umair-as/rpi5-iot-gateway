@@ -115,6 +115,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CRASH_DEBUG_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
@@ -148,10 +149,16 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_containers         - namespaces, cgroups (for podman/docker)
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
+#   igw_crash_debug_dev    - pstore ramoops + hung/soft lockup detectors (lab only)
 #   igw_no_efi             - disable kernel EFI runtime/stub surface (opt-in)
 #   igw_selinux            - SELinux compiled in, AppArmor remains default LSM
 #   igw_ima                - IMA measurement (PCR10, SHA256, ima-ng template)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
+
+# Optional crash-debug lab profile (disabled by default).
+# Enables pstore/ramoops and lockup detectors for post-mortem workflows.
+IOTGW_ENABLE_CRASH_DEBUG_DEV ?= "0"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' igw_crash_debug_dev', '', d)}"
 
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
 # Enable to pull built-in TPM kernel config and Raspberry Pi firmware overlay.
