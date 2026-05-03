@@ -1,0 +1,11 @@
+header:
+  version: 18
+  includes:
+    - "rpi5.yml"
+
+local_conf_header:
+  systemd_hw_watchdog: |
+    # Enable systemd PID1 hardware watchdog handling (requires active /dev/watchdog backend).
+    IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG = "1"
+    IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC = "20s"
+    IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC = "30s"

@@ -159,6 +159,13 @@ IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 # Enables pstore/ramoops and lockup detectors for post-mortem workflows.
 IOTGW_ENABLE_CRASH_DEBUG_DEV ?= "0"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' igw_crash_debug_dev', '', d)}"
+IOTGW_CRASH_PANIC_TIMEOUT ?= "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', '5', '10', d)}"
+
+# Optional: systemd hardware watchdog integration (disabled by default).
+# When enabled, PID1 opens /dev/watchdog and pings it at RuntimeWatchdogSec cadence.
+IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "0"
+IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "20s"
+IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"
 
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
 # Enable to pull built-in TPM kernel config and Raspberry Pi firmware overlay.

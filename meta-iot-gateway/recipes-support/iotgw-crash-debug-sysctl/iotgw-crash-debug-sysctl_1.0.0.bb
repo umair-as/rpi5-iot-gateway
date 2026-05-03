@@ -1,0 +1,18 @@
+SUMMARY = "Crash-debug sysctl defaults for lab builds"
+DESCRIPTION = "Installs sysctl defaults for panic reboot and sysrq to support repeatable crash validation workflows."
+LICENSE = "MIT"
+LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+
+SRC_URI = "file://95-iotgw-crash-debug.conf"
+
+S = "${WORKDIR}"
+
+do_install() {
+    install -d ${D}${datadir}/iotgw-crash-debug-sysctl
+    sed "s/@IOTGW_CRASH_PANIC_TIMEOUT@/${IOTGW_CRASH_PANIC_TIMEOUT}/g" \
+        ${WORKDIR}/95-iotgw-crash-debug.conf \
+        > ${D}${datadir}/iotgw-crash-debug-sysctl/95-iotgw-crash-debug.conf
+    chmod 0644 ${D}${datadir}/iotgw-crash-debug-sysctl/95-iotgw-crash-debug.conf
+}
+
+FILES:${PN} = "${datadir}/iotgw-crash-debug-sysctl/95-iotgw-crash-debug.conf"

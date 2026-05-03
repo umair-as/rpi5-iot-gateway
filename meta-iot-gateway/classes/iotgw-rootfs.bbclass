@@ -48,10 +48,20 @@ ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_journald;"
 
 ###### Sysctl drop-in
 iotgw_rootfs_sysctl() {
-    if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl/90-iotgw.conf ]; then
-        install -d ${IMAGE_ROOTFS}/etc/sysctl.d
-        install -m 0644 ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl/90-iotgw.conf \
-            ${IMAGE_ROOTFS}/etc/sysctl.d/90-iotgw.conf
+    install -d ${IMAGE_ROOTFS}/etc/sysctl.d
+
+    if [ -d ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl ]; then
+        for f in ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl/*.conf; do
+            [ -e "$f" ] || continue
+            install -m 0644 "$f" ${IMAGE_ROOTFS}/etc/sysctl.d/
+        done
+    fi
+
+    if [ -d ${IMAGE_ROOTFS}${datadir}/iotgw-crash-debug-sysctl ]; then
+        for f in ${IMAGE_ROOTFS}${datadir}/iotgw-crash-debug-sysctl/*.conf; do
+            [ -e "$f" ] || continue
+            install -m 0644 "$f" ${IMAGE_ROOTFS}/etc/sysctl.d/
+        done
     fi
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_sysctl;"
