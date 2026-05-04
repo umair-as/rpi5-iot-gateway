@@ -8,11 +8,11 @@ SRC_URI = "file://95-iotgw-crash-debug.conf"
 S = "${WORKDIR}"
 
 do_install() {
-    install -d ${D}${datadir}/iotgw-crash-debug-sysctl
-    sed "s/@IOTGW_CRASH_PANIC_TIMEOUT@/${IOTGW_CRASH_PANIC_TIMEOUT}/g" \
+    install -d ${D}${datadir}/iotgw-sysctl
+    sed "s|@IOTGW_CRASH_PANIC_TIMEOUT@|${IOTGW_CRASH_PANIC_TIMEOUT}|g" \
         ${WORKDIR}/95-iotgw-crash-debug.conf \
-        > ${D}${datadir}/iotgw-crash-debug-sysctl/95-iotgw-crash-debug.conf
-    chmod 0644 ${D}${datadir}/iotgw-crash-debug-sysctl/95-iotgw-crash-debug.conf
+        > ${D}${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf
+    chmod 0644 ${D}${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf
 }
 
-FILES:${PN} = "${datadir}/iotgw-crash-debug-sysctl/95-iotgw-crash-debug.conf"
+FILES:${PN} = "${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf"

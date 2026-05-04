@@ -98,6 +98,107 @@ cat /sys/kernel/debug/tracing/trace
 
 ---
 
+### `igw_pstore_persist`
+
+Kernel pstore RAM backend for persisting oops/panic state across reboot.
+**Production-safe; on by default in all images.**
+
+This is the *capture infrastructure* — no behavior change at runtime, just
+ensures that when the kernel does crash, the post-mortem evidence survives
+the reboot. Pairs with the systemd hardware watchdog so a stuck-kernel
+event becomes a watchdog reset → record landing on `/data` → recoverable
+unit on next boot.
+
+**Features (kernel):**
+- `CONFIG_PSTORE`, `CONFIG_PSTORE_RAM`, `CONFIG_PSTORE_CONSOLE`,
+  `CONFIG_PSTORE_PMSG`
+
+**BSP wiring (RPi5):** patch
+`0007-arm64-dts-broadcom-bcm2712-rpi-5-b-add-ramoops-reserved-memory.patch`
+reserves a 1 MiB region at `0x13000000` and binds a `compatible = "ramoops"`
+node to it. The patch is gated on the same toggle.
+
+**Userspace wiring:**
+- `systemd` is built with the `pstore` PACKAGECONFIG, so PID1 ships
+  `systemd-pstore.service`.
+- The `iotgw-pstore-persist` recipe ships
+  `var-lib-systemd-pstore.mount` (a systemd `.mount` unit, not a helper
+  service) which bind-mounts `/data/crash/pstore` onto
+  `/var/lib/systemd/pstore`. PID1 performs the mount, so it is host-visible
+  before `systemd-pstore.service` runs and writes records.
+- `systemd-pstore.service` gets a drop-in adding
+  `RequiresMountsFor=/var/lib/systemd/pstore`, which auto-orders it after
+  the bind mount.
+- A `tmpfiles.d` entry creates `/data/crash/pstore` on first boot.
+- `iotgw-pstore-prune.service` enforces retention by file count and total
+  bytes (defaults `IOTGW_PSTORE_MAX_FILES=20`, `IOTGW_PSTORE_MAX_BYTES=100M`)
+  and `xz`-compresses older records to keep the archive bounded.
+
+**Layer gate:** `IOTGW_ENABLE_PSTORE_PERSIST` (default `"1"`). The feature
+token is auto-appended to `IOTGW_KERNEL_FEATURES`; you do not normally list
+it explicitly.
+
+**Verification on target:**
+```bash
+# Reserved memory + ramoops registration
+dmesg | grep -E "reserved mem.*ramoops|pstore: Registered ramoops"
+
+# Bind mount visible to PID1
+findmnt /var/lib/systemd/pstore   # SOURCE should be /data/crash/pstore
+
+# Trigger a panic (lab only — requires sysrq, see igw_crash_debug_dev)
+echo c > /proc/sysrq-trigger
+# After reboot:
+ls /data/crash/pstore/            # console-ramoops-0, dmesg-ramoops-0, …
+```
+
+---
+
+### `igw_crash_debug_dev`
+
+**Aggressive lab-only debug** layered on top of `igw_pstore_persist`. Adds
+runtime detectors and kernel knobs that turn recoverable conditions into
+deterministic panics — useful in a debug campaign, **unsafe for fleet
+deployments**.
+
+**Features (kernel):**
+- `CONFIG_PSTORE_FTRACE` — function tracing into pstore for post-mortem
+  trace replay
+- `CONFIG_DYNAMIC_DEBUG`, `CONFIG_DYNAMIC_DEBUG_CORE` — runtime
+  pr_debug enablement via `/sys/kernel/debug/dynamic_debug/control`
+- `CONFIG_MAGIC_SYSRQ` — kernel control surface (security-relevant)
+- `CONFIG_DETECT_HUNG_TASK`, `CONFIG_SOFTLOCKUP_DETECTOR`
+- `CONFIG_HARDLOCKUP_DETECTOR` is intentionally **not** set — backend
+  support varies per platform/watchdog
+
+**Userspace wiring:**
+- `iotgw-crash-debug-sysctl` drops `/etc/sysctl.d/95-iotgw-crash-debug.conf`:
+  `kernel.panic = ${IOTGW_CRASH_PANIC_TIMEOUT}`,
+  `kernel.panic_on_oops = 1`, `kernel.sysrq = 1`.
+- `rpi-cmdline.bbappend` appends to the kernel command line:
+  `panic=${IOTGW_CRASH_PANIC_TIMEOUT} oops=panic sysrq_always_enabled=1`
+  (the cmdline value governs the kernel-phase panic timeout before
+  `sysctl.d` applies; both are driven by the same variable).
+
+**Layer gates:**
+- `IOTGW_ENABLE_CRASH_DEBUG_DEV` (default `"0"`) — opt-in.
+  Setting this to `"1"` implies `IOTGW_ENABLE_PSTORE_PERSIST=1`.
+- `IOTGW_CRASH_PANIC_TIMEOUT` (default `"5"`) — seconds.
+
+**What ships where:**
+
+| Component | prod default | dev (`IOTGW_ENABLE_CRASH_DEBUG_DEV=1`) |
+|---|:-:|:-:|
+| DT ramoops reserved-memory patch | ✓ | ✓ |
+| Kernel `PSTORE` family (RAM/CONSOLE/PMSG) | ✓ | ✓ |
+| `systemd` `pstore` PACKAGECONFIG + `systemd-pstore.service` | ✓ | ✓ |
+| `iotgw-pstore-persist` (`.mount` + tmpfiles + prune) | ✓ | ✓ |
+| `CONFIG_DYNAMIC_DEBUG`, `MAGIC_SYSRQ`, `DETECT_HUNG_TASK`, `SOFTLOCKUP_DETECTOR`, `PSTORE_FTRACE` | ✗ | ✓ |
+| `iotgw-crash-debug-sysctl` (panic/oops/sysrq sysctls) | ✗ | ✓ |
+| Cmdline `panic= oops=panic sysrq_always_enabled=1` | ✗ | ✓ |
+
+---
+
 ### `igw_security_prod`
 
 Comprehensive kernel hardening for production.

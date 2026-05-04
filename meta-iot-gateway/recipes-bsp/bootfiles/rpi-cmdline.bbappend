@@ -8,5 +8,7 @@ CMDLINE_ROOTFS = ""
 
 # Crash-debug lab profile (opt-in via IOTGW_ENABLE_CRASH_DEBUG_DEV=1):
 # - reserved-memory/ramoops is provided by a kernel DT patch
-# - keep panic/oops/sysrq behavior deterministic for lab crash testing
-CMDLINE:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' panic=10 oops=panic sysrq_always_enabled=1', '', d)}"
+# - panic= here governs the kernel-phase panic timeout (before /etc/sysctl.d
+#   applies); the same value is used post-userspace via 95-iotgw-crash-debug.conf
+#   so behavior is consistent across boot phases.
+CMDLINE:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' panic=%s oops=panic sysrq_always_enabled=1' % (d.getVar('IOTGW_CRASH_PANIC_TIMEOUT') or '5'), '', d)}"

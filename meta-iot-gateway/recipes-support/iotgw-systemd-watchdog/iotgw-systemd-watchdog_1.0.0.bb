@@ -9,8 +9,8 @@ S = "${WORKDIR}"
 
 do_install() {
     install -d ${D}${sysconfdir}/systemd/system.conf.d
-    sed -e "s/@IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC@/${IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC}/g" \
-        -e "s/@IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC@/${IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC}/g" \
+    sed -e "s|@IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC@|${IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC}|g" \
+        -e "s|@IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC@|${IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC}|g" \
         ${WORKDIR}/60-iotgw-watchdog.conf.in \
         > ${D}${sysconfdir}/systemd/system.conf.d/60-iotgw-watchdog.conf
     chmod 0644 ${D}${sysconfdir}/systemd/system.conf.d/60-iotgw-watchdog.conf

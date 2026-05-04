@@ -47,22 +47,19 @@ iotgw_rootfs_journald() {
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_journald;"
 
 ###### Sysctl drop-in
+# Recipes that ship sysctl fragments stage them under
+# ${datadir}/iotgw-sysctl/<NN>-<name>.conf. We promote everything in that
+# directory to /etc/sysctl.d/ at image-assembly time. systemd-sysctl applies
+# files in lexical order, so the NN- prefix drives precedence.
 iotgw_rootfs_sysctl() {
     install -d ${IMAGE_ROOTFS}/etc/sysctl.d
 
-    if [ -d ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl ]; then
-        for f in ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl/*.conf; do
-            [ -e "$f" ] || continue
-            install -m 0644 "$f" ${IMAGE_ROOTFS}/etc/sysctl.d/
-        done
-    fi
+    [ -d ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl ] || return 0
 
-    if [ -d ${IMAGE_ROOTFS}${datadir}/iotgw-crash-debug-sysctl ]; then
-        for f in ${IMAGE_ROOTFS}${datadir}/iotgw-crash-debug-sysctl/*.conf; do
-            [ -e "$f" ] || continue
-            install -m 0644 "$f" ${IMAGE_ROOTFS}/etc/sysctl.d/
-        done
-    fi
+    for f in ${IMAGE_ROOTFS}${datadir}/iotgw-sysctl/*.conf; do
+        [ -e "$f" ] || continue
+        install -m 0644 "$f" ${IMAGE_ROOTFS}/etc/sysctl.d/
+    done
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_sysctl;"
 
