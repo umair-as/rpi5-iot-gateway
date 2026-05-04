@@ -115,6 +115,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
@@ -148,10 +149,40 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_containers         - namespaces, cgroups (for podman/docker)
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
+#   igw_pstore_persist     - pstore ramoops capture stack (production-safe; default on)
+#   igw_crash_debug_dev    - aggressive lab-only debug (sysrq, hung-task, panic-on-oops)
 #   igw_no_efi             - disable kernel EFI runtime/stub surface (opt-in)
 #   igw_selinux            - SELinux compiled in, AppArmor remains default LSM
 #   igw_ima                - IMA measurement (PCR10, SHA256, ima-ng template)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
+
+# pstore persistence layer — production-safe. Reserves a 1 MiB ramoops region
+# in DT, builds the kernel pstore RAM backend, and bind-mounts /data-backed
+# storage onto /var/lib/systemd/pstore so kernel oops/panic state survives
+# reboot. No behavior change otherwise — capture infrastructure only.
+IOTGW_ENABLE_PSTORE_PERSIST ?= "1"
+
+# Aggressive crash-debug lab profile — opt-in. Adds sysrq, hung-task and
+# softlockup detectors, panic-on-oops, short panic timeout, and ftrace into
+# pstore. Implies pstore persistence. Not for production fleet.
+IOTGW_ENABLE_CRASH_DEBUG_DEV ?= "0"
+
+# Effective persistence flag: crash-debug-dev always implies pstore-persist.
+IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE = "${@'1' if (d.getVar('IOTGW_ENABLE_CRASH_DEBUG_DEV') == '1' or d.getVar('IOTGW_ENABLE_PSTORE_PERSIST') == '1') else '0'}"
+
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE', '1', ' igw_pstore_persist', '', d)}"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' igw_crash_debug_dev', '', d)}"
+
+# Crash-debug panic timeout (seconds). Only used by the lab sysctl/cmdline
+# drop-ins; production runs without an explicit panic timeout and relies on
+# the hardware watchdog for stuck-kernel recovery.
+IOTGW_CRASH_PANIC_TIMEOUT ?= "5"
+
+# Optional: systemd hardware watchdog integration (disabled by default).
+# When enabled, PID1 opens /dev/watchdog and pings it at RuntimeWatchdogSec cadence.
+IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "0"
+IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "20s"
+IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"
 
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
 # Enable to pull built-in TPM kernel config and Raspberry Pi firmware overlay.

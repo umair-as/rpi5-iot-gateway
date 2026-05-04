@@ -1,0 +1,23 @@
+[Unit]
+Description=Prune persisted pstore archives on /data
+DefaultDependencies=no
+After=systemd-pstore.service local-fs.target
+Wants=systemd-pstore.service
+ConditionPathIsDirectory=/data/crash/pstore
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/iotgw-pstore-prune
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ReadWritePaths=/data/crash/pstore
+
+[Install]
+WantedBy=multi-user.target
