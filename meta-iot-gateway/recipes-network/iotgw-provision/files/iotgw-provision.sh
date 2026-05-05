@@ -97,29 +97,82 @@ get_fw_env_value() {
 }
 
 apply_uboot_policy() {
-    local desired current
+    local desired current cur_setbootargs features lockdown
 
     [ -r "$UBOOT_POLICY" ] || return 0
-    desired="$(get_env_value "$UBOOT_POLICY" "IOTGW_UBOOT_BOOTDELAY")"
-    [ -n "$desired" ] || return 0
 
     if ! command -v fw_setenv >/dev/null 2>&1 || ! command -v fw_printenv >/dev/null 2>&1; then
-        warn "U-Boot policy present but fw_setenv/fw_printenv unavailable; skipping bootdelay policy"
+        warn "U-Boot policy present but fw_setenv/fw_printenv unavailable; skipping U-Boot policy"
         return 0
     fi
 
-    current="$(get_fw_env_value "bootdelay")"
-    if [ "$current" = "$desired" ]; then
-        log "ℹ️  [provision] U-Boot bootdelay already set to ${desired}"
-        return 0
+    # Detect appliance_lockdown profile: in prod, U-Boot enforces
+    # CONFIG_ENV_WRITEABLE_LIST so any fw_setenv to vars not on the
+    # whitelist (EXTRA_KERNEL_ARGS, iotgw_set_bootargs, etc.) is rejected
+    # by design. We must not retry those writes every boot — the policy
+    # is enforced at the image-build/U-Boot-binary layer instead, and
+    # spamming warnings would mislead operators.
+    features="$(get_env_value "$UBOOT_POLICY" "IOTGW_UBOOT_FEATURES")"
+    case " $features " in
+        *" appliance_lockdown "*) lockdown=1 ;;
+        *) lockdown=0 ;;
+    esac
+
+    # 1. bootdelay (always allowed under prod whitelist via :w access)
+    desired="$(get_env_value "$UBOOT_POLICY" "IOTGW_UBOOT_BOOTDELAY")"
+    if [ -n "$desired" ]; then
+        current="$(get_fw_env_value "bootdelay")"
+        if [ "$current" = "$desired" ]; then
+            log "ℹ️  [provision] U-Boot bootdelay already set to ${desired}"
+        elif fw_setenv bootdelay "$desired"; then
+            UBOOT_ENV_UPDATES=$((UBOOT_ENV_UPDATES + 1))
+            CHANGED=1
+            log "⚙️  [provision] Applied U-Boot bootdelay policy: ${current:-<unset>} -> ${desired}"
+        else
+            warn "Failed to apply U-Boot bootdelay policy (${desired})"
+        fi
     fi
 
-    if fw_setenv bootdelay "$desired"; then
-        UBOOT_ENV_UPDATES=$((UBOOT_ENV_UPDATES + 1))
-        CHANGED=1
-        log "⚙️  [provision] Applied U-Boot bootdelay policy: ${current:-<unset>} -> ${desired}"
+    # 2. EXTRA_KERNEL_ARGS — runtime cmdline-tuning policy.
+    #    Dev: applied via fw_setenv (var is writable).
+    #    Prod (appliance_lockdown): rejected by env writeable-list (var has
+    #    `:sr` access in CONFIG_ENV_FLAGS_LIST_STATIC). Skip cleanly to
+    #    avoid noisy per-boot warnings on a system behaving as designed.
+    if [ "$lockdown" = "1" ]; then
+        log "ℹ️  [provision] EXTRA_KERNEL_ARGS reconciliation skipped (appliance_lockdown blocks runtime env writes; cmdline policy is image-baked)"
     else
-        warn "Failed to apply U-Boot bootdelay policy (${desired})"
+        desired="$(get_env_value "$UBOOT_POLICY" "IOTGW_UBOOT_EXTRA_KERNEL_ARGS")"
+        current="$(get_fw_env_value "EXTRA_KERNEL_ARGS")"
+        if [ "$current" != "$desired" ]; then
+            if fw_setenv EXTRA_KERNEL_ARGS "$desired"; then
+                UBOOT_ENV_UPDATES=$((UBOOT_ENV_UPDATES + 1))
+                CHANGED=1
+                log "⚙️  [provision] Applied U-Boot EXTRA_KERNEL_ARGS policy: ${current:-<unset>} -> ${desired:-<empty>}"
+            else
+                warn "Failed to apply U-Boot EXTRA_KERNEL_ARGS policy (${desired:-<empty>})"
+            fi
+        else
+            log "ℹ️  [provision] U-Boot EXTRA_KERNEL_ARGS already matches policy"
+        fi
+    fi
+
+    # 3. iotgw_set_bootargs OTA env-refresh.
+    #    Dev: clear stale value so U-Boot falls back to new compiled-in default.
+    #    Prod (appliance_lockdown): also blocked by writeable-list. Stale
+    #    iotgw_set_bootargs in prod is fixed by the next signed image
+    #    update that ships a new u-boot.bin — env wipe is part of the
+    #    image-redeploy lifecycle, not a runtime concern.
+    cur_setbootargs="$(get_fw_env_value "iotgw_set_bootargs")"
+    if [ -n "$cur_setbootargs" ] && ! printf '%s' "$cur_setbootargs" | grep -q 'EXTRA_KERNEL_ARGS'; then
+        if [ "$lockdown" = "1" ]; then
+            log "ℹ️  [provision] Stale iotgw_set_bootargs detected (no EXTRA_KERNEL_ARGS clause); appliance_lockdown blocks env modification — will be cleared on next signed-image redeploy that wipes/restores env"
+        elif fw_setenv iotgw_set_bootargs; then
+            UBOOT_ENV_UPDATES=$((UBOOT_ENV_UPDATES + 1))
+            CHANGED=1
+            log "⚙️  [provision] Cleared stale iotgw_set_bootargs (no EXTRA_KERNEL_ARGS clause); next boot uses compiled-in default"
+        else
+            warn "Failed to clear stale iotgw_set_bootargs"
+        fi
     fi
 }
 
