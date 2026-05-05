@@ -117,6 +117,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYP
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_HW_WATCHDOG IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PANIC_ON_OOPS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
@@ -180,6 +181,13 @@ IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_D
 # floor that covers early-boot/pre-sysctl panics. Lab sysctl overrides
 # this downward to 5s once userspace is up.
 IOTGW_CRASH_PANIC_TIMEOUT ?= "5"
+
+# Escalate kernel oops to panic so the panic timeout above actually fires
+# for kernel-thread/driver oopses (default-on for fleet posture). Override
+# to "0" in kas/local.yml during BSP bring-up / bisect work to keep
+# tainted-but-running kernels accessible for triage. Wires
+# panic-on-oops.cfg into the kernel build.
+IOTGW_ENABLE_PANIC_ON_OOPS ?= "1"
 
 # BCM2712 hardware watchdog kernel-side enablement (default on).
 # Pulls in three kernel patches that backport the BCM2712 PM/power/DT

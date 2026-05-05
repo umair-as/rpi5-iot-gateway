@@ -16,11 +16,16 @@ The distribution uses **modular kernel configuration** based on feature fragment
 - `storage-filesystems.cfg` — OverlayFS, dm-verity, SquashFS (required for RAUC)
 - `ikconfig.cfg` — runtime kernel config introspection support
 - `audit.cfg` — audit framework plumbing
-- `panic-recovery.cfg` — kernel-baked panic posture: `CONFIG_PANIC_TIMEOUT=30`
-  + `CONFIG_BOOTPARAM_PANIC_ON_OOPS=y`. Any oops escalates to panic, panic
-  reboots within 30s — applies from the first instruction the kernel runs,
-  before userspace, before sysctl, before watchdog drivers probe. Closes
-  the early-boot "kernel hangs requiring power cycle" failure class.
+- `panic-recovery.cfg` — `CONFIG_PANIC_TIMEOUT=30`. Always applied.
+  Closes the early-boot "kernel hangs requiring power cycle" failure
+  class — any panic auto-reboots within 30s, applies from the first
+  instruction the kernel runs.
+- `panic-on-oops.cfg` — `CONFIG_BOOTPARAM_PANIC_ON_OOPS=y`. Gated by
+  `IOTGW_ENABLE_PANIC_ON_OOPS` (default `"1"`); set to `"0"` in
+  `kas/local.yml` for dev/bring-up builds where you want tainted-but-
+  running kernels for triage instead of immediate panic+reboot. Together
+  with `panic-recovery.cfg` this covers kernel-thread/driver oopses, not
+  just init-killing ones.
 - `rtc-rpi.cfg` — Raspberry Pi RTC support (gated by `IOTGW_ENABLE_RPI_RTC`)
 
 **Optional Feature Sets:** Controlled via `IOTGW_KERNEL_FEATURES` variable
