@@ -17,6 +17,7 @@ SRC_URI:append = " \
     file://fragments/storage-filesystems.cfg \
     file://fragments/ikconfig.cfg \
     file://fragments/audit.cfg \
+    file://fragments/panic-recovery.cfg \
 "
 SRC_URI:append = "${@' file://fragments/rtc-rpi.cfg' if d.getVar('IOTGW_ENABLE_RPI_RTC') == '1' else ''}"
 SRC_URI:append = "${@' file://fragments/vcio-rpi.cfg' if d.getVar('IOTGW_ENABLE_VCIO') == '1' else ''}"

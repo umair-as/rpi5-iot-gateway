@@ -16,6 +16,11 @@ The distribution uses **modular kernel configuration** based on feature fragment
 - `storage-filesystems.cfg` — OverlayFS, dm-verity, SquashFS (required for RAUC)
 - `ikconfig.cfg` — runtime kernel config introspection support
 - `audit.cfg` — audit framework plumbing
+- `panic-recovery.cfg` — kernel-baked panic posture: `CONFIG_PANIC_TIMEOUT=30`
+  + `CONFIG_BOOTPARAM_PANIC_ON_OOPS=y`. Any oops escalates to panic, panic
+  reboots within 30s — applies from the first instruction the kernel runs,
+  before userspace, before sysctl, before watchdog drivers probe. Closes
+  the early-boot "kernel hangs requiring power cycle" failure class.
 - `rtc-rpi.cfg` — Raspberry Pi RTC support (gated by `IOTGW_ENABLE_RPI_RTC`)
 
 **Optional Feature Sets:** Controlled via `IOTGW_KERNEL_FEATURES` variable
@@ -112,6 +117,11 @@ unit on next boot.
 **Features (kernel):**
 - `CONFIG_PSTORE`, `CONFIG_PSTORE_RAM`, `CONFIG_PSTORE_CONSOLE`,
   `CONFIG_PSTORE_PMSG`
+
+Reboot-on-panic semantics live in the always-applied `panic-recovery.cfg`
+fragment, not here — pstore is the post-mortem capture stack, panic
+recovery is the system-wide reboot policy. They're orthogonal: pstore can
+be disabled without losing panic recovery, and vice versa.
 
 **BSP wiring (RPi5):** patch
 `0007-arm64-dts-broadcom-bcm2712-rpi-5-b-add-ramoops-reserved-memory.patch`

@@ -5,7 +5,16 @@ header:
 
 local_conf_header:
   systemd_hw_watchdog: |
-    # Enable systemd PID1 hardware watchdog handling (requires active /dev/watchdog backend).
-    IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG = "1"
-    IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC = "20s"
-    IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC = "30s"
+    # Watchdog profile. Kernel-side BSP enablement (IOTGW_ENABLE_HW_WATCHDOG)
+    # defaults to "1" in iotgw-common.inc; that ships /dev/watchdog0 via the
+    # BCM2712 backport. Userspace use of the watchdog (systemd PID1 feeding,
+    # per-image RuntimeWatchdogSec/ShutdownWatchdogSec) is currently held
+    # off pending fix for the systemd PID1 ping path on BCM2712 — pings
+    # opening /dev/watchdog0 announce a timeout but the hardware fires at
+    # the first interval rather than being kept alive. See follow-up issue.
+    #
+    # Defaults below are weak so kas/local.yml can hard-override after the
+    # PID1 bug is fixed (set to "1" + adjust RUNTIME/SHUTDOWN seconds).
+    IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "0"
+    IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "20s"
+    IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"
