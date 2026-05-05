@@ -58,6 +58,8 @@ iotgw_write_uboot_policy () {
     cat > ${IMAGE_ROOTFS}${sysconfdir}/default/iotgw-uboot-policy <<EOF
 # Managed by image build. Applied on target by iotgw-provision.sh.
 IOTGW_UBOOT_BOOTDELAY=${IOTGW_UBOOT_BOOTDELAY}
+IOTGW_UBOOT_EXTRA_KERNEL_ARGS=${IOTGW_UBOOT_EXTRA_KERNEL_ARGS}
+IOTGW_UBOOT_FEATURES=${IOTGW_UBOOT_FEATURES}
 EOF
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_write_uboot_policy; "

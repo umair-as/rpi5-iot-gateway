@@ -46,10 +46,16 @@ Graphics, video, and media processing support.
 
 **CMA Configuration:**
 ```bash
-# Increase CMA for camera/video if needed
+# Increase CMA for camera/video if needed (dev images only — see note below)
 fw_setenv EXTRA_KERNEL_ARGS "cma=256M"
 reboot
 ```
+
+> **Note:** `EXTRA_KERNEL_ARGS` is honoured on **dev images** only. Production
+> images with `appliance_lockdown` reject writes to this variable via the
+> U-Boot env writeable-list (intentional — runtime cmdline tuning is a
+> boot-policy override). See [U-Boot Hardening](UBOOT_HARDENING.md) for the
+> full dev/prod asymmetry and OTA env-refresh caveat.
 
 ---
 
@@ -398,7 +404,7 @@ IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw
 # View current args
 fw_printenv bootargs
 
-# Add custom args
+# Add custom args (dev images only — see U-Boot Hardening doc)
 fw_setenv EXTRA_KERNEL_ARGS "cma=256M quiet loglevel=3"
 
 # Clear custom args
@@ -407,6 +413,12 @@ fw_setenv EXTRA_KERNEL_ARGS ""
 # Reboot to apply
 reboot
 ```
+
+> **OTA-updated devices**: if `fw_setenv EXTRA_KERNEL_ARGS=...` doesn't
+> appear in `/proc/cmdline` after reboot, the persisted env still has an
+> older `iotgw_set_bootargs` from before the fix landed. One-time recovery
+> from the U-Boot prompt: `env default iotgw_set_bootargs; saveenv`.
+> Fresh WIC flashes pick up the new behaviour automatically.
 
 ### Common Parameters
 

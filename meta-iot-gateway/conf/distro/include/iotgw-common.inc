@@ -118,6 +118,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINER
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_HW_WATCHDOG IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PANIC_ON_OOPS"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_UBOOT_EXTRA_KERNEL_ARGS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
@@ -188,6 +189,22 @@ IOTGW_CRASH_PANIC_TIMEOUT ?= "5"
 # tainted-but-running kernels accessible for triage. Wires
 # panic-on-oops.cfg into the kernel build.
 IOTGW_ENABLE_PANIC_ON_OOPS ?= "1"
+
+# Build-time U-Boot EXTRA_KERNEL_ARGS policy. Applied at first boot (and
+# on every fresh OTA install) by iotgw-provision.sh::apply_uboot_policy
+# via fw_setenv. Honoured by iotgw_set_bootargs in U-Boot, which appends
+# the value to bootargs after `root=PARTUUID` and `rauc.slot=`.
+#
+# Default empty — no runtime cmdline injection. Lab/dev profiles that
+# want panic/oops/sysrq handling for crash-debug workflows append below.
+#
+# Production images with `appliance_lockdown` reject EXTRA_KERNEL_ARGS
+# writes via the env writeable-list, so this policy is dev-only at
+# runtime — the prod posture stays "no runtime cmdline injection from
+# anywhere". For prod-fleet cmdline tuning, change this variable in the
+# image build (rebuild + RAUC OTA). The fw_setenv path is gated; the
+# build-time path is signed.
+IOTGW_UBOOT_EXTRA_KERNEL_ARGS ?= "${@('panic=%s oops=panic sysrq_always_enabled=1' % (d.getVar('IOTGW_CRASH_PANIC_TIMEOUT') or '5')) if d.getVar('IOTGW_ENABLE_CRASH_DEBUG_DEV') == '1' else ''}"
 
 # BCM2712 hardware watchdog kernel-side enablement (default on).
 # Pulls in three kernel patches that backport the BCM2712 PM/power/DT

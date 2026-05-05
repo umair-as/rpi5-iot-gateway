@@ -172,6 +172,59 @@ Note: `CONFIG_FIT_SIGNATURE_ENFORCE` was removed upstream in U-Boot
 | Env write allowlist | `CONFIG_ENV_WRITEABLE_LIST=y` |
 | Force flag blocked | `CONFIG_ENV_ACCESS_IGNORE_FORCE=y` |
 | Appliance vars read-only | `CONFIG_ENV_FLAGS_LIST_STATIC` |
+| `EXTRA_KERNEL_ARGS` runtime injection | Blocked — not on writeable list (explicit `:sr`) |
+
+### Runtime cmdline tuning: `EXTRA_KERNEL_ARGS` (dev-only)
+
+The compiled-in `iotgw_set_bootargs` U-Boot env honours `EXTRA_KERNEL_ARGS`
+when set: its value is appended to the kernel cmdline after `root=PARTUUID`
+and `rauc.slot=`. This is the documented runtime cmdline-tuning escape
+hatch (`fw_setenv EXTRA_KERNEL_ARGS "cma=256M"`, etc. — see
+[KERNEL.md](KERNEL.md)).
+
+**Dev images** (`surface_reduce + fit_enforce` only): the variable is
+freely writable. A root operator can set/clear it via `fw_setenv` and
+the value reaches `/proc/cmdline` on the next boot.
+
+**Production images** (`appliance_lockdown` adds env-writeable-list
+enforcement): `EXTRA_KERNEL_ARGS` is **not** on the whitelist (explicit
+`:sr` entry in `CONFIG_ENV_FLAGS_LIST_STATIC`), and `CONFIG_ENV_ACCESS_IGNORE_FORCE=y`
+blocks the `-f` bypass. Writes are rejected at the U-Boot env layer.
+The `if test -n "${EXTRA_KERNEL_ARGS}"` branch in `iotgw_set_bootargs`
+becomes dead code at runtime — the variable can never become non-empty.
+
+This matches the threat-model row "Env lockdown | Tampering | Prevent
+runtime boot policy override". Runtime kernel-args injection *is* a boot
+policy override; in prod it's blocked, in dev it's an intentional
+operator escape hatch.
+
+If a deployed prod fleet ever needs cmdline tuning, the path is:
+1. Build a new image with the desired arg in `cmdline.txt` via
+   `rpi-cmdline.bbappend`'s `CMDLINE:append`, or
+2. Use a future build-time policy variable (`IOTGW_UBOOT_EXTRA_KERNEL_ARGS`,
+   tracked as Issue #54 follow-up Part B) that bakes the value into
+   `iotgw_set_bootargs` itself rather than going through env writes —
+   bypasses the lockdown by being part of the signed image.
+
+### OTA env-refresh caveat
+
+`iotgw_set_bootargs` itself is a *compiled-in default* in U-Boot. Once a
+device has run `bootcmd` (which calls `saveenv` after assembling
+bootargs), the persisted env in `/uboot-env/uboot.env` keeps whatever
+`iotgw_set_bootargs` value was current at that save. Subsequent boots
+load from persisted env, **not** the new compiled-in default.
+
+This means: when the U-Boot binary is updated via RAUC OTA (e.g., the
+fix that activated `EXTRA_KERNEL_ARGS` honouring), the persisted env
+still has the old `iotgw_set_bootargs` and the new behaviour doesn't
+take effect. Recovery is a one-time `env default iotgw_set_bootargs;
+saveenv` from the U-Boot prompt. Fresh WIC flashes pick up the new
+default automatically.
+
+Tracked for automation under the same Issue #54 follow-up — provisioning
+will eventually `fw_setenv` the canonical `iotgw_set_bootargs` on first
+boot of an updated slot, parallel to how `IOTGW_UBOOT_BOOTDELAY` is
+applied today.
 
 ### Production key guard
 
