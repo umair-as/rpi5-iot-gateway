@@ -116,6 +116,8 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_HW_WATCHDOG IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PANIC_ON_OOPS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
@@ -173,13 +175,35 @@ IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE = "${@'1' if (d.getVar('IOTGW_ENABLE_CRASH
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE', '1', ' igw_pstore_persist', '', d)}"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' igw_crash_debug_dev', '', d)}"
 
-# Crash-debug panic timeout (seconds). Only used by the lab sysctl/cmdline
-# drop-ins; production runs without an explicit panic timeout and relies on
-# the hardware watchdog for stuck-kernel recovery.
+# Crash-debug panic timeout (seconds). Drives the lab sysctl + cmdline
+# drop-ins for fast post-mortem turnaround. The kernel-baked default
+# (CONFIG_PANIC_TIMEOUT=30 in panic-recovery.cfg, always applied) is the
+# floor that covers early-boot/pre-sysctl panics. Lab sysctl overrides
+# this downward to 5s once userspace is up.
 IOTGW_CRASH_PANIC_TIMEOUT ?= "5"
 
+# Escalate kernel oops to panic so the panic timeout above actually fires
+# for kernel-thread/driver oopses (default-on for fleet posture). Override
+# to "0" in kas/local.yml during BSP bring-up / bisect work to keep
+# tainted-but-running kernels accessible for triage. Wires
+# panic-on-oops.cfg into the kernel build.
+IOTGW_ENABLE_PANIC_ON_OOPS ?= "1"
+
+# BCM2712 hardware watchdog kernel-side enablement (default on).
+# Pulls in three kernel patches that backport the BCM2712 PM/power/DT
+# stack from raspberrypi/linux rpi-6.12.y so /dev/watchdog0 is exposed on
+# RPi5: bcm2835-pm MFD match (0008), bcm2712.dtsi PM node (0009), and
+# bcm2835-power probe NULL-deref guard (0010 — companion required when
+# bcm2835-pm registers the power cell on a BCM2712 with no asb window).
+# Disable for stripped builds that don't need a hardware watchdog at all.
+# Independent of the systemd PID1 ping below — kernel-side enablement is
+# harmless on its own (an unopened /dev/watchdog0 does not trigger reboot).
+IOTGW_ENABLE_HW_WATCHDOG ?= "1"
+
 # Optional: systemd hardware watchdog integration (disabled by default).
-# When enabled, PID1 opens /dev/watchdog and pings it at RuntimeWatchdogSec cadence.
+# When enabled, PID1 opens /dev/watchdog and pings it at RuntimeWatchdogSec
+# cadence. Requires IOTGW_ENABLE_HW_WATCHDOG=1 (or another driver source)
+# for /dev/watchdog to exist.
 IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "0"
 IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "20s"
 IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"

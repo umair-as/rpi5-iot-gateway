@@ -17,7 +17,11 @@ SRC_URI:append = " \
     file://fragments/storage-filesystems.cfg \
     file://fragments/ikconfig.cfg \
     file://fragments/audit.cfg \
+    file://fragments/panic-recovery.cfg \
 "
+# panic-on-oops.cfg is gated so dev/bring-up builds can disable
+# CONFIG_BOOTPARAM_PANIC_ON_OOPS without source edits (default-on).
+SRC_URI:append = "${@' file://fragments/panic-on-oops.cfg' if d.getVar('IOTGW_ENABLE_PANIC_ON_OOPS') == '1' else ''}"
 SRC_URI:append = "${@' file://fragments/rtc-rpi.cfg' if d.getVar('IOTGW_ENABLE_RPI_RTC') == '1' else ''}"
 SRC_URI:append = "${@' file://fragments/vcio-rpi.cfg' if d.getVar('IOTGW_ENABLE_VCIO') == '1' else ''}"
 

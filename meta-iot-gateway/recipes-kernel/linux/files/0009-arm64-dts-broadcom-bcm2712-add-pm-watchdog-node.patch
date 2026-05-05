@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Mon, 4 May 2026 16:00:00 +0200
+Subject: [PATCH] arm64: dts: broadcom: bcm2712: add PM/watchdog node
+
+Add the BCM2712 PM unit (which hosts the watchdog) to bcm2712.dtsi so the
+backported bcm2835-pm MFD driver can probe and register its child cells.
+The "bcm2835-wdt" cell exposes /dev/watchdog0; "bcm2835-power" provides
+power-domain reset for the V3D block.
+
+The PM block lives at 0x7d200000 (length 0x308) and exposes only the "pm"
+register range on BCM2712 — the "asb" and "rpivid_asb" ranges present on
+BCM2711 are absent here. The bcm2835-pm driver detects this via the
+"brcm,bcm2712-pm" compatible (added by the companion driver patch).
+
+system-power-controller is set so the watchdog's reboot path is the
+default reset path on this platform.
+
+Source: arch/arm64/boot/dts/broadcom/bcm2712-ds.dtsi in
+raspberrypi/linux rpi-6.12.y (node `pm: watchdog@7d200000`).
+
+Upstream-Status: Backport [from raspberrypi/linux rpi-6.12.y; pending stable]
+---
+ arch/arm64/boot/dts/broadcom/bcm2712.dtsi | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/broadcom/bcm2712.dtsi b/arch/arm64/boot/dts/broadcom/bcm2712.dtsi
+index 0000000..0000000 100644
+--- a/arch/arm64/boot/dts/broadcom/bcm2712.dtsi
++++ b/arch/arm64/boot/dts/broadcom/bcm2712.dtsi
+@@ -250,6 +250,15 @@
+ 			status = "disabled";
+ 		};
+
++		pm: watchdog@7d200000 {
++			compatible = "brcm,bcm2712-pm";
++			reg = <0x7d200000 0x308>;
++			reg-names = "pm";
++			#power-domain-cells = <1>;
++			#reset-cells = <1>;
++			system-power-controller;
++		};
++
+ 		pinctrl: pinctrl@7d504100 {
+ 			compatible = "brcm,bcm2712c0-pinctrl";
+ 			reg = <0x7d504100 0x30>;
+--
+2.43.0
