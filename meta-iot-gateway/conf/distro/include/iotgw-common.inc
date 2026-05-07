@@ -113,7 +113,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_STREAMING_KEY_MODE IOTGW_RAUC_PKCS1
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_HW_WATCHDOG IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG"
@@ -152,6 +152,7 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_containers         - namespaces, cgroups (for podman/docker)
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
 #   igw_observability_dev  - eBPF/ftrace/kprobes (dev builds only)
+#   igw_btf_core_dev       - BTF/DWARF metadata for libbpf CO-RE lab workflows
 #   igw_pstore_persist     - pstore ramoops capture stack (production-safe; default on)
 #   igw_crash_debug_dev    - aggressive lab-only debug (sysrq, hung-task, panic-on-oops)
 #   igw_no_efi             - disable kernel EFI runtime/stub surface (opt-in)
@@ -330,6 +331,12 @@ RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1',
 # Containerized observability is paused on Scarthgap due to Rust toolchain skew
 # in netavark/aardvark-dns and will be revisited on the next Yocto LTS rebase.
 IOTGW_ENABLE_OBSERVABILITY ?= "0"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_OBSERVABILITY', '1', ' igw_observability_dev', '', d)}"
+
+# Optional BTF/CO-RE lab kernel metadata gate. Kept separate from generic
+# observability so profiles can choose one or both without coupling.
+IOTGW_ENABLE_BTF_CORE_DEV ?= "0"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_BTF_CORE_DEV', '1', ' igw_btf_core_dev', '', d)}"
 # Telegraf dependency mode:
 #   0: local-first startup (network.target) with runtime retries (default)
 #   1: strict startup ordering via network-online.target (remote endpoints)

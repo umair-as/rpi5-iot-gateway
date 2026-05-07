@@ -16,6 +16,8 @@ KCONFIG_MODE = "--alldefconfig"
 KBUILD_DEFCONFIG:raspberrypi5 ?= "defconfig"
 
 COMPATIBLE_MACHINE = "^raspberrypi5$"
+DEPENDS:append = "${@' pahole-native' if 'igw_btf_core_dev' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+KERNEL_DEBUG = "${@'True' if 'igw_btf_core_dev' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 
 # Gate Raspberry Pi firmware RTC backport for easy A/B build testing.
 IOTGW_ENABLE_RPI_RTC ?= "1"

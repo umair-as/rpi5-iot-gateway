@@ -30,6 +30,7 @@ SRC_URI:append = "${@' file://fragments/compute-media.cfg' if 'igw_compute_media
 SRC_URI:append = "${@' file://fragments/containers-cgroups.cfg' if 'igw_containers' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/networking-iot.cfg' if 'igw_networking_iot' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/observability-dev.cfg' if 'igw_observability_dev' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+SRC_URI:append = "${@' file://fragments/btf-core-dev.cfg' if 'igw_btf_core_dev' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/pstore-persist.cfg' if 'igw_pstore_persist' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/debug-crash-dev.cfg' if 'igw_crash_debug_dev' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 SRC_URI:append = "${@' file://fragments/security-prod.cfg' if 'igw_security_prod' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"

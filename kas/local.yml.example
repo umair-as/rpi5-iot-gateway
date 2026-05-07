@@ -116,3 +116,8 @@ local_conf_header:
     # IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/home/you/rauc-keys/ota-dev-ca/device-filekey.crt"
     # IOTGW_RAUC_ENCRYPTION_KEY = "/etc/ota/device.key"
     # IOTGW_RAUC_ENCRYPTION_CERT = "/etc/ota/device.crt"
+
+  btf_core_dev_toggle: |
+    # Optional kernel BTF/CO-RE lab metadata gate.
+    # Keep disabled by default; enable for eBPF/libbpf CO-RE workflows.
+    # IOTGW_ENABLE_BTF_CORE_DEV = "1"
