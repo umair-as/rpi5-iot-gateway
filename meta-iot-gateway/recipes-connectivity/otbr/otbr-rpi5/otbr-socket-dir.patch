@@ -1,5 +1,5 @@
 From 2dd5e3f3e5f2f9c3a4b6d9f0f5a02c7f7b9e2f1c Mon Sep 17 00:00:00 2001
-From: Codex <codex@openai.com>
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 Date: Wed, 12 Feb 2026 19:55:00 +0000
 Subject: [PATCH] posix: place otbr daemon socket under /run/otbr
 
