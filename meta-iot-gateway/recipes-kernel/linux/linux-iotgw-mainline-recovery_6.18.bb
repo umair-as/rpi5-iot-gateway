@@ -28,7 +28,7 @@ KERNEL_PACKAGE_NAME = "kernel-recovery"
 # Keep recovery kernel module ABI compatible with production rootfs modules.
 # This recipe boots the same rootfs, so kernel feature set must match the
 # production feature profile to avoid module load failures.
-IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw_observability_dev igw_security_prod"
+IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw_security_prod"
 
 # Optional recovery initramfs bundling. Default OFF to avoid circular
 # dependencies with FIT flow kernel packaging graph.
