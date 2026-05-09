@@ -88,8 +88,10 @@ EXTRA_OECMAKE = " \
 # Enable telemetry and link metrics for richer D-Bus/dashboard data.
 EXTRA_OECMAKE:append = " -DOTBR_TELEMETRY_DATA_API=ON -DOTBR_LINK_METRICS_TELEMETRY=ON -DOTBR_FEATURE_FLAGS=ON"
 
-# Enable and configure systemd services
-SYSTEMD_AUTO_ENABLE = "enable"
+# otbr-agent is udev-activated (see otbr-rcp.rules: SYSTEMD_WANTS).
+# Do not enable via WantedBy=multi-user.target — that would pull the unit
+# into the boot transaction and block on the missing dev-otbr\x2drcp.device.
+SYSTEMD_AUTO_ENABLE = "disable"
 SYSTEMD_SERVICE:${PN} = "otbr-agent.service"
 
 # Install fixed systemd service files

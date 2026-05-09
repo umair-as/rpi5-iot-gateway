@@ -1,8 +1,11 @@
 [Unit]
 Description=OpenThread Border Router Agent
 ConditionPathExists=/usr/sbin/otbr-agent
-Requires=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
-After=dbus.socket avahi-daemon.service dev-otbr\x2drcp.device
+ConditionPathExists=/dev/otbr-rcp
+Requires=dbus.socket avahi-daemon.service
+After=dbus.socket avahi-daemon.service
+BindsTo=dev-otbr\x2drcp.device
+After=dev-otbr\x2drcp.device
 
 [Service]
 User=otbr
@@ -22,6 +25,11 @@ KillMode=mixed
 Restart=on-failure
 RestartSec=5
 RestartPreventExitStatus=SIGKILL
+# otbr-agent exits 5 when the RCP serial port disappears mid-operation
+# (RCP unplug). BindsTo=dev-otbr-rcp.device already stops the unit cleanly
+# in that case; treat exit 5 as success so `systemctl status` stays green
+# instead of showing a stale "failed" after every unplug.
+SuccessExitStatus=5
 
 # Capabilities and hardening
 AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE
@@ -47,6 +55,8 @@ StateDirectory=thread
 ReadWritePaths=/var/lib/thread
 ReadWritePaths=/run
 
-[Install]
-WantedBy=multi-user.target
-Alias=otbr-agent.service
+# No [Install] section: activation is exclusively via the udev rule
+# (ENV{SYSTEMD_WANTS}+="otbr-agent.service") when /dev/otbr-rcp appears.
+# A WantedBy=multi-user.target would pull this unit into the boot transaction
+# and block on `After=dev-otbr\x2drcp.device` until DefaultTimeoutStartSec,
+# even though ConditionPathExists would ultimately skip it.

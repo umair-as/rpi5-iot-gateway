@@ -1,7 +1,5 @@
 [Unit]
 Description=OpenThread Border Router Web UI
-After=otbr-agent.service
-Wants=otbr-agent.service
 
 [Service]
 User=otbr
