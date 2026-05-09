@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `scripts/release-manifest.sh` now auto-detects the Yocto deploy directory
+  (`build/tmp/deploy` or `build/tmp-glibc/deploy`) instead of hardcoding
+  `build/tmp/deploy`. The v0.4.0 script silently produced an empty
+  `checksums.sha256` on `iotgw` (which renames `TMPDIR` to `tmp-glibc`).
+  Override with `IOTGW_DEPLOY_ROOT` for non-standard layouts. Manifest now
+  records `deploy_root` for traceability.
+
 ## [0.4.0] - 2026-05-09
 
 ### Added
