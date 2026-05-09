@@ -51,6 +51,19 @@ for f in kas/*.yml; do
 done
 distro_version_default="$(grep -nE 'IOTGW_VERSION_(MAJOR|MINOR|PATCH) \?=' meta-iot-gateway/conf/distro/include/iotgw-common.inc | tr '\n' ';')"
 
+# Auto-detect deploy root. Yocto's default is build/tmp/deploy, but distros
+# that rename TMPDIR (e.g. iotgw uses tmp-glibc) put artifacts elsewhere.
+# Allow override via IOTGW_DEPLOY_ROOT for non-standard layouts.
+deploy_root="${IOTGW_DEPLOY_ROOT:-}"
+if [[ -z "$deploy_root" ]]; then
+    for cand in build/tmp/deploy build/tmp-glibc/deploy; do
+        if [[ -d "$cand" ]]; then
+            deploy_root="$cand"
+            break
+        fi
+    done
+fi
+
 {
     echo "release_tag=${tag}"
     echo "release_version=${version}"
@@ -62,19 +75,28 @@ distro_version_default="$(grep -nE 'IOTGW_VERSION_(MAJOR|MINOR|PATCH) \?=' meta-
     echo "git_status_clean=${git_status_clean}"
     echo "kas_files=${kas_files}"
     echo "distro_version_default=${distro_version_default}"
+    echo "deploy_root=${deploy_root}"
 } > "$manifest"
 
 # Checksums of common deploy artifacts when present.
 tmp_list="$(mktemp)"
-find build/tmp/deploy -type f \( \
-    -name "*.raucb" -o \
-    -name "*.wic" -o \
-    -name "*.wic.bz2" -o \
-    -name "fitImage*" -o \
-    -name "u-boot.bin" -o \
-    -name "Image" -o \
-    -name "kernel_2712.img" \
-    \) -print0 2>/dev/null | sort -z > "$tmp_list" || true
+if [[ -n "$deploy_root" && -d "$deploy_root" ]]; then
+    find "$deploy_root" -type f \( \
+        -name "*.raucb" -o \
+        -name "*.wic" -o \
+        -name "*.wic.bz2" -o \
+        -name "fitImage*" -o \
+        -name "u-boot.bin" -o \
+        -name "Image" -o \
+        -name "kernel_2712.img" \
+        \) -print0 2>/dev/null | sort -z > "$tmp_list" || true
+else
+    if [[ -n "${IOTGW_DEPLOY_ROOT:-}" ]]; then
+        echo "[release-manifest] warning: IOTGW_DEPLOY_ROOT='${IOTGW_DEPLOY_ROOT}' is not a directory; checksums will be empty" >&2
+    else
+        echo "[release-manifest] warning: no deploy directory found (tried build/tmp/deploy, build/tmp-glibc/deploy); set IOTGW_DEPLOY_ROOT to override" >&2
+    fi
+fi
 
 if [[ -s "$tmp_list" ]]; then
     xargs -0 sha256sum < "$tmp_list" > "$checksums"

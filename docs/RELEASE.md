@@ -74,8 +74,15 @@ scripts/release-manifest.sh \
 
 Output directory:
 
-- `release/vX.Y.Z/manifest.txt`
+- `release/vX.Y.Z/manifest.txt` (includes `deploy_root` field)
 - `release/vX.Y.Z/checksums.sha256`
+
+The deploy directory is auto-detected (`build/tmp/deploy` or
+`build/tmp-glibc/deploy`). Override for non-standard layouts:
+
+```bash
+IOTGW_DEPLOY_ROOT=/path/to/deploy scripts/release-manifest.sh ...
+```
 
 ## 6. Device Verification (Minimum)
 
