@@ -9,8 +9,9 @@ SRC_URI = " \
     file://otbr-webui.service \
     file://otbr-webui.default \
 "
-SRCREV = "63af7a54e31b0c4b0dd416c7ec3e3e2165a7371b"
+SRCREV = "b9d735370bd56b269e5c0439b8ca3f68d8425ee0"
 S = "${WORKDIR}/git"
+B = "${WORKDIR}/build"
 
 DEPENDS = "nodejs-bin-native"
 
