@@ -98,6 +98,9 @@ Kernel debugging and tracing (development only).
 
 **⚠️ WARNING:** Development only! Do not use in production.
 
+This lane intentionally excludes heavyweight DWARF/BTF metadata knobs so
+general observability and CO-RE metadata can be toggled independently.
+
 **Usage:**
 ```bash
 # Confirm eBPF kernel plumbing is available (installed by default in dev images)
@@ -110,6 +113,37 @@ bpftool map show
 # Function tracing
 echo function > /sys/kernel/debug/tracing/current_tracer
 cat /sys/kernel/debug/tracing/trace
+```
+
+---
+
+### `igw_btf_core_dev`
+
+Dedicated BTF/CO-RE lab metadata lane (development only).
+
+**Features:** DWARF4 debug info + BTF + BTF modules metadata, with
+`pahole-native` build dependency enabled only when this lane is active.
+
+**Enable via gate:**
+
+```bash
+IOTGW_ENABLE_BTF_CORE_DEV=1
+```
+
+This appends `igw_btf_core_dev` to `IOTGW_KERNEL_FEATURES` and enables:
+- `CONFIG_DEBUG_INFO=y`
+- `CONFIG_DEBUG_INFO_DWARF4=y`
+- `CONFIG_DEBUG_INFO_BTF=y`
+- `CONFIG_DEBUG_INFO_BTF_MODULES=y`
+
+**Use for:** libbpf CO-RE workflows where `/sys/kernel/btf/vmlinux` and module
+BTF availability are required.
+
+**Verification:**
+
+```bash
+test -r /sys/kernel/btf/vmlinux && echo "vmlinux BTF present"
+bpftool btf show | head
 ```
 
 ---
