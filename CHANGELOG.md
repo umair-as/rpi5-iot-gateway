@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-09
+
+### Added
+- U-Boot hardening framework with feature-gated posture tokens:
+  `surface_reduce`, `fit_enforce`, `appliance_lockdown`.
+- Production U-Boot lockdown profile with env write allowlist and
+  force-bypass blocking (`CONFIG_ENV_ACCESS_IGNORE_FORCE=y`).
+- Production build guard for U-Boot FIT signing key policy
+  (`iotgw-uboot-prod-key-guard.bbclass`).
+- Optional crash-debug kernel profile (`IOTGW_ENABLE_CRASH_DEBUG_DEV`) layered
+  on pstore persistence for deterministic reboot-on-oops/panic lab workflows.
+- Optional dedicated kernel BTF/CO-RE metadata lane
+  (`IOTGW_ENABLE_BTF_CORE_DEV` -> `igw_btf_core_dev`) with
+  `pahole-native` dependency gating.
+- U-Boot defconfig patch raising `CONFIG_SYS_BOOTM_LEN=0x8000000` for larger
+  FIT kernel decompression envelopes.
+- LSM/IMA feature gates and RPi EEPROM/VCIO integration switches.
+- OTA/RAUC PKCS#11 and encrypted-bundle feature-gated plumbing.
+- Release tooling: `docs/RELEASE.md`, `scripts/release-build.sh`,
+  `scripts/release-manifest.sh`, and a `release-hygiene` GitHub Actions
+  workflow running `shellcheck` on tracked scripts and `yamllint`
+  (config: `.yamllint`) on tracked kas configs and workflows, plus
+  changelog/version-variable sanity gates.
+
+### Changed
+- RAUC install/reconcile flow hardened; clean `fstab` preservation improved.
+- OTA updater/cert runtime behavior gated with shared OTA user model.
+- U-Boot `iotgw_set_bootargs` now honors `EXTRA_KERNEL_ARGS`; provisioning
+  automation applies boot policy (`IOTGW_UBOOT_BOOTDELAY`,
+  `IOTGW_UBOOT_EXTRA_KERNEL_ARGS`) with lockdown-aware behavior.
+- Recovery kernel feature set alignment tightened by removing unconditional
+  observability-dev coupling.
+- Telegraf startup now gates on non-empty credential files.
+- RAUC environment handling tightened with enforced `/etc/fw_env.config`
+  via overlay reconciliation.
+
+### Fixed
+- OTA updater key/cert preflight sequencing and key-option initialization fixes.
+- OTA polling TPM updater gating and preflight behavior fixes.
+- OTA cert provisioning behavior decoupled from PKCS#11 readiness checks.
+- `tpm2` packaging/runtime fixes for offline `pytss` build and PKCS#11 tools.
+- Corrected patch metadata author attribution in `otbr-socket-dir.patch`.
+
+### Documentation
+- Added/expanded U-Boot hardening architecture reference.
+- OTA/RAUC docs refactored and provisioning script guidance updated.
+- Kernel driver backport field guide added.
+- U-Boot hardening and kernel configuration references updated for current
+  bootargs policy automation, `SYS_BOOTM_LEN` rationale, and
+  `igw_btf_core_dev` semantics.
+
 ## [0.3.1] - 2026-04-08
 
 ### Changed
@@ -120,7 +171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added adaptive OTA benchmark and troubleshooting guidance for field validation.
 - Added HTTPS streaming OTA notes and refreshed operational docs for build/partition/security flows.
 
-[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.1.0...v0.2.0

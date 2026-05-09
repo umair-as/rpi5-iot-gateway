@@ -43,6 +43,7 @@ claude.md
 CLAUDE.md
 .agents/
 .claude/
+.codex
 docs/kernel-config-reference/
 dev/
 docs/signature.rst

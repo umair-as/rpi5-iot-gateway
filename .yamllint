@@ -1,0 +1,20 @@
+---
+# Pragmatic YAML hygiene for kas configs and GitHub Actions workflows.
+# Focus: real syntax / structural issues. Style noise (line length, doc start)
+# is suppressed because kas long-lines and YAML files without --- are common.
+extends: default
+
+rules:
+  line-length: disable
+  document-start: disable
+  brackets: disable
+  braces: disable
+  truthy:
+    allowed-values: ["true", "false", "yes", "no", "on", "off"]
+    check-keys: false
+  comments:
+    min-spaces-from-content: 1
+  comments-indentation: disable
+  indentation:
+    spaces: 2
+    indent-sequences: consistent

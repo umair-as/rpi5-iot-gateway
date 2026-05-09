@@ -40,9 +40,9 @@ Release version override example:
 
 ```bash
 IOTGW_VERSION_MAJOR=0 \
-IOTGW_VERSION_MINOR=3 \
+IOTGW_VERSION_MINOR=4 \
 IOTGW_VERSION_PATCH=0 \
-IOTGW_BUILD_ID=20260408 \
+IOTGW_BUILD_ID=20260509 \
 make bundle-prod-full
 ```
 

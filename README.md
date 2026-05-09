@@ -4,6 +4,7 @@
 
 **A Yocto-based Linux distribution for IoT gateway applications**
 
+[![release-hygiene](https://github.com/umair-as/rpi5-iot-gateway/actions/workflows/release-hygiene.yml/badge.svg?branch=main)](https://github.com/umair-as/rpi5-iot-gateway/actions/workflows/release-hygiene.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Yocto](https://img.shields.io/badge/Yocto-Scarthgap-orange.svg)](https://www.yoctoproject.org/)
 [![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%205-c51a4a.svg)](https://www.raspberrypi.com/products/raspberry-pi-5/)

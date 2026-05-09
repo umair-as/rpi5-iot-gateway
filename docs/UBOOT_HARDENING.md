@@ -198,13 +198,16 @@ runtime boot policy override". Runtime kernel-args injection *is* a boot
 policy override; in prod it's blocked, in dev it's an intentional
 operator escape hatch.
 
-If a deployed prod fleet ever needs cmdline tuning, the path is:
+If a deployed prod fleet ever needs cmdline tuning, use a signed-image path:
 1. Build a new image with the desired arg in `cmdline.txt` via
-   `rpi-cmdline.bbappend`'s `CMDLINE:append`, or
-2. Use a future build-time policy variable (`IOTGW_UBOOT_EXTRA_KERNEL_ARGS`,
-   tracked as Issue #54 follow-up Part B) that bakes the value into
-   `iotgw_set_bootargs` itself rather than going through env writes —
-   bypasses the lockdown by being part of the signed image.
+   `rpi-cmdline.bbappend`'s `CMDLINE:append`, and/or
+2. Set build-time policy variable `IOTGW_UBOOT_EXTRA_KERNEL_ARGS` in the
+   image build inputs.
+
+`IOTGW_UBOOT_EXTRA_KERNEL_ARGS` is consumed by provisioning policy wiring:
+`iotgw-provision.sh` applies it to U-Boot env only where runtime env writes are
+allowed (dev posture). Under `appliance_lockdown`, runtime writes are rejected
+by design, so production remains signed-image-driven.
 
 ### OTA env-refresh caveat
 
@@ -221,10 +224,25 @@ take effect. Recovery is a one-time `env default iotgw_set_bootargs;
 saveenv` from the U-Boot prompt. Fresh WIC flashes pick up the new
 default automatically.
 
-Tracked for automation under the same Issue #54 follow-up — provisioning
-will eventually `fw_setenv` the canonical `iotgw_set_bootargs` on first
-boot of an updated slot, parallel to how `IOTGW_UBOOT_BOOTDELAY` is
-applied today.
+Automation is now in place: provisioning (`iotgw-provision.sh`) detects stale
+persisted `iotgw_set_bootargs` values on non-lockdown images and clears them so
+the updated compiled default takes effect on the next boot.
+
+On `appliance_lockdown` images, this reconciliation is intentionally skipped
+because the env writeable-list blocks such writes by policy.
+
+### Larger FIT kernels: `SYS_BOOTM_LEN`
+
+To support larger compressed FIT kernel payloads, the project carries:
+
+```
+CONFIG_SYS_BOOTM_LEN=0x8000000
+```
+
+via patch
+`0004-configs-rpi_arm64_defconfig-increase-SYS_BOOTM_LEN-for-larger-fit-kernels.patch`.
+This prevents bootm decompression buffer exhaustion as kernel/FIT payload size
+grows (for example when debug/BTF metadata is enabled in dev lanes).
 
 ### Production key guard
 

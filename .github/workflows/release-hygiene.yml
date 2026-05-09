@@ -1,0 +1,58 @@
+name: release-hygiene
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main, "release-*" ]
+  workflow_dispatch:
+
+jobs:
+  hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure release docs/scripts exist
+        run: |
+          test -f docs/RELEASE.md
+          test -f scripts/release-build.sh
+          test -f scripts/release-manifest.sh
+
+      - name: Shell syntax checks
+        run: |
+          bash -n scripts/release-build.sh
+          bash -n scripts/release-manifest.sh
+
+      - name: shellcheck (all tracked scripts)
+        run: |
+          mapfile -t scripts < <(git ls-files 'scripts/*.sh')
+          if [[ ${#scripts[@]} -eq 0 ]]; then
+            echo "no tracked scripts/*.sh found"
+            exit 0
+          fi
+          shellcheck -S warning "${scripts[@]}"
+
+      - name: Install yamllint
+        run: pip install --quiet yamllint==1.35.1
+
+      - name: yamllint (kas configs and workflows)
+        run: |
+          mapfile -t yamls < <(git ls-files 'kas/*.yml' '.github/workflows/*.yml')
+          if [[ ${#yamls[@]} -eq 0 ]]; then
+            echo "no tracked kas or workflow yaml found"
+            exit 0
+          fi
+          yamllint "${yamls[@]}"
+
+      - name: Changelog link sanity
+        run: |
+          grep -nE '^\[Unreleased\]:' CHANGELOG.md
+          grep -nE '^## \[[0-9]+\.[0-9]+\.[0-9]+\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$' CHANGELOG.md
+
+      - name: Version variable sanity
+        run: |
+          grep -nE 'IOTGW_VERSION_MAJOR \?= "[0-9]+"' meta-iot-gateway/conf/distro/include/iotgw-common.inc
+          grep -nE 'IOTGW_VERSION_MINOR \?= "[0-9]+"' meta-iot-gateway/conf/distro/include/iotgw-common.inc
+          grep -nE 'IOTGW_VERSION_PATCH \?= "[0-9]+"' meta-iot-gateway/conf/distro/include/iotgw-common.inc
