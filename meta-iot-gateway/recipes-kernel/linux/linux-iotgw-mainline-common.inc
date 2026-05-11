@@ -46,4 +46,8 @@ SRC_URI:append = "${@' file://0007-arm64-dts-broadcom-bcm2712-rpi-5-b-add-ramoop
 SRC_URI:append = "${@' file://0008-mfd-bcm2835-pm-Add-support-for-BCM2712.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
 SRC_URI:append = "${@' file://0009-arm64-dts-broadcom-bcm2712-add-pm-watchdog-node.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
 SRC_URI:append = "${@' file://0010-pmdomain-bcm-bcm2835-power-Add-support-for-BCM2712.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
+# Security: CVE-2026-31431 (algif_aead in-place write-to-page-cache; CISA KEV).
+# Stable 6.18.y backport (fafe0fa2) lands in 6.18.22; we pin 6.18.13 so apply
+# the patch directly. Drop this line on the next SRCREV bump past v6.18.22.
+SRC_URI:append = " file://0011-CVE-2026-31431-crypto-algif_aead-revert-to-out-of-place.patch"
 SRC_URI:append = " file://fragments/thermal-rpi5.cfg"
