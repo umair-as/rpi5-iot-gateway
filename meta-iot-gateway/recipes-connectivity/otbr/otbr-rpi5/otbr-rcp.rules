@@ -1,1 +1,1 @@
-SUBSYSTEM=="tty", KERNEL=="ttyACM*", GROUP="dialout", MODE="0660", SYMLINK+="otbr-rcp"
+SUBSYSTEM=="tty", KERNEL=="ttyACM*", GROUP="dialout", MODE="0660", SYMLINK+="otbr-rcp", TAG+="systemd", ENV{SYSTEMD_WANTS}+="otbr-agent.service"

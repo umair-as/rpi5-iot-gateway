@@ -12,7 +12,7 @@ build path. It is not the default runtime model used by the gateway images.
 ## Included Recipes
 
 - `otbr-rpi5.bb`: host OTBR package
-- `otbr-webui_0.1.0.bb`: web UI package used by host OTBR path
+- `otbr-webui_0.1.1.bb`: web UI package used by host OTBR path
 - `otbr-rpi5-container.bb`: OCI image recipe for containerized OTBR
 - `otbr-rpi5-container/entrypoint.sh`: container entrypoint
 
