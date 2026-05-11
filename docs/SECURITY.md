@@ -65,6 +65,17 @@ The kernel follows Kernel Self Protection Project (KSPP) recommendations.
 - **LSM** — AppArmor mandatory access control
 - **Audit** — Syscall auditing enabled
 
+### CVE Response Workflow
+
+When a kernel CVE affects a release between our pinned `SRCREV_machine`
+and the next planned kernel bump, we carry the upstream stable backport
+as a numbered patch in `meta-iot-gateway/recipes-kernel/linux/files/`.
+
+See [Kernel CVE Patch — Field Guide](KERNEL_CVE_PATCH.md) for the
+step-by-step workflow: identifying the right stable backport, annotating
+for Yocto QA (`Upstream-Status:`, `CVE:`), wiring into `SRC_URI`, and
+tracking the patch's sunset on the next `SRCREV` bump.
+
 ---
 
 ## Compiler Hardening
