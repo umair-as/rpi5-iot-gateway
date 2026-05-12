@@ -7,11 +7,8 @@ PV = "${LINUX_VERSION}+git${SRCPV}"
 BRANCH ?= "linux-6.18.y"
 KMETA = "kernel-meta"
 
-# Pinned revisions for reproducible CI/release builds.
-SRCREV_machine = "25e0b1c206e3def1bd3bf9dcba980c5138c637a9"
-SRCREV_meta = "307ef96123620278563ff5b1c9fb8b7b4da26970"
-SRCREV_FORMAT = "machine_meta"
-SRCPV = "${@bb.fetch2.get_srcrev(d)}"
+# SRCREV_machine / SRCREV_meta / SRCREV_FORMAT live in
+# linux-iotgw-mainline-common.inc so all three kernel providers stay in lockstep.
 
 SRC_URI = " \
     git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git;name=machine;branch=${BRANCH};protocol=https \

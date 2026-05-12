@@ -12,6 +12,15 @@ require recipes-kernel/linux/linux-yocto.inc
 LINUX_VERSION_EXTENSION = ""
 PV = "${LINUX_VERSION}+git${SRCPV}"
 
+# Pinned revisions for reproducible CI/release builds. Kept in the shared
+# .inc so the three providers (mainline, mainline-fit, mainline-recovery)
+# cannot drift apart. SRCREV_machine tracks the tip of linux-6.18.y at
+# the time of the bump.
+SRCREV_machine = "d31a849ff5011dad5c271b53819a0b279e367d68"
+SRCREV_meta = "307ef96123620278563ff5b1c9fb8b7b4da26970"
+SRCREV_FORMAT = "machine_meta"
+SRCPV = "${@bb.fetch2.get_srcrev(d)}"
+
 KCONFIG_MODE = "--alldefconfig"
 KBUILD_DEFCONFIG:raspberrypi5 ?= "defconfig"
 
@@ -46,8 +55,4 @@ SRC_URI:append = "${@' file://0007-arm64-dts-broadcom-bcm2712-rpi-5-b-add-ramoop
 SRC_URI:append = "${@' file://0008-mfd-bcm2835-pm-Add-support-for-BCM2712.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
 SRC_URI:append = "${@' file://0009-arm64-dts-broadcom-bcm2712-add-pm-watchdog-node.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
 SRC_URI:append = "${@' file://0010-pmdomain-bcm-bcm2835-power-Add-support-for-BCM2712.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
-# Security: CVE-2026-31431 (algif_aead in-place write-to-page-cache; CISA KEV).
-# Stable 6.18.y backport (fafe0fa2) lands in 6.18.22; we pin 6.18.13 so apply
-# the patch directly. Drop this line on the next SRCREV bump past v6.18.22.
-SRC_URI:append = " file://0011-CVE-2026-31431-crypto-algif_aead-revert-to-out-of-place.patch"
 SRC_URI:append = " file://fragments/thermal-rpi5.cfg"
