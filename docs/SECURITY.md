@@ -200,24 +200,19 @@ systemctl enable nftables
 
 ### Kernel Hardening Check
 
-Validate kernel configuration against KSPP recommendations using the `kernel-hardening-checker` tool.
+Validate kernel configuration against KSPP recommendations using the `kernel-hardening-checker` tool. The package is built into all image variants.
 
-**During Build (host-side check using build artifacts):**
+**On the running device:**
 ```bash
-scripts/kernel-hardening-check-build.sh
+kernel-hardening-checker -c /proc/config.gz -m verbose
 ```
 
-Output: `build/reports/kernel-hardening-YYYYMMDD-HHMMSS.txt`
-
-**On Running Device (over SSH):**
+Over SSH from the host:
 ```bash
-scripts/kernel-hardening-check-target.sh root@192.168.1.100
+ssh root@<device> 'zcat /proc/config.gz | kernel-hardening-checker -c - -m verbose'
 ```
 
-Or manually on device:
-```bash
-kernel-hardening-checker -c /proc/config.gz
-```
+> An automated host-side check that consumes Yocto build artifacts is a planned follow-up — see the workboard. Until then, run the check against a running device using the kernel's own `/proc/config.gz`.
 
 **What It Checks:**
 - Memory protection features
@@ -337,7 +332,7 @@ Before deploying to production:
 - [ ] Generate unique RAUC signing keys (per deployment/fleet)
 - [ ] Review and customize firewall rules
 - [ ] Enable kernel security features (`igw_security_prod`)
-- [ ] Run `scripts/kernel-hardening-check-build.sh` and review the report
+- [ ] Run `kernel-hardening-checker -c /proc/config.gz` on the deployed device and review the report
 - [ ] Run Lynis audit and address findings
 - [ ] Disable unused network services
 - [ ] Configure audit log forwarding (if applicable)
