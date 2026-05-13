@@ -20,7 +20,7 @@ The distribution uses **modular kernel configuration** based on feature fragment
   Closes the early-boot "kernel hangs requiring power cycle" failure
   class — any panic auto-reboots within 30s, applies from the first
   instruction the kernel runs.
-- `panic-on-oops.cfg` — `CONFIG_BOOTPARAM_PANIC_ON_OOPS=y`. Gated by
+- `panic-on-oops.cfg` — `CONFIG_PANIC_ON_OOPS=y`. Gated by
   `IOTGW_ENABLE_PANIC_ON_OOPS` (default `"1"`); set to `"0"` in
   `kas/local.yml` for dev/bring-up builds where you want tainted-but-
   running kernels for triage instead of immediate panic+reboot. Together
@@ -473,6 +473,68 @@ Custom version suffix for identification:
 ```
 CONFIG_LOCALVERSION="-v8-16k-igw"
 ```
+
+---
+
+## Fragment Selection Policy (Implementation Notes)
+
+The fragment list is owned by `meta-iot-gateway/classes/iotgw-kernel-fragments.bbclass`
+via the single variable `IOTGW_KERNEL_FRAGMENTS`. `SRC_URI` is derived from
+that list so the two cannot drift, and `do_configure:append` enforces two
+invariants with `bbfatal`:
+
+1. Every name in `IOTGW_KERNEL_FRAGMENTS` must be present in `${WORKDIR}/fragments/`
+   (fetch guard — catches missing `file://fragments/<name>` entries).
+2. Every `.cfg` file in `${WORKDIR}/fragments/` must appear in `IOTGW_KERNEL_FRAGMENTS`
+   (stale-residue guard — catches fragments left over from a previous build
+   with different `IOTGW_ENABLE_*` / `IOTGW_KERNEL_FEATURES` gates).
+
+The second guard is the one that matters most in practice: without it, a
+gated fragment (e.g. `btf-core-dev.cfg` from a prior BTF-on build) silently
+lingers in the workdir and is re-merged into `.config` even when the gate
+is off, inverting the gate and inflating the kernel module footprint. The
+guard's `bbfatal` names the offending path so regressions are obvious in
+the build log; the recovery is `bitbake -c cleansstate <kernel-recipe>`.
+
+### Adding a fragment
+
+Add a `file://fragments/<name>.cfg` to `meta-iot-gateway/recipes-kernel/linux/files/fragments/`,
+then add the bare filename to `IOTGW_KERNEL_FRAGMENTS` in the bbclass under
+the appropriate gate. **Do not** add a parallel `SRC_URI:append` — the
+bbclass derives `SRC_URI` from the tracked list. Adding both produces a
+duplicate fetch entry.
+
+A recipe-specific unconditional fragment (e.g. `thermal-rpi5.cfg` in
+`linux-iotgw-mainline-common.inc`) uses `IOTGW_KERNEL_FRAGMENTS:append`
+in the recipe `.inc`, not the bbclass.
+
+### BitBake gotcha: `+=` vs `:append` on `SRC_URI`
+
+The bbclass derives `SRC_URI` with `:append`, not `+=`. The reason matters
+for anyone extending it:
+
+- `+=` is **parse-time**: it appends to the variable's value at the moment
+  the line is parsed.
+- `:append =` is **expansion-time**: it's applied every time the variable
+  is expanded.
+
+Kernel recipe `.bb` files commonly do a hard `SRC_URI = "..."` set inside
+the recipe body (each kernel provider declares its own upstream URLs).
+A `set` after a `+=` wipes everything the `+=` contributed; a `:append`
+line survives because it runs after the set, at expansion time.
+
+```bitbake
+# In the bbclass:
+SRC_URI:append = " ${@' '.join('file://fragments/' + f for f in \
+    (d.getVar('IOTGW_KERNEL_FRAGMENTS') or '').split() if f)}"
+# Not  SRC_URI += "..."  — would be wiped by  SRC_URI = "..."  in the .bb.
+```
+
+Verify with `bitbake -e <kernel-recipe> | grep -B2 -A60 '^# \$SRC_URI'` —
+the ordered operation list shows whether a `set` follows your contribution.
+The Python expression itself is fine in either form: it reads the
+fully-expanded `IOTGW_KERNEL_FRAGMENTS` (including any `:append` from the
+`.inc`) at expansion time.
 
 ---
 
