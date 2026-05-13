@@ -17,16 +17,62 @@ local_conf_header:
     IOTGW_WIFI_NETWORKS = "HomeWiFi|Secret|wlan0|manual|100|192.168.0.222/24|192.168.0.1|1.1.1.1;8.8.8.8\nESP|Secret2|wlan0|manual|100|192.168.28.50/24|192.168.28.1|1.1.1.1;8.8.8.8"
 
   rauc_keys: |
-    # RAUC signing keys (required for bundle builds)
+    # Legacy flat-signed RAUC keys (single self-signed cert as both leaf signer
+    # and device trust anchor). Keep this block during a migration window where
+    # devices still carry the legacy single-cert keyring. Once devices boot the
+    # directory-trust keyring configured via IOTGW_RAUC_KEYRING_CERTS below,
+    # bundles can be re-signed with a chain-rooted leaf.
     # Store private keys outside the repo; adjust paths to your environment.
     # Prefer using IOTGW_RAUC_KEY_DIR defined in the 'env:' block above to avoid
     # relying on $HOME expansion in local_conf.
     RAUC_KEY_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-key.pem"
     RAUC_CERT_FILE = "${IOTGW_RAUC_KEY_DIR}/dev-cert.pem"
   rauc_device_keyring: |
-    # Public key (certificate) installed on devices to verify bundles
-    # Typically the CA certificate created by generate-rauc-certs.sh
+    # Single-cert keyring: trust anchor installed at /etc/rauc/ca.cert.pem.
+    # Inert once IOTGW_RAUC_KEYRING_CERTS (below) is set — the recipe then
+    # installs every listed cert into /etc/rauc/keyring.d/ instead, and RAUC's
+    # [keyring] stanza switches from path= to directory=.
     RAUC_DEVICE_KEYRING = "${IOTGW_RAUC_KEY_DIR}/ca.cert.pem"
+  rauc_pki_chain: |
+    # === Chain-rooted RAUC PKI (Root → intermediate CA → annual signing leaf) ===
+    # Layout under the operator's key tree:
+    #   ${IOTGW_RAUC_KEY_DIR}/rauc-ca/root-ca/root-ca-<role>.crt        # exported Root cert(s)
+    #   ${IOTGW_RAUC_KEY_DIR}/rauc-ca/dev-ca/dev-ca.cert.pem            # Dev intermediate
+    #   ${IOTGW_RAUC_KEY_DIR}/rauc-ca/prod-ca/prod-ca.cert.pem          # Prod intermediate
+    #   ${IOTGW_RAUC_KEY_DIR}/rauc-ca/issued/dev/iotgw-rauc-dev-signer-<YYYY>.{key,chain}.pem
+    #
+    # --- Transition image: dual-trust keyring (legacy + new Roots) ---
+    # Bundles are still signed with the legacy key so devices on the single-cert
+    # keyring can install this image; the new Roots are pre-positioned for the
+    # following cutover.
+    # IOTGW_RAUC_KEYRING_CERTS = " \
+    #     ${IOTGW_RAUC_KEY_DIR}/dev-cert.pem \
+    #     ${IOTGW_RAUC_KEY_DIR}/rauc-ca/root-ca/root-ca-primary.crt \
+    #     ${IOTGW_RAUC_KEY_DIR}/rauc-ca/root-ca/root-ca-backup.crt"
+    #
+    # --- Cutover image: Root-only keyring; legacy signing retired ---
+    # Bundles are signed with the new chain. The legacy cert is dropped from
+    # the keyring directory; legacy-signed bundles will be rejected.
+    # RAUC_KEY_FILE  = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/issued/dev/iotgw-rauc-dev-signer-2026.key.pem"
+    # RAUC_CERT_FILE = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/issued/dev/iotgw-rauc-dev-signer-2026.chain.pem"
+    # IOTGW_RAUC_KEYRING_CERTS = " \
+    #     ${IOTGW_RAUC_KEY_DIR}/rauc-ca/root-ca/root-ca-primary.crt \
+    #     ${IOTGW_RAUC_KEY_DIR}/rauc-ca/root-ca/root-ca-backup.crt"
+    #
+    # --- Optional prod CN allowlist (defence-in-depth on top of chain trust) ---
+    # IOTGW_RAUC_ALLOWED_SIGNER_CNS = "iotgw-rauc-prod-signer-2026;iotgw-rauc-prod-signer-2027"
+    #
+    # --- Optional X.509 purpose enforcement on the signer chain ---
+    # Leave empty during the transition (legacy signer cert typically has no
+    # codeSigning EKU). Enable at the cutover image where every signing leaf
+    # is chain-issued from a CA template that sets extendedKeyUsage = codeSigning.
+    # IOTGW_RAUC_CHECK_PURPOSE = "codesign"
+    #
+    # --- Optional HSM-resident signing leaf (PKCS#11 URI form) ---
+    # When the bundle-signing key lives in a hardware token instead of a file,
+    # RAUC_KEY_FILE accepts a serial-anchored PKCS#11 URI. Examples:
+    # RAUC_KEY_FILE = "pkcs11:token=<token-label>;id=<hex-id>;type=private"
+    # RAUC_KEY_FILE = "pkcs11:token=atecc;object=rauc-signing-key;type=private"
   ota_ca_source: |
     # Optional: authoritative OTA mTLS CA source for ota-certs recipe.
     # Used to seed /etc/ota/ca.crt at build time and validate CA consistency.
