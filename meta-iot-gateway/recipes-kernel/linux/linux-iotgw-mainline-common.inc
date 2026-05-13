@@ -55,4 +55,6 @@ SRC_URI:append = "${@' file://0007-arm64-dts-broadcom-bcm2712-rpi-5-b-add-ramoop
 SRC_URI:append = "${@' file://0008-mfd-bcm2835-pm-Add-support-for-BCM2712.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
 SRC_URI:append = "${@' file://0009-arm64-dts-broadcom-bcm2712-add-pm-watchdog-node.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
 SRC_URI:append = "${@' file://0010-pmdomain-bcm-bcm2835-power-Add-support-for-BCM2712.patch' if d.getVar('IOTGW_ENABLE_HW_WATCHDOG') == '1' else ''}"
-SRC_URI:append = " file://fragments/thermal-rpi5.cfg"
+# thermal-rpi5.cfg is a recipe-specific fragment; SRC_URI is derived from
+# IOTGW_KERNEL_FRAGMENTS by iotgw-kernel-fragments.bbclass.
+IOTGW_KERNEL_FRAGMENTS:append = " thermal-rpi5.cfg"
