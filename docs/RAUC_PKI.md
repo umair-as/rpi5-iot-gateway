@@ -553,23 +553,24 @@ build host by running `rauc info` against every keyring state a device
 might be in. Three keyring states × two bundle signing modes = six cells;
 the four `accept` cells are sanity checks and the two `reject` cells are
 the load-bearing negative proofs that the cutover correctly excludes the
-legacy chain and that M1 cannot skip the dual-trust transition.
+legacy chain and that a legacy-only device cannot skip the
+dual-trust transition.
 
 `rauc info --keyring=PEMFILE` expects a single concatenated PEM file
 (it does not enumerate a directory at runtime). Build the three keyring
 PEMs once and reuse them:
 
 ```bash
-# Legacy single-cert keyring (M1 device state)
+# Legacy single-cert keyring (pre-transition device state)
 cp ${IOTGW_RAUC_KEY_DIR}/dev-cert.pem  /tmp/keyring-legacy.pem
 
-# Dual-trust keyring (M2 device state — transition)
+# Dual-trust keyring (transition device state)
 cat ${IOTGW_RAUC_KEY_DIR}/dev-cert.pem \
     ${RAUC_CA_DIR}/root-ca/root-ca-primary.crt \
     ${RAUC_CA_DIR}/root-ca/root-ca-backup.crt \
     > /tmp/keyring-dual-trust.pem
 
-# Roots-only keyring (M3 device state — cutover)
+# Roots-only keyring (post-cutover device state)
 cat ${RAUC_CA_DIR}/root-ca/root-ca-primary.crt \
     ${RAUC_CA_DIR}/root-ca/root-ca-backup.crt \
     > /tmp/keyring-roots-only.pem
@@ -589,10 +590,10 @@ The `--key=` flag is required because bundles ship `crypt`-format
 
 Expected results:
 
-| Bundle (signer)         | vs Legacy keyring | vs Dual-trust | vs Roots-only |
+| Bundle (signer)             | vs Legacy keyring | vs Dual-trust | vs Roots-only |
 |---|---|---|---|
-| **M2 legacy-signed**    | ✓ accept (chain depth 1, `iot-gateway-rpi5`) | ✓ accept (legacy anchor still present) | ✗ **reject** — `Verify error: self-signed certificate` |
-| **M3 chain-signed**     | ✗ **reject** — `unable to get local issuer certificate` | ✓ accept (chain depth 3, anchors on Root) | ✓ accept (chain depth 3, signer `iotgw-rauc-dev-signer-2026`) |
+| **Legacy-signed bundle**    | ✓ accept (chain depth 1, `iot-gateway-rpi5`) | ✓ accept (legacy anchor still present) | ✗ **reject** — `Verify error: self-signed certificate` |
+| **Chain-signed bundle**     | ✗ **reject** — `unable to get local issuer certificate` | ✓ accept (chain depth 3, anchors on Root) | ✓ accept (chain depth 3, signer `iotgw-rauc-dev-signer-2026`) |
 
 The two reject cells are the portfolio-gold negative tests:
 
@@ -600,8 +601,8 @@ The two reject cells are the portfolio-gold negative tests:
   into the Root-only state, no legacy-signed bundle can install. The
   legacy signer is retired by trust math, not by operator promise.
 - **Chain bundle on legacy keyring**: proves that the migration order
-  matters — an M1 device cannot skip the dual-trust transition image
-  and jump straight to a chain-signed bundle. The trust ladder must be
+  matters — a legacy-only device cannot skip the transition image and
+  jump straight to a chain-signed bundle. The trust ladder must be
   climbed one step at a time.
 
 For each chain-signed accept, the chain breakdown rauc emits is itself
@@ -685,12 +686,12 @@ For devices already in the field running a legacy single-cert keyring
 to chain-rooted trust uses three images in sequence. Devices migrate via
 OTA install without re-flashing.
 
-### Image A — legacy steady state (already deployed)
+### Legacy image (already deployed)
 
 `[keyring]` uses `path=`. Bundle is signed by the legacy single cert.
 This is the current state of any field device. No change.
 
-### Image B — dual-trust transition
+### Transition image (dual-trust)
 
 `[keyring]` is `directory=`. `/etc/rauc/keyring.d/` contains *three*
 trust anchors: the legacy `dev-cert.pem`, both new Roots. Bundle is
@@ -718,7 +719,7 @@ local_conf_header:
 After install, the device boots into a state where it accepts **either**
 a legacy-signed or a chain-signed bundle.
 
-### Image C — chain-rooted steady state
+### Cutover image (chain-rooted steady state)
 
 `[keyring]` is `directory=`. `/etc/rauc/keyring.d/` contains *only* the
 two new Roots. Bundle is signed under the new chain
@@ -746,8 +747,8 @@ only chain-rooted bundles whose leaf carries the
 
 | Rollback scenario | Outcome |
 |---|---|
-| Image C → legacy-signed bundle | **BLOCKED.** The legacy `dev-cert.pem` is no longer in the keyring directory, so a legacy-signed bundle has no trust anchor. This is intentional — the legacy signing key is retired permanently at the cutover. |
-| Image C → older chain-signed bundle | **ALLOWED.** Any bundle signed under the same Root trust chain installs cleanly, regardless of which historical rootfs it carries. This is the supported rollback path. |
+| Cutover image → legacy-signed bundle | **BLOCKED.** The legacy `dev-cert.pem` is no longer in the keyring directory, so a legacy-signed bundle has no trust anchor. This is intentional — the legacy signing key is retired permanently at the cutover. |
+| Cutover image → older chain-signed bundle | **ALLOWED.** Any bundle signed under the same Root trust chain installs cleanly, regardless of which historical rootfs it carries. This is the supported rollback path. |
 
 If a content-level rollback to an Image-A-shape rootfs is ever needed
 after the cutover, re-sign the older rootfs with the new chain and
@@ -764,7 +765,7 @@ signature.
 2. **Build a recovery bundle** signed under the backup Root chain. The
    recovery image's keyring directory contains *only* the backup Root.
 3. Ship the recovery bundle over OTA. Devices currently trusting both
-   Roots (steady-state Image C) accept the install because the signing
+   Roots (steady-state Cutover image) accept the install because the signing
    chain anchors on the still-trusted backup Root.
 4. **Physically destroy** the lost primary YubiKey if recovered, or
    accept the residual risk if not.
