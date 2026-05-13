@@ -1,6 +1,18 @@
 #!/bin/bash
-# Generate RAUC development certificates
-# For production, use proper CA-signed certificates!
+# Generate RAUC development certificates (legacy flat-signing flow).
+#
+# DEPRECATED for new work. This script produces a flat self-signed signing
+# cert, which is incompatible with the directory-trust keyring model
+# (IOTGW_RAUC_KEYRING_CERTS in kas/local.yml.example) and the
+# chain-rooted bundle signing that supersedes it. Use a host-side
+# CA-issuance workflow instead (Root CA → intermediate CA → annual
+# signing leaf, with the Root cert(s) installed into the device
+# keyring directory).
+#
+# Kept functional during the migration window so devices still on a
+# single-cert keyring can install legacy-signed bundles. Remove once
+# every target has cut over to the directory-trust keyring with
+# chain-only trust.
 
 set -e
 
