@@ -259,6 +259,146 @@ Expected failure symptoms in U-Boot log:
 - Do not commit keys into repository.
 - Keep RAUC signing keys and FIT signing keys separate.
 
+## DTB trust rotation: file key → YubiKey
+
+The U-Boot **control FDT** (the runtime DTB the RPi firmware passes to
+U-Boot) holds the public keys U-Boot trusts when verifying FIT
+signatures at boot. Rotating from a file-key-only trust root to a
+hardware-resident YubiKey pubkey is the second leg of FIT-signing
+adoption: PR-side HSM signing produces FITs that only verify on devices
+whose control FDT carries the corresponding pubkey.
+
+This project ships a three-image rotation pattern modelled after the
+RAUC PKI rotation (see `docs/RAUC_PKI.md`):
+
+| Image | DTB trust roots | FIT signing key | Notes |
+|-------|-----------------|-----------------|-------|
+| A (legacy) | file key only | file key | Status quo before this rotation. |
+| **B (transition)** | **file key + YK pubkey** | file key (build) or YK (post-build, optional) | DTB carries both pubkeys with `/signature/required-mode = "any"`. A FIT signed by either root verifies. |
+| C (cutover) | YK pubkey only | YK (post-build, mandatory) | File key retired. `IOTGW_FIT_TRUST_FILE_KEY = "0"` in `kas/local.yml`. |
+
+Image B is the only image that should ship while operators still hold
+the legacy file-key private material. Devices that boot Image B will
+accept any future YK-signed FIT, so the rotation can proceed without
+re-flashing.
+
+### Operator pre-flight: export the YK public certificate
+
+The build host needs the public certificate from slot 9a. **No private
+key is exported, ever.** Capture once into the operator key tree:
+
+```bash
+KEY_DIR="${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
+install -d -m 700 "$KEY_DIR"
+ykman piv certificates export 9a "$KEY_DIR/iotgw-fit-yk-2026.crt"
+chmod 644 "$KEY_DIR/iotgw-fit-yk-2026.crt"
+openssl x509 -in "$KEY_DIR/iotgw-fit-yk-2026.crt" -noout -subject -dates
+```
+
+The certificate filename is `<IOTGW_FIT_YK_KEYNAME>.crt`; renaming the
+YubiKey hint string in the project requires renaming this file in
+lockstep. The default `iotgw-fit-yk-2026` is intentionally year-tagged
+so a future rotation lands at `iotgw-fit-yk-<NEW_YEAR>` without
+clobbering existing trust anchors on already-deployed Image B devices.
+
+### Build-time configuration (Image B)
+
+In `kas/local.yml`, enable both trust roots:
+
+```yaml
+local_conf_header:
+  fit_dtb_yk_pubkey_trust: |
+    IOTGW_FIT_TRUST_FILE_KEY:fitflow = "1"
+    IOTGW_FIT_TRUST_YK_KEY:fitflow = "1"
+    IOTGW_FIT_YK_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
+    IOTGW_FIT_YK_KEYNAME:fitflow = "iotgw-fit-yk-2026"
+```
+
+Force rebuild of the kernel so the deploy step re-mutates the DTBs:
+
+```bash
+kas shell kas/local.yml -c 'bitbake -c cleansstate virtual/kernel'
+make bundle-dev-full-fit
+```
+
+The kernel-fit recipe's `do_deploy:append` block:
+
+- Loops over `RPI_KERNEL_DEVICETREE` DTBs.
+- When `IOTGW_FIT_TRUST_FILE_KEY = "1"`: runs `mkimage -F -k -K -r` to
+  sign the FIT with the file key AND inject the file-key public key
+  into the DTB under `/signature/key-<UBOOT_SIGN_KEYNAME>`.
+- When `IOTGW_FIT_TRUST_YK_KEY = "1"`: runs `fdt_add_pubkey -a
+  ${FIT_HASH_ALG},${FIT_SIGN_ALG} -k <yk-keydir> -n <yk-keyname>
+  -r conf` to add a second key node under
+  `/signature/key-<IOTGW_FIT_YK_KEYNAME>` (no private key required), then
+  sets `/signature/required-mode = "any"` via `fdtput` so a FIT signed by
+  either root verifies.
+
+Setting both gates to `"0"` with `UBOOT_SIGN_ENABLE=1` is fatal — the
+recipe refuses to deploy unsigned-trust DTBs.
+
+### Verifying the DTB build output
+
+Inspect the deployed DTB:
+
+```bash
+DTB=build/tmp-glibc/deploy/images/raspberrypi5/bcm2712-rpi-5-b.dtb
+fdtget -l "$DTB" /signature
+fdtget    "$DTB" /signature required-mode
+```
+
+Expected output:
+
+```
+key-iotgw-fit-dev
+key-iotgw-fit-yk-2026
+any
+```
+
+Both `key-*` subnodes present, `required-mode = "any"`. If
+`required-mode` is missing or set to `"all"` and both keys are
+`required = "conf"`, a FIT signed by only one key will be rejected at
+boot.
+
+`fdtget -l` is preferred over `fdtdump | sed` because the latter can
+silently truncate at the first `};` and hide a second key node.
+
+### On-target verification
+
+After flashing Image B and booting:
+
+```bash
+# Confirm both trust roots are live in U-Boot's control FDT.
+nsenter -t 1 -m cat /sys/firmware/devicetree/base/signature/required-mode
+nsenter -t 1 -m ls /sys/firmware/devicetree/base/signature/
+```
+
+Expected: `any` on stdout, and two `key-*` directories.
+
+Test both signing paths sequentially:
+
+1. **File-key-signed FIT path** — flash the Image B build, boot, check
+   U-Boot log for FIT verification success against
+   `key-${UBOOT_SIGN_KEYNAME}`. Normal `iotgw-rauc-install` flow works
+   as it did pre-rotation.
+2. **YK-signed FIT path** — run `make sign-bootfiles-fit-yk` against the
+   same build to swap the inner FIT signature to slot 9a (see the next
+   section), reassemble the bundle, install on the device that booted
+   step 1, reboot. U-Boot must accept the FIT against
+   `key-iotgw-fit-yk-2026`.
+
+Both paths must boot cleanly on the same device before promoting Image
+B to fleet rollout, and before scoping Image C.
+
+### Cutover (Image C, separate PR)
+
+Image C drops `IOTGW_FIT_TRUST_FILE_KEY = "0"` in `kas/local.yml`. The
+recipe then injects only the YK pubkey; `required-mode = "any"` is
+still set (harmless with one key). The bundle FIT MUST be HSM-signed
+before release; a file-key-signed FIT would be rejected by every
+fielded Image C device. Image C is scoped to a separate PR after
+Image B is validated on hardware.
+
 ## Signing FIT against a PKCS#11 token (YubiKey)
 
 The default flow above signs the FIT inside bitbake against a file-based
@@ -270,26 +410,32 @@ deploy artifact is re-signed.
 
 ### Why not sign inside bitbake
 
-Two interacting mkimage bugs make in-bitbake PKCS#11 signing
-unworkable as of u-boot-tools-native 2025.04:
+mkimage 2025.04's `-N pkcs11` code path has three behaviours that
+together make in-bitbake PKCS#11 signing unworkable and constrain even
+post-build wrapper use:
 
-1. **URI synthesis from `-k` is malformed.** When `mkimage` is given
-   both `-k <keydir>` and `-N pkcs11`, it synthesises a non-RFC-7512
-   PKCS#11 URI of the form `pkcs11:<keydir>;object=<hint>;type=private`.
-   `engine_pkcs11` rejects it.
-2. **`-G` is ignored when `-k` is present.** `lib/rsa/rsa-sign.c`
-   prioritises the keydir path. Both upstream
-   `kernel-fitimage.bbclass` and this project's
-   `iotgw-fit-custom-its.bbclass` hardcode `-k`, and
-   `UBOOT_MKIMAGE_SIGN_ARGS` is appended *after* `-k`, so a
-   `kas/local.yml`-level override cannot reach the working `-G` path.
+1. **`-G` is ignored entirely.** `lib/rsa/rsa-sign.c`'s
+   `rsa_engine_get_priv_key()` never references `params.keyfile`
+   inside the pkcs11 branch. The URI mkimage actually uses is built
+   from `-k` (`keydir`) and the FIT's `key-name-hint` (`name`), never
+   from `-G`.
+2. **`-k <bare-keydir-path>` is malformed.** When `keydir` does not
+   contain `object=`, mkimage synthesises
+   `pkcs11:<keydir>;object=<hint>;type=private` — a non-RFC-7512 URI
+   that `engine_pkcs11` rejects. Both upstream `kernel-fitimage.bbclass`
+   and this project's `iotgw-fit-custom-its.bbclass` hardcode `-k`
+   with a filesystem path, hitting this case.
+3. **`-k <URI-containing-object=>` is the only working form.** mkimage
+   takes the `keydir` verbatim and appends `;type=private`, producing
+   a clean RFC-7512 URI. `scripts/sign-fit.sh` uses this form with the
+   default URI pointing to libykcs11's hardcoded slot 9a label
+   (`Private key for PIV Authentication`).
 
-There is also a silent no-op trap in the no-`-k` path:
-`mkimage -F -N pkcs11 <fit>` without `-k` **and** without `-G` exits 0,
-regenerates hashes, repacks the FDT, and leaves the original signature
-bytes untouched. The `sign-fit.sh` wrapper guards against this by
-requiring at least one `Signature written` line in mkimage's captured
-output before declaring success.
+There is also a silent no-op trap: `mkimage -F -N pkcs11 <fit>`
+without `-k` exits 0, regenerates hashes, repacks the FDT, and leaves
+the original signature bytes untouched. The `sign-fit.sh` wrapper
+guards against this by requiring at least one `Signature written` line
+in mkimage's captured output before declaring success.
 
 Upstream migration note: the meta-oe `fitimage.bbclass` merged
 post-Scarthgap provides native PKCS#11 FIT signing support and is the
@@ -302,18 +448,29 @@ The wrapper does three things, in order:
 
 1. **`fdtput` rewrite** — walks every
    `/configurations/conf-*/signature*/key-name-hint` and sets it to the
-   libykcs11 CKA_LABEL exposed by the slot (default
-   `"Private key for PIV Authentication"` for PIV 9a). This is the
-   string that ends up in the resulting `Sign algo:` audit line; it is
-   **not** the key-lookup mechanism.
-2. **`mkimage -F -N pkcs11 -G "<uri>" <fit>`** — signs in place via
-   `engine_pkcs11` against `libykcs11`. The PKCS#11 URI passed via
-   `-G` is the actual lookup mechanism. Default URI is built from
-   `--key-label` (`pkcs11:object=<url-encoded label>;type=private`);
-   override `--uri` for token-anchored URIs in multi-YubiKey setups.
-   PIN is prompted on the terminal; touch is required per slot 9a's
-   touch policy (`CACHED` covers a multi-config signing call with one
-   tap).
+   project-controlled hint (default `iotgw-fit-yk-2026`, override with
+   `--key-name-hint`). This hint must match the
+   `/signature/key-<hint>` node injected into U-Boot's control FDT by
+   the kernel-fit recipe — devices reject FITs whose hint doesn't
+   resolve to a trusted key. It also drives the resulting `Sign algo:`
+   audit line. It is **not** the key-lookup mechanism for signing.
+2. **`mkimage -F -N pkcs11 -k "<uri>" <fit>`** — signs in place via
+   `engine_pkcs11` against `libykcs11`. **mkimage 2025.04 ignores
+   `-G` entirely in its `-N pkcs11` code path** (`lib/rsa/rsa-sign.c`
+   does not reference `params.keyfile` for the pkcs11 engine), and the
+   `-k` path only uses the URI verbatim when it already contains
+   `object=`. For any other URI form (`id=`, `token=` without
+   `object=`), mkimage rewrites it as
+   `pkcs11:<keydir>;object=<key-name-hint>;type=private` — broken
+   unless the FIT hint happens to equal a real libykcs11 object label.
+   The default URI is therefore object-anchored to libykcs11's
+   hardcoded slot 9a label:
+   `pkcs11:object=Private%20key%20for%20PIV%20Authentication`.
+   Slot-anchored URIs (`pkcs11:id=%01;type=private`) require a signer
+   that calls OpenSSL directly rather than through mkimage's
+   `-N pkcs11` path. PIN is prompted on the terminal; touch is
+   required per slot 9a's touch policy (`CACHED` covers a multi-config
+   signing call with one tap).
 3. **Success detection + structural verify** — captures mkimage's
    output; requires at least one `Signature written` log line.
    Deterministic RSA-PKCS#1 v1.5 over the FIT signed range makes
@@ -321,7 +478,7 @@ The wrapper does three things, in order:
    with the same key produces identical bytes), so the log line is
    the authoritative success signal. The optional `--verify` is a
    *structural* check on top: it asserts every signature node
-   carries `Sign algo: sha256,rsa2048:<KEY_LABEL>` and a non-empty
+   carries `Sign algo: sha256,rsa2048:<KEY_NAME_HINT>` and a non-empty
    `Sign value`. It does **not** cryptographically verify the
    signature against the slot's public key — for that, run
    `mkimage -V` against a DTB that embeds the expected pubkey.
@@ -340,7 +497,7 @@ On a YubiKey-signed fitImage, `dumpimage -l` shows, for every
 configuration:
 
 ```
-Sign algo:    sha256,rsa2048:Private key for PIV Authentication
+Sign algo:    sha256,rsa2048:iotgw-fit-yk-2026
 Sign value:   <256 bytes of fresh RSA-2048 signature>
 Timestamp:    <signing time, not build time>
 ```
@@ -471,7 +628,7 @@ restored from a `.bak` sibling.
 The wrapper is idempotent. Before extracting and re-signing, it peeks
 at the inner `fitImage`'s `Sign algo:` audit lines; if **every**
 signature node already advertises the HSM key-name-hint
-(`sha256,rsa2048:<KEY_LABEL>`), the wrapper exits cleanly without
+(`sha256,rsa2048:<KEY_NAME_HINT>`), the wrapper exits cleanly without
 contacting the token. A fresh build produces a file-key-signed FIT, so
 the audit line shows the file-key label and the wrapper signs. A
 partially labelled FIT (one config matches, another still shows the

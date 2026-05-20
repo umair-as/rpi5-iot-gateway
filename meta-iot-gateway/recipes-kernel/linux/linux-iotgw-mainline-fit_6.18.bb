@@ -29,6 +29,20 @@ IOTGW_FIT_RECOVERY_KERNEL_PATH ?= "${DEPLOY_DIR_IMAGE}/linux-recovery.bin"
 
 IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG ?= "none"
 
+# FIT DTB trust roots — see kas/local.yml.example fit_dtb_yk_pubkey_trust
+# block for the rotation pattern. Both gates default to a file-key-only
+# transition image; flip IOTGW_FIT_TRUST_YK_KEY=1 in kas/local.yml to add
+# the YubiKey public certificate as a second trust root.
+IOTGW_FIT_TRUST_FILE_KEY ?= "1"
+IOTGW_FIT_TRUST_YK_KEY   ?= "0"
+IOTGW_FIT_YK_KEYDIR      ?= ""
+IOTGW_FIT_YK_KEYNAME     ?= "iotgw-fit-yk-2026"
+
+# fdt_add_pubkey lands in the native sysroot via meta-iot-gateway's
+# u-boot-tools bbappend; mirrors the UBOOT_MKIMAGE_SIGN naming used by
+# kernel-fitimage.bbclass.
+UBOOT_FDT_ADD_PUBKEY ?= "${STAGING_BINDIR_NATIVE}/fdt_add_pubkey"
+
 python () {
     if d.getVar("IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL") != "1":
         return
@@ -43,15 +57,46 @@ python () {
 # Raspberry Pi firmware passes a runtime-prepared DTB to U-Boot. Inject FIT
 # public keys into deployed firmware DTBs so U-Boot control FDT can expose
 # /signature and enforce FIT config signatures on target.
+#
+# Two trust roots can be injected side-by-side via the IOTGW_FIT_TRUST_*
+# gates. When both are enabled, /signature/required-mode is set to "any"
+# so a FIT signed by either root verifies — the rotation window mode.
+# Setting both gates to 0 with UBOOT_SIGN_ENABLE=1 is fatal: a signed-FIT
+# enforced device with no trust roots would brick on first boot.
 do_deploy:append() {
     if [ "${UBOOT_SIGN_ENABLE}" != "1" ]; then
         bbnote "FIT DTB key injection skipped: UBOOT_SIGN_ENABLE=${UBOOT_SIGN_ENABLE}"
         return
     fi
 
-    if [ -z "${UBOOT_SIGN_KEYDIR}" ] || [ ! -d "${UBOOT_SIGN_KEYDIR}" ]; then
-        bbwarn "FIT DTB key injection skipped: missing UBOOT_SIGN_KEYDIR='${UBOOT_SIGN_KEYDIR}'"
-        return
+    trust_file="${IOTGW_FIT_TRUST_FILE_KEY}"
+    trust_yk="${IOTGW_FIT_TRUST_YK_KEY}"
+
+    if [ "${trust_file}" != "1" ] && [ "${trust_yk}" != "1" ]; then
+        bbfatal "FIT DTB trust misconfigured: IOTGW_FIT_TRUST_FILE_KEY=0 and IOTGW_FIT_TRUST_YK_KEY=0 with UBOOT_SIGN_ENABLE=1 would brick the device. Enable at least one trust root."
+    fi
+
+    if [ "${trust_file}" = "1" ]; then
+        if [ -z "${UBOOT_SIGN_KEYDIR}" ] || [ ! -d "${UBOOT_SIGN_KEYDIR}" ]; then
+            bbwarn "FIT DTB file-key injection skipped: missing UBOOT_SIGN_KEYDIR='${UBOOT_SIGN_KEYDIR}'"
+            trust_file="0"
+        fi
+    fi
+
+    if [ "${trust_yk}" = "1" ]; then
+        if [ -z "${IOTGW_FIT_YK_KEYDIR}" ] || [ ! -d "${IOTGW_FIT_YK_KEYDIR}" ]; then
+            bbfatal "FIT DTB YK-key injection requires IOTGW_FIT_YK_KEYDIR pointing to a directory holding ${IOTGW_FIT_YK_KEYNAME}.crt (got: '${IOTGW_FIT_YK_KEYDIR}')"
+        fi
+        if [ ! -f "${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt" ]; then
+            bbfatal "FIT DTB YK-key injection requires public certificate at ${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt — export with: ykman piv certificates export 9a <path>"
+        fi
+        if [ ! -x "${UBOOT_FDT_ADD_PUBKEY}" ]; then
+            bbfatal "fdt_add_pubkey not found at '${UBOOT_FDT_ADD_PUBKEY}' — ensure u-boot-tools-native installs it (see meta-iot-gateway/recipes-bsp/u-boot/u-boot-tools_%.bbappend)"
+        fi
+    fi
+
+    if [ "${trust_file}" != "1" ] && [ "${trust_yk}" != "1" ]; then
+        bbfatal "FIT DTB trust resolved to zero roots after validation — refusing to deploy unsigned-trust DTBs with UBOOT_SIGN_ENABLE=1"
     fi
 
     deploy_dir="${DEPLOYDIR}"
@@ -70,6 +115,8 @@ do_deploy:append() {
         return
     fi
 
+    bbnote "FIT DTB trust roots: file=${trust_file} yk=${trust_yk} algo=${FIT_HASH_ALG},${FIT_SIGN_ALG}"
+
     for dtb in ${RPI_KERNEL_DEVICETREE}; do
         dtb_base="${dtb##*/}"
         dtb_path=""
@@ -83,12 +130,31 @@ do_deploy:append() {
             continue
         fi
 
-        bbnote "Injecting FIT public keys into ${dtb_path}"
-        ${UBOOT_MKIMAGE_SIGN} \
-            ${@'-D "${UBOOT_MKIMAGE_DTCOPTS}"' if d.getVar('UBOOT_MKIMAGE_DTCOPTS') else ''} \
-            -F -k "${UBOOT_SIGN_KEYDIR}" \
-            -K "${dtb_path}" \
-            -r "${fit_path}" \
-            ${UBOOT_MKIMAGE_SIGN_ARGS}
+        if [ "${trust_file}" = "1" ]; then
+            bbnote "Injecting file-key (${UBOOT_SIGN_KEYNAME}) into ${dtb_path}"
+            ${UBOOT_MKIMAGE_SIGN} \
+                ${@'-D "${UBOOT_MKIMAGE_DTCOPTS}"' if d.getVar('UBOOT_MKIMAGE_DTCOPTS') else ''} \
+                -F -k "${UBOOT_SIGN_KEYDIR}" \
+                -K "${dtb_path}" \
+                -r "${fit_path}" \
+                ${UBOOT_MKIMAGE_SIGN_ARGS}
+        fi
+
+        if [ "${trust_yk}" = "1" ]; then
+            bbnote "Injecting YK pubkey (${IOTGW_FIT_YK_KEYNAME}) into ${dtb_path}"
+            ${UBOOT_FDT_ADD_PUBKEY} \
+                -a "${FIT_HASH_ALG},${FIT_SIGN_ALG}" \
+                -k "${IOTGW_FIT_YK_KEYDIR}" \
+                -n "${IOTGW_FIT_YK_KEYNAME}" \
+                -r conf \
+                "${dtb_path}"
+
+            # required-mode = "any" lets a FIT signed by either trust
+            # root verify. Without this, multiple required = "conf"
+            # keys make U-Boot require ALL of them, rejecting any FIT
+            # signed by only one root — the bricking case.
+            bbnote "Setting /signature/required-mode=any on ${dtb_path}"
+            fdtput -t s "${dtb_path}" /signature required-mode any
+        fi
     done
 }
