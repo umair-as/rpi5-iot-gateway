@@ -420,26 +420,32 @@ deploy artifact is re-signed.
 
 ### Why not sign inside bitbake
 
-Two interacting mkimage bugs make in-bitbake PKCS#11 signing
-unworkable as of u-boot-tools-native 2025.04:
+mkimage 2025.04's `-N pkcs11` code path has three behaviours that
+together make in-bitbake PKCS#11 signing unworkable and constrain even
+post-build wrapper use:
 
-1. **URI synthesis from `-k` is malformed.** When `mkimage` is given
-   both `-k <keydir>` and `-N pkcs11`, it synthesises a non-RFC-7512
-   PKCS#11 URI of the form `pkcs11:<keydir>;object=<hint>;type=private`.
-   `engine_pkcs11` rejects it.
-2. **`-G` is ignored when `-k` is present.** `lib/rsa/rsa-sign.c`
-   prioritises the keydir path. Both upstream
-   `kernel-fitimage.bbclass` and this project's
-   `iotgw-fit-custom-its.bbclass` hardcode `-k`, and
-   `UBOOT_MKIMAGE_SIGN_ARGS` is appended *after* `-k`, so a
-   `kas/local.yml`-level override cannot reach the working `-G` path.
+1. **`-G` is ignored entirely.** `lib/rsa/rsa-sign.c`'s
+   `rsa_engine_get_priv_key()` never references `params.keyfile`
+   inside the pkcs11 branch. The URI mkimage actually uses is built
+   from `-k` (`keydir`) and the FIT's `key-name-hint` (`name`), never
+   from `-G`.
+2. **`-k <bare-keydir-path>` is malformed.** When `keydir` does not
+   contain `object=`, mkimage synthesises
+   `pkcs11:<keydir>;object=<hint>;type=private` — a non-RFC-7512 URI
+   that `engine_pkcs11` rejects. Both upstream `kernel-fitimage.bbclass`
+   and this project's `iotgw-fit-custom-its.bbclass` hardcode `-k`
+   with a filesystem path, hitting this case.
+3. **`-k <URI-containing-object=>` is the only working form.** mkimage
+   takes the `keydir` verbatim and appends `;type=private`, producing
+   a clean RFC-7512 URI. `scripts/sign-fit.sh` uses this form with the
+   default URI pointing to libykcs11's hardcoded slot 9a label
+   (`Private key for PIV Authentication`).
 
-There is also a silent no-op trap in the no-`-k` path:
-`mkimage -F -N pkcs11 <fit>` without `-k` **and** without `-G` exits 0,
-regenerates hashes, repacks the FDT, and leaves the original signature
-bytes untouched. The `sign-fit.sh` wrapper guards against this by
-requiring at least one `Signature written` line in mkimage's captured
-output before declaring success.
+There is also a silent no-op trap: `mkimage -F -N pkcs11 <fit>`
+without `-k` exits 0, regenerates hashes, repacks the FDT, and leaves
+the original signature bytes untouched. The `sign-fit.sh` wrapper
+guards against this by requiring at least one `Signature written` line
+in mkimage's captured output before declaring success.
 
 Upstream migration note: the meta-oe `fitimage.bbclass` merged
 post-Scarthgap provides native PKCS#11 FIT signing support and is the
@@ -458,16 +464,23 @@ The wrapper does three things, in order:
    the kernel-fit recipe — devices reject FITs whose hint doesn't
    resolve to a trusted key. It also drives the resulting `Sign algo:`
    audit line. It is **not** the key-lookup mechanism for signing.
-2. **`mkimage -F -N pkcs11 -G "<uri>" <fit>`** — signs in place via
-   `engine_pkcs11` against `libykcs11`. The PKCS#11 URI passed via
-   `-G` is the actual lookup mechanism. Default URI is
-   `pkcs11:id=%01;type=private`, which selects PIV slot 9a by PKCS#11
-   ID (libykcs11 maps slot 9a to ID 01). Override `--uri` for
-   token-anchored URIs in multi-YubiKey setups, e.g.
-   `pkcs11:token=YubiKey%20PIV%20%23<SERIAL>;id=%01;type=private`.
-   PIN is prompted on the terminal; touch is required per slot 9a's
-   touch policy (`CACHED` covers a multi-config signing call with one
-   tap).
+2. **`mkimage -F -N pkcs11 -k "<uri>" <fit>`** — signs in place via
+   `engine_pkcs11` against `libykcs11`. **mkimage 2025.04 ignores
+   `-G` entirely in its `-N pkcs11` code path** (`lib/rsa/rsa-sign.c`
+   does not reference `params.keyfile` for the pkcs11 engine), and the
+   `-k` path only uses the URI verbatim when it already contains
+   `object=`. For any other URI form (`id=`, `token=` without
+   `object=`), mkimage rewrites it as
+   `pkcs11:<keydir>;object=<key-name-hint>;type=private` — broken
+   unless the FIT hint happens to equal a real libykcs11 object label.
+   The default URI is therefore object-anchored to libykcs11's
+   hardcoded slot 9a label:
+   `pkcs11:object=Private%20key%20for%20PIV%20Authentication`.
+   Slot-anchored URIs (`pkcs11:id=%01;type=private`) require a signer
+   that calls OpenSSL directly rather than through mkimage's
+   `-N pkcs11` path. PIN is prompted on the terminal; touch is
+   required per slot 9a's touch policy (`CACHED` covers a multi-config
+   signing call with one tap).
 3. **Success detection + structural verify** — captures mkimage's
    output; requires at least one `Signature written` log line.
    Deterministic RSA-PKCS#1 v1.5 over the FIT signed range makes

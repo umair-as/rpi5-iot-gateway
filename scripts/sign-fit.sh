@@ -38,9 +38,17 @@ set -euo pipefail
 # node injected into U-Boot's control FDT by the kernel-fit recipe.
 DEFAULT_KEY_NAME_HINT="iotgw-fit-yk-2026"
 
-# PIV slot 9a → PKCS#11 ID 01 via libykcs11. Slot-anchored URI is stable
-# across libykcs11 versions; the human-readable label is not.
-DEFAULT_URI="pkcs11:id=%01;type=private"
+# PKCS#11 URI passed to mkimage as -k (NOT -G). U-Boot 2025.04's mkimage
+# ignores -G in its `-N pkcs11` code path (lib/rsa/rsa-sign.c does not
+# reference params.keyfile for the pkcs11 engine) and synthesizes the
+# URI from the FIT's key-name-hint unless -k is supplied with a URI
+# that already contains `object=`. libykcs11 hardcodes slot 9a's
+# private-object label to "Private key for PIV Authentication", so the
+# only URI form mkimage will accept verbatim for that slot is
+# object-anchored to this label. Other URI forms (id=, token= without
+# object=) require a signer that calls OpenSSL directly rather than
+# going through mkimage's -N pkcs11 path.
+DEFAULT_URI="pkcs11:object=Private%20key%20for%20PIV%20Authentication"
 
 DEFAULT_ENGINE_CONF="${HOME}/rauc-keys/rauc-ca/fit/openssl-engine.cnf"
 
@@ -103,19 +111,24 @@ Usage: sign-fit.sh --fit PATH [OPTIONS]
                        U-Boot's control FDT — devices reject FITs
                        whose hint doesn't resolve to a trusted key.
                        Default: "${DEFAULT_KEY_NAME_HINT}"
-  --uri URI            PKCS#11 URI passed to mkimage via -G. Without
-                       this (or -k), mkimage -F silently skips
-                       signing. Default selects PIV slot 9a via
-                       libykcs11 by ID, which is stable across
-                       libykcs11 versions and YubiKey firmware.
-                       Override for token-anchored URIs, e.g.
-                       'pkcs11:token=YubiKey%20PIV%20%23<SERIAL>;id=%01;type=private'.
+  --uri URI            PKCS#11 URI passed to mkimage via -k (NOT -G;
+                       see comment near DEFAULT_URI). The URI MUST
+                       contain 'object=<libykcs11-label>' because
+                       mkimage 2025.04 only uses -k verbatim when the
+                       legacy URI form is detected via that substring;
+                       any other form (e.g. id=) is rewritten with an
+                       appended object=<key-name-hint> which will not
+                       match a real libykcs11 object. The default
+                       targets slot 9a via libykcs11's hardcoded
+                       private-object label. Token-anchored override
+                       example:
+                       'pkcs11:token=YubiKey%20PIV%20%23<SERIAL>;object=Private%20key%20for%20PIV%20Authentication'.
                        Default: "${DEFAULT_URI}"
   --key-label NAME     DEPRECATED alias. Equivalent to
                        '--key-name-hint NAME --uri pkcs11:object=
-                       <urlencoded NAME>;type=private'. Kept for
-                       back-compat with existing tooling that paired
-                       the libykcs11 object label with FIT metadata.
+                       <urlencoded NAME>'. Kept for back-compat with
+                       existing tooling that paired the libykcs11
+                       object label with FIT metadata.
   --verify             Structural check after signing (NOT a crypto
                        verification). Asserts every signature node
                        has algo 'sha256,rsa2048:<KEY_NAME_HINT>' and
@@ -166,7 +179,7 @@ if [[ -n "${KEY_LABEL_LEGACY}" ]]; then
     [[ -z "${KEY_NAME_HINT}" ]] || die "--key-label and --key-name-hint are mutually exclusive"
     KEY_NAME_HINT="${KEY_LABEL_LEGACY}"
     if [[ -z "${URI}" ]]; then
-        URI="pkcs11:object=$(url_encode "${KEY_LABEL_LEGACY}");type=private"
+        URI="pkcs11:object=$(url_encode "${KEY_LABEL_LEGACY}")"
     fi
 fi
 
@@ -175,6 +188,12 @@ URI="${URI:-${DEFAULT_URI}}"
 
 [[ -n "${KEY_NAME_HINT}" ]] || die "--key-name-hint must not be empty"
 [[ "${URI}" == pkcs11:* ]]  || die "URI must start with 'pkcs11:': ${URI}"
+# mkimage 2025.04's -k path keeps the URI verbatim only when it contains
+# 'object='. Without that substring, mkimage appends ';object=<hint>'
+# which then will not match a real libykcs11 object — silent sign
+# failure. Refuse early instead.
+[[ "${URI}" == *"object="* ]] \
+    || die "URI must contain 'object=<libykcs11-label>': mkimage 2025.04's -N pkcs11 path rewrites URIs without object= and will not find slot 9a — got: ${URI}"
 
 for tool in fdtget fdtput mkimage; do
     command -v "${tool}" >/dev/null 2>&1 || die "required tool missing on PATH: ${tool}"
@@ -260,16 +279,19 @@ else
     # over the FIT signed range is deterministic — re-signing the
     # same FIT with the same key produces byte-identical signatures
     # and would false-positive a pre/post bytes-changed guard.
+    # U-Boot 2025.04 ignores -G/keyfile in the pkcs11 RSA path.
+    # Passing -k pkcs11:object=<label> is the only way to decouple
+    # private-key lookup from the FIT key-name-hint.
     mk_log="$(mktemp)"
     trap 'rm -f "${mk_log}"; cleanup' EXIT
     set +e
     if [[ "${VERBOSE}" -eq 1 ]]; then
         OPENSSL_CONF="${ENGINE_CONF}" \
-            mkimage -F -N pkcs11 -G "${URI}" "${FIT}" 2>&1 | tee "${mk_log}"
+            mkimage -F -N pkcs11 -k "${URI}" "${FIT}" 2>&1 | tee "${mk_log}"
         mk_rc=${PIPESTATUS[0]}
     else
         OPENSSL_CONF="${ENGINE_CONF}" \
-            mkimage -F -N pkcs11 -G "${URI}" "${FIT}" >"${mk_log}" 2>&1
+            mkimage -F -N pkcs11 -k "${URI}" "${FIT}" >"${mk_log}" 2>&1
         mk_rc=$?
     fi
     set -e
