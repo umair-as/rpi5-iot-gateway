@@ -1,5 +1,5 @@
 .PHONY: help base dev prod desktop \
-        bundle-dev bundle-dev-full bundle-dev-full-fit bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
+        bundle-dev bundle-dev-full bundle-dev-full-fit sign-bootfiles-fit-yk bundle-dev-full-fit-resign bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
         layers parse clean-lock
 
 KAS ?= kas
@@ -26,6 +26,9 @@ help:
 	@echo "  -- Bundles (rootfs + kernel/DTBs) --"
 	@echo "  make bundle-dev-full      # Bundle from dev image"
 	@echo "  make bundle-dev-full-fit  # FIT bundle from dev image"
+	@echo "  -- HSM-signing flow (detached; CI-friendly) --"
+	@echo "  make sign-bootfiles-fit-yk    # Re-sign FIT in deploy tarball on YubiKey (interactive)"
+	@echo "  make bundle-dev-full-fit-resign  # Re-assemble bundle with HSM-signed FIT (unattended)"
 	@echo "  make bundle-base-full-fit-fast # FIT bundle from base image (OTBR off, faster)"
 	@echo "  make bundle-prod-full     # Bundle from prod image"
 	@echo "  make bundle-desktop-full  # Bundle from desktop image"
@@ -85,6 +88,59 @@ bundle-dev-full:
 
 bundle-dev-full-fit:
 	$(call bundle_cmd,iot-gw-image-dev,iot-gw-bundle-full-fit)
+
+# Detached HSM signing flow. The build and the HSM-signing step run in
+# separate processes — possibly on separate machines — so CI runners
+# can drive the unattended steps without ever needing a PIN/touch.
+#
+# Three stages, each runnable independently:
+#
+#   Stage 1 — file-key signed build (UNATTENDED, CI-friendly):
+#       make bundle-dev-full-fit
+#     Produces the deploy tarball and a file-key-signed .raucb. No HSM,
+#     no PIN, no touch. Suitable for GitHub Actions, GitLab runners, or
+#     any unattended pipeline.
+#
+#   Stage 2 — re-sign FIT in the deploy tarball (OPERATOR-ONLY):
+#       make sign-bootfiles-fit-yk [SIGN_FIT_ARGS='...']
+#     Takes the deploy tarball produced by Stage 1 and re-signs the
+#     embedded FIT against the PKCS#11 token. Requires PIN entry and a
+#     touch on the YubiKey. Only runs on a machine with the HSM
+#     physically attached (operator workstation or a hardened signing
+#     server). Never runs in CI.
+#
+#   Stage 3 — re-assemble bundle from signed tarball (UNATTENDED):
+#       make bundle-dev-full-fit-resign
+#     Re-runs the bundle recipe from do_configure so the assembled
+#     .raucb carries the HSM-signed FIT. No HSM interaction. Can run
+#     in CI on a runner that has the signed tarball deployed to
+#     DEPLOY_DIR_IMAGE (or be invoked locally by the operator after
+#     Stage 2).
+#
+# Typical release pipeline:
+#   - CI:        make bundle-dev-full-fit             → publish unsigned artifacts
+#   - Operator:  fetch artifacts → make sign-bootfiles-fit-yk → publish signed tarball
+#   - CI/Op:     make bundle-dev-full-fit-resign      → publish final signed .raucb
+#
+# SIGN_BOOTFILES_ARGS  → passed to sign-bootfiles-fit.sh (e.g. --force,
+#                       --archive PATH). Goes BEFORE '--'.
+# SIGN_FIT_ARGS        → forwarded to sign-fit.sh (e.g. --verify,
+#                       --verbose, --key-label NAME, --uri URI). Goes
+#                       AFTER '--'. Defaults to '--verify'.
+SIGN_BOOTFILES_ARGS ?=
+SIGN_FIT_ARGS ?= --verify
+sign-bootfiles-fit-yk:
+	bash scripts/sign-bootfiles-fit.sh $(SIGN_BOOTFILES_ARGS) -- $(SIGN_FIT_ARGS)
+
+bundle-dev-full-fit-resign:
+	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV" \
+			   BUNDLE_IMAGE_NAME=iot-gw-image-dev \
+			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
+			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
+			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
+			   IOTGW_ENABLE_OBSERVABILITY=$(IOTGW_ENABLE_OBSERVABILITY) \
+			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
+			   bitbake -C do_configure iot-gw-bundle-full-fit' $(BASE)
 
 bundle-base-full-fit-fast:
 	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV" \
