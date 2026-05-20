@@ -933,20 +933,3 @@ anchors installed into `/etc/rauc/keyring.d/`). The two settings serve
 different audiences (build host vs device) and intentionally don't
 share a variable.
 
-## References
-
-- `kas/local.yml.example` — committed convention for the build-time
-  variables consumed by `rauc-conf-iotgw`.
-- `meta-iot-gateway/recipes-ota/rauc/rauc-conf-iotgw_1.0.bb` — recipe
-  that renders `/etc/rauc/system.conf` and installs the keyring
-  directory.
-- `meta-iot-gateway/recipes-ota/rauc/files/iotgw-system.conf` —
-  `system.conf` template with the four token placeholders the recipe
-  substitutes (compatible string, TLS key, keyring locator, check-purpose,
-  allowed-signer-cns).
-- `docs/RAUC_UPDATE.md` — RAUC bundle install lifecycle on the device
-  (RAUC slot/boot semantics, install hooks, A/B rollback). Trust-anchor
-  policy described here is independent of the install mechanics
-  documented there.
-- `docs/SECURITY.md` — overall security posture; this PKI is one
-  component of it.
