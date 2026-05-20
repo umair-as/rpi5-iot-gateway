@@ -259,13 +259,14 @@ Expected failure symptoms in U-Boot log:
 - Do not commit keys into repository.
 - Keep RAUC signing keys and FIT signing keys separate.
 
-## YubiKey Post-Build Signing (Stage 2)
+## Signing FIT against a PKCS#11 token (YubiKey)
 
 The default flow above signs the FIT inside bitbake against a file-based
 RSA key under `UBOOT_SIGN_KEYDIR`. The HSM-backed flow moves the FIT
-signing key onto a YubiKey (PIV slot 9a, RSA-2048) and performs the
-signing as a **post-build** step. The bitbake-side signer stays
-file-based; only the deploy artifact is re-signed.
+signing key to a PKCS#11 token (the YubiKey PIV slot 9a in this
+repository's example, RSA-2048) and performs the signing as a
+**post-build** step. The bitbake-side signer stays file-based; only the
+deploy artifact is re-signed.
 
 ### Why not sign inside bitbake
 
@@ -287,7 +288,8 @@ There is also a silent no-op trap in the no-`-k` path:
 `mkimage -F -N pkcs11 <fit>` without `-k` **and** without `-G` exits 0,
 regenerates hashes, repacks the FDT, and leaves the original signature
 bytes untouched. The `sign-fit.sh` wrapper guards against this by
-comparing Sign values pre/post.
+requiring at least one `Signature written` line in mkimage's captured
+output before declaring success.
 
 Upstream migration note: the meta-oe `fitimage.bbclass` merged
 post-Scarthgap provides native PKCS#11 FIT signing support and is the
@@ -312,16 +314,20 @@ The wrapper does three things, in order:
    PIN is prompted on the terminal; touch is required per slot 9a's
    touch policy (`CACHED` covers a multi-config signing call with one
    tap).
-3. **Bytes-changed guard + structural verify** — captures Sign value
-   bytes before mkimage, dies if unchanged after. The optional
-   `--verify` is a *structural* check only — it asserts
-   `Sign algo: sha256,rsa2048:<KEY_LABEL>` and a non-empty Sign value.
-   It does **not** cryptographically verify against the slot pubkey.
-   For full crypto verification, run `mkimage -V` against a DTB
-   carrying the expected pubkey.
+3. **Success detection + structural verify** — captures mkimage's
+   output; requires at least one `Signature written` log line.
+   Deterministic RSA-PKCS#1 v1.5 over the FIT signed range makes
+   byte-comparison guards unreliable (re-signing the same content
+   with the same key produces identical bytes), so the log line is
+   the authoritative success signal. The optional `--verify` is a
+   *structural* check on top: it asserts every signature node
+   carries `Sign algo: sha256,rsa2048:<KEY_LABEL>` and a non-empty
+   `Sign value`. It does **not** cryptographically verify the
+   signature against the slot's public key — for that, run
+   `mkimage -V` against a DTB that embeds the expected pubkey.
 
-Typical invocation against a COPY of the deploy artifact (never the
-deploy FIT directly — see warning below):
+The script mutates `--fit` in place. Run it against a copy of the
+deploy artifact:
 
 ```bash
 cp build/tmp-glibc/.../fitImage /tmp/fit-test/fitImage.yk
@@ -386,7 +392,7 @@ of them prerequisites of the others:
 
 ```mermaid
 flowchart TD
-    subgraph CI1["Stage 1: unattended build runner"]
+    subgraph BuildPhase["Build phase (unattended build runner)"]
         A["make bundle-dev-full-fit"]
         B["bootfiles-fit.tar.gz<br/>inner FIT signed by file key"]
         C["candidate .raucb<br/>not final release if HSM signing is required"]
@@ -398,11 +404,11 @@ flowchart TD
         D["file-key signed build artifacts"]
     end
 
-    subgraph HSM["Stage 2: operator workstation or signing server"]
+    subgraph SignPhase["Sign phase (operator workstation or signing server)"]
         E["make sign-bootfiles-fit-yk"]
         F["scripts/sign-bootfiles-fit.sh"]
         G["scripts/sign-fit.sh"]
-        YK["YubiKey PIV slot 9a<br/>RSA-2048 private key<br/>non-extractable"]
+        YK["PKCS#11 token<br/>RSA-2048 private key<br/>non-extractable"]
         H["bootfiles-fit.tar.gz<br/>inner FIT HSM-signed"]
         E --> F --> G
         G -->|"PKCS#11 via engine_pkcs11<br/>PIN + touch or signing-daemon policy"| YK
@@ -413,7 +419,7 @@ flowchart TD
         I["HSM-signed bootfiles-fit.tar.gz"]
     end
 
-    subgraph CI2["Stage 3: unattended bundle assembly"]
+    subgraph AssemblePhase["Assemble phase (unattended bundle assembly)"]
         J["make bundle-dev-full-fit-resign"]
         K["iot-gw-bundle-full-fit<br/>do_configure re-copies signed tarball"]
         L["final .raucb<br/>contains HSM-signed FIT"]
@@ -446,33 +452,33 @@ sequenceDiagram
     Final->>Store: publish final HSM-signed .raucb
 ```
 
-#### Stage 1 — `make bundle-dev-full-fit` (UNATTENDED)
+#### Build — `make bundle-dev-full-fit` (unattended)
 
 Same target as the file-key flow above. No HSM, no PIN, no touch.
 Suitable for GitHub Actions, GitLab runners, or any unattended
 pipeline. Produces the file-key-signed `.raucb` plus the deploy
 `bootfiles-fit.tar.gz` whose inner FIT is file-key signed.
 
-#### Stage 2 — `make sign-bootfiles-fit-yk` (OPERATOR-ONLY)
+#### Sign — `make sign-bootfiles-fit-yk` (operator-only)
 
 Wraps `scripts/sign-bootfiles-fit.sh`. Extracts
 `deploy/.../bootfiles-fit.tar.gz`, calls `sign-fit.sh` on the inner
-FIT (prompts for PIN, requires touch under slot 9a's `CACHED`
-policy), repacks the tarball in place. Snapshot/restore semantics: if
+FIT (prompts for PIN, requires touch when the slot policy demands
+one), repacks the tarball in place. Snapshot/restore semantics: if
 anything fails between extract and repack, the original tarball is
 restored from a `.bak` sibling.
 
 The wrapper is idempotent. Before extracting and re-signing, it peeks
 at the inner `fitImage`'s `Sign algo:` audit lines; if **every**
 signature node already advertises the HSM key-name-hint
-(`sha256,rsa2048:<KEY_LABEL>`), Stage 2 exits cleanly without
-contacting the YubiKey. A fresh Stage 1 build produces a
-file-key-signed FIT, so the audit line shows the file-key label and
-Stage 2 signs. A partially labelled FIT (one config matches, another
-still shows the file-key label) is NOT skipped — the wrapper logs the
-mismatch and re-signs all nodes, so a mixed-trust tarball never makes
-it to the bundle. To override the skip and re-sign anyway, pass
-`--force` to the wrapper. With the Make wrapper:
+(`sha256,rsa2048:<KEY_LABEL>`), the wrapper exits cleanly without
+contacting the token. A fresh build produces a file-key-signed FIT, so
+the audit line shows the file-key label and the wrapper signs. A
+partially labelled FIT (one config matches, another still shows the
+file-key label) is NOT skipped — the wrapper logs the mismatch and
+re-signs all nodes, so a mixed-trust tarball never makes it to the
+bundle. To override the skip and re-sign anyway, pass `--force` to the
+wrapper. With the Make wrapper:
 
 ```bash
 make sign-bootfiles-fit-yk SIGN_BOOTFILES_ARGS=--force
@@ -497,7 +503,7 @@ The signing step is bounded in time and well-defined: one PIN entry,
 one touch (CACHED covers all configurations in the FIT), seconds of
 wall clock.
 
-#### Stage 3 — `make bundle-dev-full-fit-resign` (UNATTENDED)
+#### Assemble — `make bundle-dev-full-fit-resign` (unattended)
 
 `bitbake -C do_configure iot-gw-bundle-full-fit`. Invalidates the
 bundle recipe's `do_configure` stamp so it re-copies the now-HSM-
@@ -505,7 +511,7 @@ signed tarball from DEPLOY_DIR_IMAGE into its WORKDIR and re-runs
 `do_bundle`. A few minutes; no kernel/rootfs rebuild. Can run in CI
 on any runner that has the signed tarball deployed (e.g. via an
 artifact pull from release storage), or locally by the operator
-right after Stage 2.
+right after the sign phase.
 
 #### CI / signing-server integration
 
@@ -514,22 +520,23 @@ For pipelines that have to be fully unattended, the only options are:
 1. **Detached signing server** — a small daemon on a controlled host
    with the HSM permanently attached. It receives a signing request
    (artifact + metadata) over an authenticated channel (mTLS), runs
-   the equivalent of Stage 2, returns the signed artifact. PIN is
-   pre-loaded into the daemon's session at boot (operator
-   authenticates once); touch can be CACHED with a long window or
-   NEVER (lower-assurance only). Stage 3 then runs on the CI runner.
-2. **Manual handoff** — CI does Stage 1, publishes artifacts; a
-   release manager pulls them to a workstation with the YubiKey
-   attached, runs Stage 2, pushes the signed tarball back; a final
-   CI job (or the operator) runs Stage 3.
+   the equivalent of the sign phase, returns the signed artifact.
+   The PIN is pre-loaded into the daemon's session at start-up
+   (operator authenticates once); touch can be CACHED with a long
+   window or NEVER (lower-assurance only). The CI runner then runs
+   the assemble phase.
+2. **Manual handoff** — CI runs the build phase and publishes
+   artifacts; a release manager pulls them to a workstation with the
+   token attached, runs the sign phase, publishes the signed tarball
+   back; a final CI job (or the operator) runs the assemble phase.
 
-The repository ships only the building blocks (sign-fit.sh,
-sign-bootfiles-fit.sh, the three Make targets). The signing daemon
-is intentionally not in scope here — it belongs to whichever signing
-infrastructure the consumer of this layer already runs.
+The repository ships only the building blocks (`sign-fit.sh`,
+`sign-bootfiles-fit.sh`, the three Make targets). The signing daemon
+is intentionally out of scope here — it belongs to whichever signing
+infrastructure consumes this layer.
 
-The example YubiKey policy used during bring-up is touch `CACHED` +
-PIN `ALWAYS`, which prevents headless unattended HSM signing unless a
+The example token policy in this repository is touch `CACHED` + PIN
+`ALWAYS`, which prevents headless unattended HSM signing unless a
 project explicitly chooses a relaxed signing-server policy.
 
 ### Slot 9a provisioning reference

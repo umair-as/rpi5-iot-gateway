@@ -33,15 +33,15 @@ is public, the hardware inventory is operator-local.
   `check-purpose=codesign` and `allowed-signer-cns=` gates add CN
   allowlisting and X.509 purpose enforcement on top of chain trust.
 
-### What it does NOT protect against (Stage 1 residual risks)
+### What it does NOT protect against
 
 - **File-based intermediate CA compromise.** The Dev/Prod intermediate
   CA private keys live on the build host's filesystem (`0600` ownership,
   but recoverable by any process running as the operator). An attacker
   who roots the build host can sign new leaves under the Dev/Prod CA
-  without ever touching the YubiKey. **This is the explicit residual
-  risk closed by a follow-on phase** that promotes Dev/Prod CA private
-  keys into YubiKey PIV slots 9d/82.
+  without ever touching the YubiKey. Moving these intermediate CA keys
+  to a hardware-backed slot would close this gap; that migration is out
+  of scope for this document.
 - **Physical YubiKey + PIN attack.** A stolen YubiKey with three PIN
   attempts is locked out (and PUK has its own three-attempt limit). The
   dual-Root design assumes physical compromise of only one of the two
@@ -118,59 +118,17 @@ self-heals from leaf compromise without active CRL infrastructure.
 
 The libykcs11 path is `/usr/local/lib/libykcs11.so` (source-built rather
 than distro-packaged because distro packages historically do not expose
-the PIV retired slots 82–95 that this design uses for Stage 4 promotion).
-`opensc-pkcs11.so` is present on most hosts but **not used** here — it
-cannot enumerate retired slots.
-
-### Operator-local inventory (never committed)
-
-Operators record the following in their own vault, never in repo:
-
-- The two YubiKey serial numbers (referred to in this doc as
-  `${YK_PRIMARY_SERIAL}` and `${YK_BACKUP_SERIAL}`)
-- The F9 attestation certs captured at provisioning time
-- The PIN/PUK values
-
-Suggested vault layout under `${RAUC_CA_DIR}` (e.g.
-`~/rauc-keys/rauc-ca/`):
-
-```
-${RAUC_CA_DIR}/
-├── root-ca/
-│   ├── openssl-root.cnf
-│   ├── openssl-root-backup.cnf
-│   ├── openssl-ca-primary.cnf       # `openssl ca` config for Root signing
-│   ├── root-ca-primary.crt          # exported Root cert (public)
-│   ├── root-ca-primary.pub          # exported Root pubkey
-│   ├── root-ca-backup.crt
-│   ├── root-ca-backup.pub
-│   ├── index.txt                    # `openssl ca` issuance database
-│   ├── serial
-│   ├── newcerts/                    # `openssl ca` cert copies
-│   └── attestations/
-│       ├── yk-${YK_PRIMARY_SERIAL}-9c-attest.crt
-│       └── yk-${YK_BACKUP_SERIAL}-9c-attest.crt
-├── dev-ca/
-│   ├── openssl-dev-ca.cnf
-│   ├── dev-ca.key.pem               # FILE-BASED — Stage 4 promotes to HSM
-│   ├── dev-ca.csr
-│   └── dev-ca.cert.pem
-├── prod-ca/
-│   ├── openssl-prod-ca.cnf
-│   ├── prod-ca.key.pem
-│   ├── prod-ca.csr
-│   └── prod-ca.cert.pem
-└── issued/dev/
-    ├── openssl-dev-leaf.cnf
-    ├── iotgw-rauc-dev-signer-2026.key.pem
-    ├── iotgw-rauc-dev-signer-2026.csr
-    └── iotgw-rauc-dev-signer-2026.cert.pem
-```
+the PIV retired slots 82–95 that this design uses). `opensc-pkcs11.so`
+is present on most hosts but **not used** here — it cannot enumerate
+retired slots.
 
 The Root certs (`root-ca-{primary,backup}.crt`) are public and *will*
 land in committed image bundles via the device keyring directory — but
-they are not committed to the repo directly. The recipe consumes them at
-build time via `IOTGW_RAUC_KEYRING_CERTS` (see below).
+the certificate files themselves are not committed to the repo. The
+recipe consumes them at build time via `IOTGW_RAUC_KEYRING_CERTS` (see
+below). Private-key material, F9 attestation certs, PIN/PUK values, and
+YubiKey serial numbers live on the operator's workstation outside the
+repository.
 
 ### Serial-anchored PKCS#11 URIs
 
@@ -186,32 +144,31 @@ pkcs11:token=YubiKey%20PIV%20%23${YK_BACKUP_SERIAL};id=%02;type=private
 `%23` is URL-encoded `#`, the prefix Yubico's libykcs11 uses in the
 token label (e.g. `YubiKey PIV #<serial>`).
 
-## Slot Reservation Map
+## PIV slots used by this design
 
-PIV slots are assigned by purpose, not by which YubiKey holds them. Both
-the primary and backup YubiKey use the same slot layout. The
-`CKA_ID (hex)` column is the integer ykcs11 maps each PIV slot to (per
-`ykcs11/objects.c`).
+This document's procedures touch the following PIV slots on each
+YubiKey. Slot purposes are assigned by role, not by which YubiKey holds
+them — primary and backup use the same layout.
 
-| Slot | CKA_ID | Role | Algorithm | PIN | Touch | Stage 1 status |
-|---|---|---|---|---|---|---|
-| 9c | 0x02 | RAUC Root CA (shared with sibling projects) | P-384 | ALWAYS | ALWAYS | **Key + cert provisioned** |
-| 9d | 0x03 | RAUC Dev CA | (P-256) | — | — | Cert-only beacon (no key in slot) |
-| 82 | 0x05 | RAUC Prod CA | (P-256) | — | — | Cert-only beacon |
-| 83 | 0x06 | RAUC Dev signing leaf | (P-256) | — | — | Cert-only beacon |
-| 9a | 0x01 | FIT image signing | — | — | — | Reserved (future) |
-| 84–87 | 0x07–0x0a | Reserved for sibling project intermediates | — | — | — | Reserved |
-| F9 | — | Yubico attestation (factory) | — | — | — | **Never touch** |
+| Slot | Role | Algorithm | PIN | Touch |
+|---|---|---|---|---|
+| 9c | RAUC Root CA (on-device key) | P-384 | ALWAYS | ALWAYS |
+| 9d | RAUC Dev CA cert (cert-only, no in-slot key) | P-256 cert | — | — |
+| 82 | RAUC Prod CA cert (cert-only) | P-256 cert | — | — |
+| 83 | RAUC Dev signing-leaf cert (cert-only) | P-256 cert | — | — |
+| F9 | Yubico factory attestation (read-only) | — | — | — |
 
-The cert-only beacons in 9d/82/83 carry the corresponding intermediate /
-leaf cert without a matching on-device private key. Their purpose is
-twofold: operator traceability (`ykman piv info` instantly reveals which
-PKI tier each slot represents) and future-phase readiness (when a key
-is generated into the slot later, the slot already advertises the
-correct subject DN under the same operator workflow).
+The cert-only entries in 9d / 82 / 83 carry the corresponding
+intermediate or leaf certificate without a matching on-device private
+key. Their purpose is operator traceability: `ykman piv info` reveals
+which PKI tier each slot represents at a glance.
 
 Slot F9 holds Yubico's factory-loaded attestation key. **Overwriting it
 voids the attestation evidence chain.** It is read-only in this design.
+
+CKA_ID values (hex) used in PKCS#11 URIs for the slots above:
+`9c → 0x02`, `9d → 0x03`, `82 → 0x05`, `83 → 0x06`. Per
+`libykcs11`'s `ykcs11/objects.c` mapping.
 
 ## Provisioning Runbook
 
@@ -516,7 +473,8 @@ that the two Roots come from physically separate hardware.
 ykman piv info
 ```
 
-Expected on primary after Stage 1 — four populated slots:
+Expected on the primary YubiKey after running the provisioning runbook
+above — four populated slots:
 
 | Slot | Algorithm | Subject |
 |---|---|---|
@@ -595,7 +553,7 @@ Expected results:
 | **Legacy-signed bundle**    | ✓ accept (chain depth 1, `iot-gateway-rpi5`) | ✓ accept (legacy anchor still present) | ✗ **reject** — `Verify error: self-signed certificate` |
 | **Chain-signed bundle**     | ✗ **reject** — `unable to get local issuer certificate` | ✓ accept (chain depth 3, anchors on Root) | ✓ accept (chain depth 3, signer `iotgw-rauc-dev-signer-2026`) |
 
-The two reject cells are the portfolio-gold negative tests:
+The two reject cells are the critical negative tests:
 
 - **Legacy bundle on cutover keyring**: proves that once a device boots
   into the Root-only state, no legacy-signed bundle can install. The
@@ -606,7 +564,7 @@ The two reject cells are the portfolio-gold negative tests:
   climbed one step at a time.
 
 For each chain-signed accept, the chain breakdown rauc emits is itself
-worth capturing for the portfolio evidence folder:
+worth capturing in the release-evidence folder:
 
 ```
 Certificate Chain:
@@ -769,10 +727,11 @@ signature.
    chain anchors on the still-trusted backup Root.
 4. **Physically destroy** the lost primary YubiKey if recovered, or
    accept the residual risk if not.
-5. **Provision a fresh new-primary** in a new YubiKey (same procedure as
-   Stage 1-A), and ship a follow-up bundle re-anchoring the keyring
-   directory on `new-primary + backup` for redundancy. Optional: issue a
-   fresh Dev CA under the new primary Root and rotate signing leaves.
+5. **Provision a fresh new-primary** in a new YubiKey (same procedure
+   as the primary-Root provisioning runbook above), and ship a
+   follow-up bundle re-anchoring the keyring directory on
+   `new-primary + backup` for redundancy. Optional: issue a fresh Dev
+   CA under the new primary Root and rotate signing leaves.
 
 ### Backup YubiKey lost
 
@@ -826,41 +785,10 @@ A planned re-key is the three-image migration in reverse order:
    contains the new Root only (cutover image).
 4. Decommission the old YubiKey.
 
-## Out of Scope (Stage 4 preview)
-
-A follow-on phase promotes the file-based Dev/Prod intermediate CA
-private keys into the primary YubiKey's slots 9d/82, closing the residual
-risk that the build host's filesystem holds intermediate signing keys.
-
-Sketch of the migration:
-
-1. Generate a fresh P-256 keypair into slot 9d on the primary YubiKey
-   (PIN ALWAYS, touch CACHED for usability — intermediate signings happen
-   in batches during routine leaf rotation, so touch caching is OK at
-   the intermediate tier).
-2. Build a new CSR for the same `iotgw-rauc-dev-ca-2026` subject DN
-   (key changes; subject DN stays so leaves issued under the old key
-   remain verifiable until they expire naturally).
-3. Re-issue the Dev CA cert under the same Root primary YubiKey signing
-   path, using the new in-slot key.
-4. Replace the cert-only beacon in slot 9d with the freshly-issued cert.
-5. Optionally retire the file-based `dev-ca.key.pem` (shred the disk
-   key) once a couple of leaf rotations under the new HSM-resident Dev
-   CA have validated end-to-end.
-
-Repeat for slot 82 (Prod CA). The leaf signing key in slot 83 follows
-the same pattern at the next annual rotation.
-
-The retired slots 82–95 layout also lets us keep previous-generation
-signing keys on-device for verifying older artifacts after a rotation
-— see `~/ykcs11-build/SLOT_MAPPING.md` for the operator-local mapping
-documentation.
-
 ## Known Pitfalls and Workarounds
 
-Five real ecosystem traps hit during the rpi5-iot-gw rollout. Each costs
-hours the first time. Documented here so the next operator can skip
-straight to the fix.
+Five ecosystem traps documented here so they don't have to be
+re-derived. Each costs hours the first time.
 
 ### 1. Leaf cert needs both `codeSigning` AND `emailProtection` EKUs
 
