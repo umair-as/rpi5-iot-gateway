@@ -15,9 +15,15 @@
 # absent in the silent no-op case.
 #
 # The FIT's `key-name-hint` is metadata only — it determines the
-# audit string in `Sign algo: <alg>:<hint>`; the actual key lookup is
-# driven by the PKCS#11 URI passed via `-G`. fdtput rewrites the hint
-# before signing so the audit line reflects the HSM-resident key.
+# audit string in `Sign algo: <alg>:<hint>` and must match the
+# `/signature/key-<hint>` node in U-Boot's control FDT for the
+# device to actually verify the signature. The actual key lookup
+# during signing is driven by the PKCS#11 URI passed via `-G`,
+# which is decoupled from the hint (libykcs11 exposes slot 9a's
+# private object under a fixed label "Private key for PIV
+# Authentication", independent of the project-controlled FIT hint).
+# fdtput rewrites the hint before signing so the audit line and the
+# DTB key-node lookup line up.
 #
 # WARNING: mutates --fit in place. Run against a copy of the deploy
 # artifact, not the deploy artifact directly. The script writes a
@@ -28,13 +34,21 @@
 
 set -euo pipefail
 
-DEFAULT_KEY_LABEL="Private key for PIV Authentication"
+# Project-controlled FIT key-name-hint. Must match the /signature/key-<hint>
+# node injected into U-Boot's control FDT by the kernel-fit recipe.
+DEFAULT_KEY_NAME_HINT="iotgw-fit-yk-2026"
+
+# PIV slot 9a → PKCS#11 ID 01 via libykcs11. Slot-anchored URI is stable
+# across libykcs11 versions; the human-readable label is not.
+DEFAULT_URI="pkcs11:id=%01;type=private"
+
 DEFAULT_ENGINE_CONF="${HOME}/rauc-keys/rauc-ca/fit/openssl-engine.cnf"
 
 FIT=""
 ENGINE_CONF="${DEFAULT_ENGINE_CONF}"
-KEY_LABEL="${DEFAULT_KEY_LABEL}"
+KEY_NAME_HINT=""
 URI=""
+KEY_LABEL_LEGACY=""
 VERIFY=0
 REWRITE_ONLY=0
 VERBOSE=0
@@ -83,23 +97,29 @@ Usage: sign-fit.sh --fit PATH [OPTIONS]
   --engine-conf PATH   OpenSSL engine config that loads engine_pkcs11
                        against the PKCS#11 module.
                        Default: ${DEFAULT_ENGINE_CONF}
-  --key-label NAME     FIT key-name-hint to write before re-signing.
-                       Metadata only — drives the resulting
-                       'Sign algo:' audit line, not the key lookup.
-                       Should match the CKA_LABEL exposed by the
-                       PKCS#11 token when --uri is omitted (the
-                       default URI is built from this label).
-                       Default: "${DEFAULT_KEY_LABEL}"
+  --key-name-hint NAME FIT key-name-hint to write before re-signing.
+                       Drives the 'Sign algo:' audit line AND must
+                       match the /signature/key-<NAME> node in
+                       U-Boot's control FDT — devices reject FITs
+                       whose hint doesn't resolve to a trusted key.
+                       Default: "${DEFAULT_KEY_NAME_HINT}"
   --uri URI            PKCS#11 URI passed to mkimage via -G. Without
                        this (or -k), mkimage -F silently skips
-                       signing. Default is built from --key-label as
-                       pkcs11:object=<url-encoded label>;type=private.
+                       signing. Default selects PIV slot 9a via
+                       libykcs11 by ID, which is stable across
+                       libykcs11 versions and YubiKey firmware.
                        Override for token-anchored URIs, e.g.
                        'pkcs11:token=YubiKey%20PIV%20%23<SERIAL>;id=%01;type=private'.
+                       Default: "${DEFAULT_URI}"
+  --key-label NAME     DEPRECATED alias. Equivalent to
+                       '--key-name-hint NAME --uri pkcs11:object=
+                       <urlencoded NAME>;type=private'. Kept for
+                       back-compat with existing tooling that paired
+                       the libykcs11 object label with FIT metadata.
   --verify             Structural check after signing (NOT a crypto
                        verification). Asserts every signature node
-                       has algo 'sha256,rsa2048:<KEY_LABEL>' and a
-                       non-empty Sign value (rejects "unavailable").
+                       has algo 'sha256,rsa2048:<KEY_NAME_HINT>' and
+                       a non-empty Sign value (rejects "unavailable").
                        For cryptographic verification, run
                        'mkimage -V' against a DTB carrying the
                        expected public key.
@@ -118,10 +138,11 @@ EOF
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --fit)          [[ $# -ge 2 ]] || die "--fit needs a value"; FIT="$2"; shift 2 ;;
-        --engine-conf)  [[ $# -ge 2 ]] || die "--engine-conf needs a value"; ENGINE_CONF="$2"; shift 2 ;;
-        --key-label)    [[ $# -ge 2 ]] || die "--key-label needs a value"; KEY_LABEL="$2"; shift 2 ;;
-        --uri)          [[ $# -ge 2 ]] || die "--uri needs a value"; URI="$2"; shift 2 ;;
+        --fit)            [[ $# -ge 2 ]] || die "--fit needs a value"; FIT="$2"; shift 2 ;;
+        --engine-conf)    [[ $# -ge 2 ]] || die "--engine-conf needs a value"; ENGINE_CONF="$2"; shift 2 ;;
+        --key-name-hint)  [[ $# -ge 2 ]] || die "--key-name-hint needs a value"; KEY_NAME_HINT="$2"; shift 2 ;;
+        --uri)            [[ $# -ge 2 ]] || die "--uri needs a value"; URI="$2"; shift 2 ;;
+        --key-label)      [[ $# -ge 2 ]] || die "--key-label needs a value"; KEY_LABEL_LEGACY="$2"; shift 2 ;;
         --verify)       VERIFY=1; shift ;;
         --rewrite-only) REWRITE_ONLY=1; shift ;;
         --verbose)      VERBOSE=1; shift ;;
@@ -133,7 +154,6 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${FIT}" ]]         || { usage >&2; die "--fit is required"; }
-[[ -n "${KEY_LABEL}" ]]   || die "--key-label must not be empty"
 [[ -n "${ENGINE_CONF}" ]] || die "--engine-conf must not be empty"
 [[ -f "${FIT}" ]]         || die "fitImage not found: ${FIT}"
 [[ -w "${FIT}" ]]         || die "fitImage not writable: ${FIT}"
@@ -141,10 +161,20 @@ FIT_DIR="$(dirname -- "${FIT}")"
 [[ -w "${FIT_DIR}" ]]     || die "cannot write backup next to ${FIT} (directory not writable: ${FIT_DIR})"
 [[ -f "${ENGINE_CONF}" ]] || die "engine conf not found: ${ENGINE_CONF}"
 
-if [[ -z "${URI}" ]]; then
-    URI="pkcs11:object=$(url_encode "${KEY_LABEL}");type=private"
+if [[ -n "${KEY_LABEL_LEGACY}" ]]; then
+    warn "--key-label is deprecated; pass --key-name-hint and --uri explicitly"
+    [[ -z "${KEY_NAME_HINT}" ]] || die "--key-label and --key-name-hint are mutually exclusive"
+    KEY_NAME_HINT="${KEY_LABEL_LEGACY}"
+    if [[ -z "${URI}" ]]; then
+        URI="pkcs11:object=$(url_encode "${KEY_LABEL_LEGACY}");type=private"
+    fi
 fi
-[[ "${URI}" == pkcs11:* ]] || die "URI must start with 'pkcs11:': ${URI}"
+
+KEY_NAME_HINT="${KEY_NAME_HINT:-${DEFAULT_KEY_NAME_HINT}}"
+URI="${URI:-${DEFAULT_URI}}"
+
+[[ -n "${KEY_NAME_HINT}" ]] || die "--key-name-hint must not be empty"
+[[ "${URI}" == pkcs11:* ]]  || die "URI must start with 'pkcs11:': ${URI}"
 
 for tool in fdtget fdtput mkimage; do
     command -v "${tool}" >/dev/null 2>&1 || die "required tool missing on PATH: ${tool}"
@@ -201,7 +231,7 @@ for conf in "${CONFS[@]}"; do
             signature*)
                 MUTATED=1
                 fdtput -t s "${FIT}" "/configurations/${conf}/${child}" \
-                    key-name-hint "${KEY_LABEL}" \
+                    key-name-hint "${KEY_NAME_HINT}" \
                     || die "fdtput failed on /configurations/${conf}/${child}"
                 sig_found=$((sig_found+1))
                 TOTAL_SIGS=$((TOTAL_SIGS+1))
@@ -210,7 +240,7 @@ for conf in "${CONFS[@]}"; do
     done
     [[ "${sig_found}" -gt 0 ]] || die "no signature* nodes under /configurations/${conf}"
 done
-log "rewrote key-name-hint to '${KEY_LABEL}' on ${TOTAL_SIGS} signature node(s) across ${#CONFS[@]} configuration(s)"
+log "rewrote key-name-hint to '${KEY_NAME_HINT}' on ${TOTAL_SIGS} signature node(s) across ${#CONFS[@]} configuration(s)"
 
 if [[ "${REWRITE_ONLY}" -eq 1 ]]; then
     log "rewrite-only: FIT key-name-hint rewritten in place; skipping mkimage"
@@ -269,7 +299,7 @@ if [[ "${VERIFY}" -eq 1 ]]; then
     if ! dump_out="$(dumpimage -l "${FIT}" 2>&1)"; then
         die "dumpimage failed during --verify: ${dump_out}"
     fi
-    expected_algo="sha256,rsa2048:${KEY_LABEL}"
+    expected_algo="sha256,rsa2048:${KEY_NAME_HINT}"
 
     algo_count=$(printf '%s\n' "${dump_out}" | grep -c -F 'Sign algo:' || true)
     match_count=$(printf '%s\n' "${dump_out}" | grep -c -F "${expected_algo}" || true)
@@ -306,7 +336,7 @@ fi
 echo
 echo "================ sign-fit summary ================"
 printf "  FIT image       : %s\n" "${FIT}"
-printf "  Key label       : %s\n" "${KEY_LABEL}"
+printf "  Key name hint   : %s\n" "${KEY_NAME_HINT}"
 printf "  PKCS#11 URI     : %s\n" "${URI}"
 printf "  Engine conf     : %s\n" "${ENGINE_CONF}"
 printf "  Configurations  : %d\n" "${#CONFS[@]}"

@@ -68,7 +68,7 @@ Usage: sign-bootfiles-fit.sh [--archive PATH] [-- <sign-fit.sh args>...]
   -h, --help       Show this help and exit.
 
 All arguments after '--' are forwarded to sign-fit.sh. Useful
-forwards: --uri, --key-label, --engine-conf, --verify.
+forwards: --key-name-hint, --uri, --engine-conf, --verify.
 
 Example:
   sign-bootfiles-fit.sh -- --verify
@@ -117,18 +117,23 @@ log "pre  sha256: ${PRE_SHA}"
 # favours an in-artifact signal over a sidecar trust file that does
 # not travel across machines. Use --force to override.
 #
-# Effective KEY_LABEL is what sign-fit.sh will use: parse from
-# PASSTHROUGH for an explicit --key-label, otherwise fall back to
-# sign-fit.sh's documented default.
-DEFAULT_HSM_LABEL="Private key for PIV Authentication"
-EFFECTIVE_LABEL="${DEFAULT_HSM_LABEL}"
+# Effective FIT key-name-hint is what sign-fit.sh will write: parse
+# PASSTHROUGH for an explicit --key-name-hint, fall back to the
+# deprecated --key-label alias if present, otherwise use sign-fit.sh's
+# documented default (kept in sync with DEFAULT_KEY_NAME_HINT there).
+DEFAULT_KEY_NAME_HINT="iotgw-fit-yk-2026"
+EFFECTIVE_HINT="${DEFAULT_KEY_NAME_HINT}"
 for ((i=0; i<${#PASSTHROUGH[@]}; i++)); do
-    if [[ "${PASSTHROUGH[i]}" == "--key-label" && $((i+1)) -lt ${#PASSTHROUGH[@]} ]]; then
-        EFFECTIVE_LABEL="${PASSTHROUGH[i+1]}"
+    if [[ "${PASSTHROUGH[i]}" == "--key-name-hint" && $((i+1)) -lt ${#PASSTHROUGH[@]} ]]; then
+        EFFECTIVE_HINT="${PASSTHROUGH[i+1]}"
         break
     fi
+    if [[ "${PASSTHROUGH[i]}" == "--key-label" && $((i+1)) -lt ${#PASSTHROUGH[@]} ]]; then
+        EFFECTIVE_HINT="${PASSTHROUGH[i+1]}"
+        # don't break — a later --key-name-hint should still win
+    fi
 done
-EXPECTED_ALGO="sha256,rsa2048:${EFFECTIVE_LABEL}"
+EXPECTED_ALGO="sha256,rsa2048:${EFFECTIVE_HINT}"
 
 if [[ "${FORCE}" -eq 0 ]]; then
     peek_dir="$(mktemp -d -t sign-bootfiles-peek.XXXXXX)"

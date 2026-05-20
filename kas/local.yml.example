@@ -82,6 +82,38 @@ local_conf_header:
     # Keep this aligned with simple-ota-server CA used to sign server/device certs.
     RAUC_OTA_CA_DIR = "${IOTGW_RAUC_KEY_DIR}/ota-dev-ca"
 
+  fit_dtb_yk_pubkey_trust: |
+    # Optional: U-Boot control-FDT trust rotation for FIT signing keys.
+    #
+    # The kernel-fit recipe injects FIT public keys into the deployed
+    # DTB so U-Boot's control FDT exposes /signature/key-<NAME> nodes
+    # and enforces signed-FIT boot at runtime. Two trust roots can be
+    # injected side-by-side during a key rotation:
+    #
+    #   - File-key (default ON): legacy build-time signing key, located
+    #     at ${UBOOT_SIGN_KEYDIR}/${UBOOT_SIGN_KEYNAME}.{crt,key}. The
+    #     FIT itself is signed with this key during bitbake.
+    #   - YubiKey (off by default): public certificate exported from
+    #     PIV slot 9a, located at ${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt.
+    #     No private key required on the build host. The FIT itself is
+    #     post-build resigned via scripts/sign-fit.sh against the
+    #     hardware-resident private key.
+    #
+    # Image B (transition): both gates ON. DTB carries both pubkeys
+    # and /signature/required-mode = "any" so a FIT signed by either
+    # root verifies. Required during the rotation window where some
+    # bundles are file-signed and some are HSM-signed.
+    #
+    # Image C (cutover): IOTGW_FIT_TRUST_FILE_KEY=0, only YK trusted.
+    # Operator pre-flight: export slot 9a public cert with
+    # `ykman piv certificates export 9a ${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt`.
+    #
+    # Setting both gates to 0 is a build-time error.
+    # IOTGW_FIT_TRUST_FILE_KEY:fitflow = "1"
+    # IOTGW_FIT_TRUST_YK_KEY:fitflow = "1"
+    # IOTGW_FIT_YK_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
+    # IOTGW_FIT_YK_KEYNAME:fitflow = "iotgw-fit-yk-2026"
+
   fit_custom_its_strategy_a: |
     # Optional: Strategy A for FIT recovery kernel.
     # Uses an independent kernel payload for kernel-2/conf-recovery.
