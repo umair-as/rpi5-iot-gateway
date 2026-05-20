@@ -343,35 +343,25 @@ Inspect the deployed DTB:
 
 ```bash
 DTB=build/tmp-glibc/deploy/images/raspberrypi5/bcm2712-rpi-5-b.dtb
-fdtdump "$DTB" | sed -n '/signature {/,/};/p'
+fdtget -l "$DTB" /signature
+fdtget    "$DTB" /signature required-mode
 ```
 
-Expected structure:
+Expected output:
 
-```dts
-signature {
-    required-mode = "any";
-    key-iotgw-fit-dev {
-        required = "conf";
-        algo = "sha256,rsa2048";
-        rsa,num-bits = <0x800>;
-        rsa,modulus = [ ... ];
-        ...
-    };
-    key-iotgw-fit-yk-2026 {
-        required = "conf";
-        algo = "sha256,rsa2048";
-        rsa,num-bits = <0x800>;
-        rsa,modulus = [ ... ];
-        ...
-    };
-};
+```
+key-iotgw-fit-dev
+key-iotgw-fit-yk-2026
+any
 ```
 
 Both `key-*` subnodes present, `required-mode = "any"`. If
 `required-mode` is missing or set to `"all"` and both keys are
 `required = "conf"`, a FIT signed by only one key will be rejected at
 boot.
+
+`fdtget -l` is preferred over `fdtdump | sed` because the latter can
+silently truncate at the first `};` and hide a second key node.
 
 ### On-target verification
 

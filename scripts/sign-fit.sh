@@ -6,24 +6,27 @@
 # FIT with a file-based key; this wrapper overwrites that signature in
 # place against an HSM-resident key.
 #
-# mkimage gotcha: `mkimage -F -N pkcs11 <fit>` without `-G` is a
-# silent no-op for the signing step. It repacks the FDT, regenerates
-# hashes, exits 0, and leaves the original signature bytes untouched.
-# This script always passes `-G <uri>` and additionally guards
-# against the trap by capturing mkimage's stdout/stderr and
-# requiring at least one "Signature written" log line — that line is
-# absent in the silent no-op case.
+# mkimage gotcha: `mkimage -F -N pkcs11 <fit>` without a `-k <URI>`
+# carrying `object=<label>` is a silent no-op for the signing step.
+# It repacks the FDT, regenerates hashes, exits 0, and leaves the
+# original signature bytes untouched. This script always passes
+# `-k pkcs11:object=<label>` and additionally guards against the
+# trap by capturing mkimage's stdout/stderr and requiring at least
+# one "Signature written" log line — that line is absent in the
+# silent no-op case.
 #
-# The FIT's `key-name-hint` is metadata only — it determines the
-# audit string in `Sign algo: <alg>:<hint>` and must match the
+# The FIT's `key-name-hint` is metadata for the audit string in
+# `Sign algo: <alg>:<hint>` and must match the
 # `/signature/key-<hint>` node in U-Boot's control FDT for the
-# device to actually verify the signature. The actual key lookup
-# during signing is driven by the PKCS#11 URI passed via `-G`,
-# which is decoupled from the hint (libykcs11 exposes slot 9a's
-# private object under a fixed label "Private key for PIV
-# Authentication", independent of the project-controlled FIT hint).
-# fdtput rewrites the hint before signing so the audit line and the
-# DTB key-node lookup line up.
+# device to verify the signature. The PKCS#11 lookup for signing
+# is driven by the `-k <URI>` value: mkimage 2025.04's pkcs11
+# code path uses the URI verbatim when it contains `object=`, so
+# the URI's object label is the actual key selector. libykcs11
+# exposes slot 9a's private object under a fixed label
+# "Private key for PIV Authentication", so that label appears in
+# the URI even though the FIT hint and DTB node name stay
+# project-controlled. fdtput rewrites the hint before signing so
+# the audit line and the DTB key-node lookup line up.
 #
 # WARNING: mutates --fit in place. Run against a copy of the deploy
 # artifact, not the deploy artifact directly. The script writes a
@@ -309,7 +312,7 @@ else
         cat "${mk_log}" >&2
         echo "------------------------" >&2
         rm -f "${mk_log}"
-        die "mkimage exited 0 but emitted no 'Signature written' line — signing was a silent no-op (check engine config and that -G reached mkimage)"
+        die "mkimage exited 0 but emitted no 'Signature written' line — signing was a silent no-op (check engine config and that -k carries a 'pkcs11:object=<label>' URI)"
     fi
     rm -f "${mk_log}"
     trap cleanup EXIT
