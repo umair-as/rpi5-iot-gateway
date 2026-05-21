@@ -1,0 +1,24 @@
+# Default signing profiles for scripts/sign_fit.py.
+#
+# Override this file via `--profile-config <path>` or the
+# IOTGW_FIT_SIGNING_PROFILES environment variable. Operator-local
+# engine config paths and keydirs may be customized by copying this
+# file to a vault location and pointing the env var at it; the
+# committed defaults follow the project's `~/rauc-keys/...` convention.
+#
+# Each profile drives `mkimage -F -N pkcs11 -k <uri>`. The URI MUST
+# contain `object=<label>` because mkimage 2025.04 only takes a -k URI
+# verbatim when it sees that substring. Slot-anchored URIs (id=...)
+# require a signer that bypasses mkimage's PKCS#11 path and are out of
+# scope for this tool.
+
+fit_signing_profiles:
+  yubikey-9a:
+    key_name_hint: "iotgw-fit-yk-2026"
+    uri: "pkcs11:object=Private%20key%20for%20PIV%20Authentication"
+    engine_conf: "~/rauc-keys/rauc-ca/fit/openssl-engine.cnf"
+
+  softhsm-dev:
+    key_name_hint: "iotgw-fit-softhsm-dev"
+    uri: "pkcs11:object=iotgw-fit-softhsm-dev"
+    engine_conf: "~/rauc-keys/softhsm/fit/openssl-engine.cnf"

@@ -99,12 +99,13 @@ local_conf_header:
     #     post-build resigned via scripts/sign-fit.sh against the
     #     hardware-resident private key.
     #
-    # Image B (transition): both gates ON. DTB carries both pubkeys
-    # and /signature/required-mode = "any" so a FIT signed by either
-    # root verifies. Required during the rotation window where some
-    # bundles are file-signed and some are HSM-signed.
+    # Rotation window (both gates ON): DTB carries both pubkeys and
+    # /signature/required-mode = "any" so a FIT signed by either root
+    # verifies. Required while some bundles are file-signed and some
+    # are HSM-signed.
     #
-    # Image C (cutover): IOTGW_FIT_TRUST_FILE_KEY=0, only YK trusted.
+    # Production cutover (IOTGW_FIT_TRUST_FILE_KEY=0, only YK trusted):
+    # the recipe injects only the YK pubkey and omits required-mode.
     # Operator pre-flight: export slot 9a public cert with
     # `ykman piv certificates export 9a ${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt`.
     #
@@ -113,6 +114,35 @@ local_conf_header:
     # IOTGW_FIT_TRUST_YK_KEY:fitflow = "1"
     # IOTGW_FIT_YK_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
     # IOTGW_FIT_YK_KEYNAME:fitflow = "iotgw-fit-yk-2026"
+
+  fit_dtb_softhsm_dev_trust: |
+    # DEV-ONLY: optional SoftHSM-based FIT-signing trust root for engineers
+    # without a YubiKey. SoftHSM stores keys in software, NOT a hardware
+    # token — never enable this gate on a build intended for the field.
+    # Operator provisions the dev key + cert via softhsm2-util + pkcs11-tool;
+    # see docs/FIT_BOOT_SIGNING.md for the runbook.
+    #
+    # Two reasonable dev models:
+    #
+    #   1. Dual dev trust (recommended for shared hardware) — flip both
+    #      YK and SoftHSM gates ON. DTB carries iotgw-fit-yk-2026 AND
+    #      iotgw-fit-softhsm-dev with /signature/required-mode = "any".
+    #      The same image boots either a real YK-signed FIT or a
+    #      SoftHSM-signed FIT, so a YK-less developer and a YK-equipped
+    #      developer can share the device for testing.
+    #
+    #   2. SoftHSM-only dev — leave YK gate OFF, flip SoftHSM gate ON.
+    #      DTB trusts only iotgw-fit-softhsm-dev (single root, no
+    #      required-mode written). Simpler but the device cannot boot
+    #      production-style YK-signed artifacts.
+    #
+    # Any production build must keep IOTGW_FIT_TRUST_SOFTHSM_KEY off so
+    # the device's runtime trust store contains only YubiKey-backed
+    # roots.
+    #
+    # IOTGW_FIT_TRUST_SOFTHSM_KEY:fitflow = "1"
+    # IOTGW_FIT_SOFTHSM_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/softhsm/fit"
+    # IOTGW_FIT_SOFTHSM_KEYNAME:fitflow = "iotgw-fit-softhsm-dev"
 
   fit_custom_its_strategy_a: |
     # Optional: Strategy A for FIT recovery kernel.

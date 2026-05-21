@@ -6,9 +6,13 @@ build/
 DL_SHARED/
 SSTATE/
 
-# Python virtual environment
+# Python virtual environment + bytecode caches
 .venv/
 venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.hypothesis/
 
 # Editor files
 .vscode/
