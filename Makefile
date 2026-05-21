@@ -1,5 +1,6 @@
 .PHONY: help base dev prod desktop \
-        bundle-dev bundle-dev-full bundle-dev-full-fit sign-bootfiles-fit-yk bundle-dev-full-fit-resign bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
+        bundle-dev bundle-dev-full bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
+        tools-venv test-sign-fit test-sign-fit-softhsm \
         layers parse clean-lock
 
 KAS ?= kas
@@ -28,6 +29,11 @@ help:
 	@echo "  make bundle-dev-full-fit  # FIT bundle from dev image"
 	@echo "  -- HSM-signing flow (detached; CI-friendly) --"
 	@echo "  make sign-bootfiles-fit-yk    # Re-sign FIT in deploy tarball on YubiKey (interactive)"
+	@echo "  make sign-bootfiles-fit-softhsm # Re-sign FIT in deploy tarball via SoftHSM (dev only)"
+	@echo "  -- Host-side test environment (uv-based, reproducible) --"
+	@echo "  make tools-venv              # Sync .venv via uv (run once or after dep bumps)"
+	@echo "  make test-sign-fit           # Run signing-tool tests (no SoftHSM required)"
+	@echo "  make test-sign-fit-softhsm   # Run full suite incl. SoftHSM integration tests"
 	@echo "  make bundle-dev-full-fit-resign  # Re-assemble bundle with HSM-signed FIT (unattended)"
 	@echo "  make bundle-base-full-fit-fast # FIT bundle from base image (OTBR off, faster)"
 	@echo "  make bundle-prod-full     # Bundle from prod image"
@@ -122,15 +128,37 @@ bundle-dev-full-fit:
 #   - Operator:  fetch artifacts → make sign-bootfiles-fit-yk → publish signed tarball
 #   - CI/Op:     make bundle-dev-full-fit-resign      → publish final signed .raucb
 #
-# SIGN_BOOTFILES_ARGS  → passed to sign-bootfiles-fit.sh (e.g. --force,
-#                       --archive PATH). Goes BEFORE '--'.
-# SIGN_FIT_ARGS        → forwarded to sign-fit.sh (e.g. --verify,
-#                       --verbose, --key-label NAME, --uri URI). Goes
-#                       AFTER '--'. Defaults to '--verify'.
+# SIGN_BOOTFILES_ARGS  → bootfiles-archive specific flags
+#                       (e.g. --force, --archive PATH).
+# SIGN_FIT_ARGS        → signing flags (e.g. --verify, --verbose,
+#                       --key-name-hint NAME, --uri URI). Defaults to '--verify'.
+#                       Both are passed to `sign_fit.py sign-bootfiles`
+#                       which now accepts them inline (no '--' separator).
 SIGN_BOOTFILES_ARGS ?=
 SIGN_FIT_ARGS ?= --verify
 sign-bootfiles-fit-yk:
-	bash scripts/sign-bootfiles-fit.sh $(SIGN_BOOTFILES_ARGS) -- $(SIGN_FIT_ARGS)
+	python3 scripts/sign_fit.py sign-bootfiles --profile yubikey-9a $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
+
+# Dev signing variant for engineers without a YubiKey. Requires a
+# provisioned SoftHSM token holding the iotgw-fit-softhsm-dev keypair;
+# see docs/FIT_BOOT_SIGNING.md for the provisioning runbook. Only
+# usable against an image that enables IOTGW_FIT_TRUST_SOFTHSM_KEY in
+# kas/local.yml — never against a production Image C build.
+sign-bootfiles-fit-softhsm:
+	python3 scripts/sign_fit.py sign-bootfiles --profile softhsm-dev $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
+
+# Host-side Python test environment (uv-based). Not used by Yocto
+# builds or by the operator signing targets above; those keep running
+# against the system Python with a distro-installed `python3-yaml`.
+UV ?= uv
+tools-venv:
+	$(UV) sync
+
+test-sign-fit:
+	$(UV) run pytest scripts/tests/
+
+test-sign-fit-softhsm:
+	SOFTHSM_AVAILABLE=1 $(UV) run pytest scripts/tests/
 
 bundle-dev-full-fit-resign:
 	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV" \

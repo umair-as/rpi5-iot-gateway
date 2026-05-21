@@ -259,6 +259,184 @@ Expected failure symptoms in U-Boot log:
 - Do not commit keys into repository.
 - Keep RAUC signing keys and FIT signing keys separate.
 
+## Signing tooling
+
+FIT signing is driven by `scripts/sign_fit.py`. The Python tool replaces
+the earlier bash wrappers (`sign-fit.sh`, `sign-bootfiles-fit.sh`),
+which now remain as compatibility shims so existing operator runbooks
+and Make targets keep working unchanged.
+
+### Subcommands
+
+```
+sign_fit.py sign-fit          --profile NAME --fit PATH       [--verify] [--rewrite-only]
+sign_fit.py sign-bootfiles    --profile NAME --archive PATH   [--force]  [--verify]
+sign_fit.py verify            --fit PATH --dtb PATH           [--fit-check-sign-path PATH]
+sign_fit.py print-profile     --profile NAME                  [--profile-config PATH]
+```
+
+`sign-fit` and `sign-bootfiles` invoke
+`mkimage -F -N pkcs11 -k <profile.uri>` under the hood; `verify` calls
+`fit_check_sign` against a supplied DTB for a real RSA signature check
+(distinct from the structural `--verify` flag, which only inspects
+audit metadata).
+
+### Signing profiles
+
+Each profile bundles the FIT key-name-hint, the PKCS#11 lookup URI, and
+the OpenSSL engine_pkcs11 config. Defaults ship in
+`scripts/fit-signing-profiles.yml` (YAML is used here for consistency
+with the kas overlay files):
+
+```yaml
+fit_signing_profiles:
+  yubikey-9a:
+    key_name_hint: "iotgw-fit-yk-2026"
+    uri: "pkcs11:object=Private%20key%20for%20PIV%20Authentication"
+    engine_conf: "~/rauc-keys/rauc-ca/fit/openssl-engine.cnf"
+
+  softhsm-dev:
+    key_name_hint: "iotgw-fit-softhsm-dev"
+    uri: "pkcs11:object=iotgw-fit-softhsm-dev"
+    engine_conf: "~/rauc-keys/softhsm/fit/openssl-engine.cnf"
+```
+
+Override the config file path with `--profile-config <path>` or the
+`IOTGW_FIT_SIGNING_PROFILES` environment variable. Individual fields
+can be overridden with `--key-name-hint`, `--uri`, `--engine-conf`.
+`--print-profile` resolves a profile (with overrides applied) and
+prints it without signing — useful for diagnostics.
+
+PyYAML is the only Python runtime dependency. Install via the distro
+package (`apt install python3-yaml` on Debian/Ubuntu,
+`dnf install python3-pyyaml` on Fedora) or `pip install pyyaml`.
+
+### Reproducible test environment (optional)
+
+For running the test suite under `scripts/tests/` we ship a
+[uv](https://docs.astral.sh/uv/)-managed Python environment so PyYAML
+and pytest versions are pinned via `uv.lock`. This does NOT replace
+the operator-facing CLI — `scripts/sign_fit.py` keeps working against
+the system Python and a distro-installed `python3-yaml`. Yocto/BitBake
+builds do not depend on uv.
+
+```bash
+# One-time setup (Ubuntu 24.04 — uv ships via apt; see uv docs for
+# other distros or the official install method).
+sudo apt install uv
+
+# Sync the venv (.venv at the repo root, gitignored). Run after a
+# fresh clone or after bumping pyproject.toml / uv.lock.
+make tools-venv
+
+# Run the test suite. SoftHSM tests skip cleanly when no SoftHSM
+# token is on the host.
+make test-sign-fit
+
+# Run the full suite including SoftHSM integration tests. Requires
+# `softhsm2` + `libengine-pkcs11-openssl` on the host.
+make test-sign-fit-softhsm
+```
+
+### Make targets
+
+| Target | Profile | When to use |
+|--------|---------|-------------|
+| `make sign-bootfiles-fit-yk` | `yubikey-9a` | Production release flow. Requires a YubiKey with slot 9a provisioned. Prompts for PIN, requires touch. |
+| `make sign-bootfiles-fit-softhsm` | `softhsm-dev` | Dev flow for engineers without a YubiKey. Requires the SoftHSM dev key provisioned (see below). |
+
+Both targets accept `SIGN_BOOTFILES_ARGS` and `SIGN_FIT_ARGS` env vars
+for ad-hoc flags. Example:
+
+```bash
+make sign-bootfiles-fit-yk SIGN_FIT_ARGS=--verify
+make sign-bootfiles-fit-softhsm SIGN_BOOTFILES_ARGS=--force
+```
+
+### SoftHSM dev provisioning (one-time, dev-only)
+
+SoftHSM is a software PKCS#11 token — keys live on disk, not in
+hardware. It enables YubiKey-free dev signing for engineers without
+hardware tokens. **Never use SoftHSM-signed artifacts on production
+images**; the corresponding DTB trust gate
+(`IOTGW_FIT_TRUST_SOFTHSM_KEY`) is dev-only.
+
+The distro `softhsm2` package (Debian/Ubuntu/Fedora 2.6.x) is
+sufficient. Engineers building SoftHSM 2.7.0 locally point the
+operator tooling at it by editing the `MODULE_PATH` line in the
+profile's engine config file (`~/rauc-keys/softhsm/fit/openssl-engine.cnf`
+in the default profile). `sign_fit.py` consumes the path indirectly
+via OpenSSL's engine_pkcs11 — there is no Python-side env var that
+overrides it.
+
+(`IOTGW_SOFTHSM_MODULE` is consulted only by the pytest suite in
+`scripts/tests/conftest.py` for SoftHSM module discovery when
+running tests against a non-distro build. It does not affect the
+operator-facing `sign_fit.py`.)
+
+Initial provisioning:
+
+```bash
+# 1. Isolated token store under the operator vault.
+SOFTHSM_BASE="$HOME/rauc-keys/softhsm"
+install -d -m 700 "$SOFTHSM_BASE/tokens" "$SOFTHSM_BASE/fit"
+cat > "$SOFTHSM_BASE/softhsm2.conf" <<EOF
+directories.tokendir = $SOFTHSM_BASE/tokens
+objectstore.backend = file
+EOF
+export SOFTHSM2_CONF="$SOFTHSM_BASE/softhsm2.conf"
+
+# Locate the distro module (Debian/Ubuntu path; adjust for other distros).
+SOFTHSM_MOD=/usr/lib/softhsm/libsofthsm2.so
+
+# 2. Init a token.
+softhsm2-util --module "$SOFTHSM_MOD" --init-token --free \
+    --label iotgw-fit-dev --pin 1234 --so-pin 123456
+
+# 3. Generate the dev signing keypair on the token.
+pkcs11-tool --module "$SOFTHSM_MOD" --token-label iotgw-fit-dev \
+    --login --pin 1234 \
+    --keypairgen --key-type rsa:2048 \
+    --label iotgw-fit-softhsm-dev --id 01
+
+# 4. OpenSSL engine_pkcs11 config.
+cat > "$SOFTHSM_BASE/fit/openssl-engine.cnf" <<EOF
+openssl_conf = openssl_init
+
+[openssl_init]
+engines = engine_section
+
+[engine_section]
+pkcs11 = pkcs11_section
+
+[pkcs11_section]
+engine_id = pkcs11
+dynamic_path = /usr/lib/x86_64-linux-gnu/engines-3/pkcs11.so
+MODULE_PATH = $SOFTHSM_MOD
+init = 0
+EOF
+
+# 5. Self-sign a cert against the on-token key (no private key on disk).
+OPENSSL_CONF="$SOFTHSM_BASE/fit/openssl-engine.cnf" \
+openssl req -new -x509 \
+    -engine pkcs11 -keyform engine \
+    -key "pkcs11:object=iotgw-fit-softhsm-dev;type=private;pin-value=1234" \
+    -days 3650 \
+    -subj "/CN=iotgw-fit-softhsm-dev/O=iotgw-dev" \
+    -out "$SOFTHSM_BASE/fit/iotgw-fit-softhsm-dev.crt"
+```
+
+After provisioning, persist `SOFTHSM2_CONF` in your shell init so every
+subsequent `make sign-bootfiles-fit-softhsm` invocation finds the
+token.
+
+The default profile expects the engine config at
+`~/rauc-keys/softhsm/fit/openssl-engine.cnf` and the cert at
+`~/rauc-keys/softhsm/fit/iotgw-fit-softhsm-dev.crt`. To use a
+different layout, copy `scripts/fit-signing-profiles.yml` to a vault
+location, edit the SoftHSM profile, and export
+`IOTGW_FIT_SIGNING_PROFILES=<path>`.
+
 ## DTB trust rotation: file key → YubiKey
 
 The U-Boot **control FDT** (the runtime DTB the RPi firmware passes to
@@ -268,19 +446,29 @@ hardware-resident YubiKey pubkey is the second leg of FIT-signing
 adoption: PR-side HSM signing produces FITs that only verify on devices
 whose control FDT carries the corresponding pubkey.
 
-This project ships a three-image rotation pattern modelled after the
-RAUC PKI rotation (see `docs/RAUC_PKI.md`):
+This project ships a three-stage rotation pattern modelled after the
+RAUC PKI rotation (see `docs/RAUC_PKI.md`), plus an optional dev variant
+that adds a SoftHSM-resident trust root for engineers without a
+YubiKey:
 
-| Image | DTB trust roots | FIT signing key | Notes |
+| Stage | DTB trust roots | FIT signing key | Notes |
 |-------|-----------------|-----------------|-------|
-| A (legacy) | file key only | file key | Status quo before this rotation. |
-| **B (transition)** | **file key + YK pubkey** | file key (build) or YK (post-build, optional) | DTB carries both pubkeys with `/signature/required-mode = "any"`. A FIT signed by either root verifies. |
-| C (cutover) | YK pubkey only | YK (post-build, mandatory) | File key retired. `IOTGW_FIT_TRUST_FILE_KEY = "0"` in `kas/local.yml`. |
+| Legacy baseline | file key only | file key | Status quo before this rotation. |
+| **Rotation window** | **file key + YK pubkey** | file key (build) or YK (post-build, optional) | DTB carries both pubkeys with `/signature/required-mode = "any"`. A FIT signed by either root verifies. |
+| Production cutover | YK pubkey only | YK (post-build, mandatory) | File key retired. `IOTGW_FIT_TRUST_FILE_KEY = "0"` in `kas/local.yml`. |
+| Dev variant (optional) | adds SoftHSM dev pubkey alongside any of the above | YK (production) or SoftHSM (dev) | `IOTGW_FIT_TRUST_SOFTHSM_KEY = "1"`. **Dev hardware only — never ship.** |
 
-Image B is the only image that should ship while operators still hold
-the legacy file-key private material. Devices that boot Image B will
-accept any future YK-signed FIT, so the rotation can proceed without
-re-flashing.
+The rotation-window build is the only one that should ship while
+operators still hold the legacy file-key private material. Devices
+that boot it will accept any future YK-signed FIT, so the rotation can
+proceed without re-flashing.
+
+The Dev variant is a dev-loop tool: enable
+`IOTGW_FIT_TRUST_SOFTHSM_KEY` alongside the YK gate to build an image
+that boots either a real YK-signed FIT or a SoftHSM-signed FIT — useful
+for shared dev hardware between YK-equipped and YK-less engineers.
+No production build should carry the SoftHSM trust gate — devices in
+the field must trust only YubiKey-backed roots.
 
 ### Operator pre-flight: export the YK public certificate
 
@@ -299,9 +487,10 @@ The certificate filename is `<IOTGW_FIT_YK_KEYNAME>.crt`; renaming the
 YubiKey hint string in the project requires renaming this file in
 lockstep. The default `iotgw-fit-yk-2026` is intentionally year-tagged
 so a future rotation lands at `iotgw-fit-yk-<NEW_YEAR>` without
-clobbering existing trust anchors on already-deployed Image B devices.
+clobbering existing trust anchors on already-deployed rotation-window
+devices.
 
-### Build-time configuration (Image B)
+### Build-time configuration (rotation window)
 
 In `kas/local.yml`, enable both trust roots:
 
@@ -327,15 +516,21 @@ The kernel-fit recipe's `do_deploy:append` block:
 - When `IOTGW_FIT_TRUST_FILE_KEY = "1"`: runs `mkimage -F -k -K -r` to
   sign the FIT with the file key AND inject the file-key public key
   into the DTB under `/signature/key-<UBOOT_SIGN_KEYNAME>`.
-- When `IOTGW_FIT_TRUST_YK_KEY = "1"`: runs `fdt_add_pubkey -a
-  ${FIT_HASH_ALG},${FIT_SIGN_ALG} -k <yk-keydir> -n <yk-keyname>
-  -r conf` to add a second key node under
-  `/signature/key-<IOTGW_FIT_YK_KEYNAME>` (no private key required), then
-  sets `/signature/required-mode = "any"` via `fdtput` so a FIT signed by
-  either root verifies.
+- When `IOTGW_FIT_TRUST_YK_KEY = "1"`: runs
+  `fdt_add_pubkey -a ${FIT_HASH_ALG},${FIT_SIGN_ALG} -k <yk-keydir> -n <yk-keyname> -r conf`
+  to add a second key node under `/signature/key-<IOTGW_FIT_YK_KEYNAME>`
+  (no private key required).
+- When `IOTGW_FIT_TRUST_SOFTHSM_KEY = "1"`: same shape as the YK
+  injection but using `<softhsm-keydir>` and `<softhsm-keyname>`. Dev
+  builds only.
+- Counts how many of the three trust gates are enabled. If more than
+  one, sets `/signature/required-mode = "any"` via `fdtput` so a FIT
+  signed by any one root verifies. With exactly one trust root,
+  `required-mode` is left unset — U-Boot's default semantics handle the
+  single-required-key case.
 
-Setting both gates to `"0"` with `UBOOT_SIGN_ENABLE=1` is fatal — the
-recipe refuses to deploy unsigned-trust DTBs.
+All three gates off with `UBOOT_SIGN_ENABLE=1` is fatal — the recipe
+refuses to deploy unsigned-trust DTBs.
 
 ### Verifying the DTB build output
 
@@ -365,7 +560,7 @@ silently truncate at the first `};` and hide a second key node.
 
 ### On-target verification
 
-After flashing Image B and booting:
+After flashing a rotation-window build and booting:
 
 ```bash
 # Confirm both trust roots are live in U-Boot's control FDT.
@@ -377,8 +572,8 @@ Expected: `any` on stdout, and two `key-*` directories.
 
 Test both signing paths sequentially:
 
-1. **File-key-signed FIT path** — flash the Image B build, boot, check
-   U-Boot log for FIT verification success against
+1. **File-key-signed FIT path** — flash the rotation-window build,
+   boot, check U-Boot log for FIT verification success against
    `key-${UBOOT_SIGN_KEYNAME}`. Normal `iotgw-rauc-install` flow works
    as it did pre-rotation.
 2. **YK-signed FIT path** — run `make sign-bootfiles-fit-yk` against the
@@ -387,17 +582,19 @@ Test both signing paths sequentially:
    step 1, reboot. U-Boot must accept the FIT against
    `key-iotgw-fit-yk-2026`.
 
-Both paths must boot cleanly on the same device before promoting Image
-B to fleet rollout, and before scoping Image C.
+Both paths must boot cleanly on the same device before promoting the
+rotation-window build to fleet rollout, and before scoping the
+production cutover.
 
-### Cutover (Image C, separate PR)
+### Production cutover (separate change)
 
-Image C drops `IOTGW_FIT_TRUST_FILE_KEY = "0"` in `kas/local.yml`. The
-recipe then injects only the YK pubkey; `required-mode = "any"` is
-still set (harmless with one key). The bundle FIT MUST be HSM-signed
-before release; a file-key-signed FIT would be rejected by every
-fielded Image C device. Image C is scoped to a separate PR after
-Image B is validated on hardware.
+The cutover build drops `IOTGW_FIT_TRUST_FILE_KEY = "0"` in
+`kas/local.yml`. The recipe then injects only the YK pubkey, and with
+a single trust root the recipe omits `required-mode` so U-Boot's
+default single-required-key verification applies. The bundle FIT MUST
+be HSM-signed before release; a file-key-signed FIT would be rejected
+by every fielded device. The cutover is scoped to a separate change
+once the rotation-window build is validated on hardware.
 
 ## Signing FIT against a PKCS#11 token (YubiKey)
 
@@ -442,9 +639,11 @@ post-Scarthgap provides native PKCS#11 FIT signing support and is the
 intended migration target once this project moves beyond its current
 Scarthgap layer set.
 
-### How `scripts/sign-fit.sh` works
+### How `scripts/sign_fit.py sign-fit` works
 
-The wrapper does three things, in order:
+`scripts/sign-fit.sh` is a compatibility shim that calls
+`scripts/sign_fit.py sign-fit ...`. The Python implementation does three
+things, in order:
 
 1. **`fdtput` rewrite** — walks every
    `/configurations/conf-*/signature*/key-name-hint` and sets it to the
