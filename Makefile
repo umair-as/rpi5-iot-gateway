@@ -1,5 +1,5 @@
 .PHONY: help base dev prod desktop \
-        bundle-dev bundle-dev-full bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-base-full-fit-fast bundle-prod-full bundle-desktop-full bundle-desktop \
+        bundle-dev bundle-dev-full bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-base-full-fit-fast bundle-prod-full bundle-prod-full-fit bundle-prod-full-fit-resign bundle-desktop-full bundle-desktop \
         tools-venv test-sign-fit test-sign-fit-softhsm \
         layers parse clean-lock
 
@@ -7,6 +7,7 @@ KAS ?= kas
 RAUC ?= kas/rauc.yml
 LOCAL ?= kas/local.yml
 UBOOT_PROD_HARDENING_KAS ?= kas/uboot-prod-hardening.yml
+FIT_RELEASE_TRUST_KAS ?= kas/fit-release-trust.yml
 # Default to RAUC builds always; prefer local RAUC config if present
 BASE ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
 
@@ -37,6 +38,8 @@ help:
 	@echo "  make bundle-dev-full-fit-resign  # Re-assemble bundle with HSM-signed FIT (unattended)"
 	@echo "  make bundle-base-full-fit-fast # FIT bundle from base image (OTBR off, faster)"
 	@echo "  make bundle-prod-full     # Bundle from prod image"
+	@echo "  make bundle-prod-full-fit # FIT bundle from prod image (release trust)"
+	@echo "  make bundle-prod-full-fit-resign # Reassemble prod FIT bundle around YK-signed FIT"
 	@echo "  make bundle-desktop-full  # Bundle from desktop image"
 	@echo "  -- Bundles (rootfs-only) --"
 	@echo "  make bundle-dev           # Rootfs-only bundle from dev image"
@@ -62,6 +65,8 @@ base:
 dev:
 	$(call image_cmd,iot-gw-image-dev)
 
+PROD_KAS_OVERLAYS = $(BASE)$(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),:$(UBOOT_PROD_HARDENING_KAS))$(if $(wildcard $(FIT_RELEASE_TRUST_KAS)),:$(FIT_RELEASE_TRUST_KAS))
+
 prod:
 	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV" \
 			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
@@ -69,7 +74,7 @@ prod:
 			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
 			   IOTGW_ENABLE_OBSERVABILITY=$(IOTGW_ENABLE_OBSERVABILITY) \
 			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-			   bitbake iot-gw-image-prod' $(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),$(BASE):$(UBOOT_PROD_HARDENING_KAS),$(BASE))
+			   bitbake iot-gw-image-prod' $(PROD_KAS_OVERLAYS)
 
 desktop:
 	# Prefer dedicated desktop KAS config; include local.yml if present for keys
@@ -180,15 +185,35 @@ bundle-base-full-fit-fast:
 			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
 			   bitbake iot-gw-bundle-full-fit' $(BASE)
 
+define prod_bundle_cmd
+  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV" \
+                   BUNDLE_IMAGE_NAME=iot-gw-image-prod \
+                   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
+                   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
+                   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
+                   IOTGW_ENABLE_OBSERVABILITY=$(IOTGW_ENABLE_OBSERVABILITY) \
+                   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
+                   bitbake $(1)' $(PROD_KAS_OVERLAYS)
+endef
+
+# Release bundles. PROD_KAS_OVERLAYS composes kas/fit-release-trust.yml,
+# so both build iot-gw-image-prod with the release FIT trust profile
+# (YubiKey-only DTB). bundle-prod-full-fit is the release FIT artifact —
+# the prod-image equivalent of bundle-dev-full-fit, and the bundle to
+# flash for issue #73 on-target validation.
 bundle-prod-full:
-	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV" \
-			   BUNDLE_IMAGE_NAME=iot-gw-image-prod \
-			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-			   IOTGW_ENABLE_OBSERVABILITY=$(IOTGW_ENABLE_OBSERVABILITY) \
-			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-			   bitbake iot-gw-bundle-full' $(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),$(BASE):$(UBOOT_PROD_HARDENING_KAS),$(BASE))
+	$(call prod_bundle_cmd,iot-gw-bundle-full)
+
+bundle-prod-full-fit:
+	$(call prod_bundle_cmd,iot-gw-bundle-full-fit)
+
+# Reassemble the release FIT bundle around an already YubiKey-signed
+# bootfiles-fit.tar.gz. Run after `make sign-bootfiles-fit-yk`; re-runs the
+# bundle recipe from do_configure so the .raucb picks up the HSM-signed FIT.
+# Prod equivalent of bundle-dev-full-fit-resign; keeps PROD_KAS_OVERLAYS so
+# kas/fit-release-trust.yml stays active.
+bundle-prod-full-fit-resign:
+	$(call prod_bundle_cmd,-C do_configure iot-gw-bundle-full-fit)
 
 bundle-desktop-full:
 	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV" \

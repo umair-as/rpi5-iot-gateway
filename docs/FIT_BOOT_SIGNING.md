@@ -455,7 +455,7 @@ YubiKey:
 |-------|-----------------|-----------------|-------|
 | Legacy baseline | file key only | file key | Status quo before this rotation. |
 | **Rotation window** | **file key + YK pubkey** | file key (build) or YK (post-build, optional) | DTB carries both pubkeys with `/signature/required-mode = "any"`. A FIT signed by either root verifies. |
-| Production cutover | YK pubkey only | YK (post-build, mandatory) | File key retired. `IOTGW_FIT_TRUST_FILE_KEY = "0"` in `kas/local.yml`. |
+| Production cutover | YK pubkey only | YK (post-build, mandatory) | File key retired via the `kas/fit-release-trust.yml` release overlay (`IOTGW_FIT_TRUST_FILE_KEY:fitflow = "0"`; SoftHSM forced off too). |
 | Dev variant (optional) | adds SoftHSM dev pubkey alongside any of the above | YK (production) or SoftHSM (dev) | `IOTGW_FIT_TRUST_SOFTHSM_KEY = "1"`. **Dev hardware only — never ship.** |
 
 The rotation-window build is the only one that should ship while
@@ -586,15 +586,84 @@ Both paths must boot cleanly on the same device before promoting the
 rotation-window build to fleet rollout, and before scoping the
 production cutover.
 
-### Production cutover (separate change)
+### Production cutover
 
-The cutover build drops `IOTGW_FIT_TRUST_FILE_KEY = "0"` in
-`kas/local.yml`. The recipe then injects only the YK pubkey, and with
-a single trust root the recipe omits `required-mode` so U-Boot's
-default single-required-key verification applies. The bundle FIT MUST
-be HSM-signed before release; a file-key-signed FIT would be rejected
-by every fielded device. The cutover is scoped to a separate change
-once the rotation-window build is validated on hardware.
+The cutover build sets `IOTGW_FIT_TRUST_FILE_KEY:fitflow = "0"` and
+`IOTGW_FIT_TRUST_SOFTHSM_KEY:fitflow = "0"` via the committed
+`kas/fit-release-trust.yml` overlay (see the next section). The recipe
+then injects only the YK pubkey, and with a single trust root
+`required-mode` is left unset — U-Boot's default single-required-key
+verification applies (no recipe change; same behaviour as PR #74). The
+bundle FIT MUST be HSM-signed before release; a file-key-signed FIT
+would be rejected by every fielded device. On-target validation of the
+cutover build is still pending.
+
+## Release vs dev KAS trust profiles
+
+Two profiles govern which trust roots land in the U-Boot control FDT.
+
+| Profile | `IOTGW_FIT_TRUST_FILE_KEY` | DTB trust roots | `required-mode` |
+|---------|---------------------------|-----------------|-----------------|
+| **Dev** (default) | `1` | file key + YubiKey/SoftHSM pubkey(s) | `any` (multi-root) |
+| **Release** | `0` | YubiKey pubkey only | unset (single root) |
+
+The release profile also forces `IOTGW_FIT_TRUST_SOFTHSM_KEY:fitflow = "0"`,
+so a developer's `kas/local.yml` with all three trust roots enabled cannot
+leak the SoftHSM dev key into a release DTB.
+
+### Dev profile
+
+The default. `IOTGW_FIT_TRUST_FILE_KEY` defaults to `"1"` in the
+recipe, so no kas overlay change is needed for dev builds. The dev
+profile is the multi-root rotation-window configuration where a FIT
+signed by any enabled trust root verifies at boot.
+
+### Release profile
+
+`kas/fit-release-trust.yml` is a committed overlay that sets
+`IOTGW_FIT_TRUST_FILE_KEY:fitflow = "0"` and
+`IOTGW_FIT_TRUST_SOFTHSM_KEY:fitflow = "0"` — the file key and the
+dev-only SoftHSM key are both dropped, leaving the YubiKey pubkey as the
+sole trust root. Forcing SoftHSM off matters because a developer's
+`kas/local.yml` may enable all three roots; without it a release build
+composed on that config would carry the SoftHSM dev key in the DTB. The
+`:fitflow` override qualifier is required: `kas/local.yml` scopes every
+FIT trust gate to that override, and a bare assignment would be shadowed
+by it. The overlay is composed automatically with `prod`,
+`bundle-prod-full`, and `bundle-prod-full-fit` by the `Makefile` whenever
+the file exists (the same pattern as `kas/uboot-prod-hardening.yml`), and
+after `kas/local.yml` so the override-tier assignments win. A release
+build therefore picks up the release trust profile without any manual
+`kas/local.yml` change.
+
+Safety gate: with `IOTGW_FIT_TRUST_FILE_KEY:fitflow = "0"`, if
+`IOTGW_FIT_TRUST_YK_KEY` is also not `"1"`, the recipe `bbfatal`s at
+`do_deploy` time. `iotgw-uboot-prod-key-guard.bbclass` enforces the same
+invariant earlier and independently: it fails any prod build
+(`iot-gw-image-prod` / `appliance_lockdown`) whose trust gates are not
+the release set — file and SoftHSM off, YubiKey on — before
+`do_configure`. Release builds require a YubiKey trust root. Ensure
+`kas/local.yml` (or another composed overlay) sets:
+
+```yaml
+local_conf_header:
+  fit_dtb_yk_pubkey_trust: |
+    IOTGW_FIT_TRUST_YK_KEY:fitflow = "1"
+    IOTGW_FIT_YK_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
+    IOTGW_FIT_YK_KEYNAME:fitflow = "iotgw-fit-yk-2026"
+```
+
+Verifying the release DTB output:
+
+```bash
+DTB=build/tmp-glibc/deploy/images/raspberrypi5/bcm2712-rpi-5-b.dtb
+fdtget -l "$DTB" /signature       # exactly one subnode: key-iotgw-fit-yk-2026
+fdtget -p "$DTB" /signature       # property list must NOT include required-mode
+```
+
+With a single trust root the recipe leaves `required-mode` unset, so
+`fdtget "$DTB" /signature required-mode` errors with "not found" — that
+absence is the expected result, not a failure.
 
 ## Signing FIT against a PKCS#11 token (YubiKey)
 

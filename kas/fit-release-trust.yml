@@ -1,0 +1,47 @@
+header:
+  version: 18
+
+local_conf_header:
+  fit_release_trust: |
+    # Release FIT trust profile: trust ONLY the YubiKey-resident pubkey.
+    #
+    #   IOTGW_FIT_TRUST_FILE_KEY:fitflow    = "0"  drops the build-time file key
+    #   IOTGW_FIT_TRUST_SOFTHSM_KEY:fitflow = "0"  drops the dev-only SoftHSM key
+    #
+    # from the U-Boot control FDT. The deployed DTB then carries exactly one
+    # /signature/key-* node — key-iotgw-fit-yk-2026. With a single trust root
+    # the recipe leaves /signature/required-mode unset; U-Boot's default
+    # single-required-key verification applies (same behaviour as PR #74 —
+    # this overlay deliberately makes no recipe change).
+    #
+    # BOTH non-YubiKey gates are forced off here, not just the file key. A
+    # developer's kas/local.yml may enable all three trust roots (file +
+    # YubiKey + SoftHSM) for the dev rotation profile; forcing SoftHSM off in
+    # this overlay stops that local dev config from leaking the SoftHSM dev
+    # key into a release image. A release DTB must carry exactly one key.
+    #
+    # Effect: a release image boots ONLY YubiKey-signed FITs. A FIT signed
+    # with the file key or the SoftHSM dev key fails U-Boot signature
+    # verification and triggers RAUC/bootchooser A/B rollback to the
+    # previous known-good slot.
+    #
+    # The :fitflow override qualifier is REQUIRED, not optional. kas/local.yml
+    # sets every FIT trust gate as ":fitflow" (the FIT boot flow runs under
+    # that override). A bare assignment here would be shadowed by local.yml's
+    # ":fitflow" assignment whenever the override is active — an
+    # override-qualified assignment always beats a bare one regardless of
+    # parse order. This overlay must be composed AFTER local.yml (the
+    # Makefile's PROD_KAS_OVERLAYS does so) so these :fitflow assignments win
+    # at the same override tier.
+    #
+    # SAFETY: this overlay disables the file-key and SoftHSM trust roots. If
+    # IOTGW_FIT_TRUST_YK_KEY is also not "1" in kas/local.yml (or another
+    # composed overlay), the recipe bbfatals at do_deploy time with "all
+    # three trust gates off … would brick the device". That is intentional —
+    # a release build MUST have the YubiKey trust root configured. Before
+    # composing this overlay, ensure kas/local.yml sets:
+    #   IOTGW_FIT_TRUST_YK_KEY:fitflow  = "1"
+    #   IOTGW_FIT_YK_KEYDIR:fitflow     = "<dir holding iotgw-fit-yk-2026.crt>"
+    #   IOTGW_FIT_YK_KEYNAME:fitflow    = "iotgw-fit-yk-2026"
+    IOTGW_FIT_TRUST_FILE_KEY:fitflow = "0"
+    IOTGW_FIT_TRUST_SOFTHSM_KEY:fitflow = "0"
