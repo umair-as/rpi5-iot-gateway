@@ -136,7 +136,19 @@ cleanup() {
       umount "$BOOT_MP" || log_warn "failed to unmount $BOOT_MP during cleanup"
     fi
   elif [ "$boot_was_readonly" -eq 1 ]; then
-    mount -o remount,ro "$BOOT_MP" || log_warn "failed to remount $BOOT_MP read-only during cleanup"
+    # A plain `remount,ro` flips the mount flags but never releases the
+    # mount, so the FAT dirty bit set during the r/w write phase is never
+    # cleared — every subsequent boot then logs a spurious "Volume was not
+    # properly unmounted" warning. Only a real umount clears the bit. Fall
+    # back to remount,ro if something else still holds /boot open.
+    sync
+    if umount "$BOOT_MP" 2>/dev/null; then
+      mount -t vfat -o ro "$BOOT_DEV" "$BOOT_MP" \
+        || log_warn "failed to remount $BOOT_MP ro after sync cycle"
+    else
+      mount -o remount,ro "$BOOT_MP" \
+        || log_warn "failed to remount $BOOT_MP read-only during cleanup"
+    fi
   fi
   rm -rf "$tmpdir" || true
 }
