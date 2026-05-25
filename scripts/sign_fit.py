@@ -510,6 +510,43 @@ def _sha256(p: pathlib.Path) -> str:
     return h.hexdigest()
 
 
+def _detect_trust_profile_from_dtb(dtb_path: pathlib.Path) -> Optional[str]:
+    """Return 'release-trust' or 'dev' by inspecting /signature in the DTB.
+
+    Release-trust = exactly one ``key-*`` subnode and no ``required-mode``
+    property. Anything else (multiple keys, or required-mode set) is treated
+    as dev / dual-trust. Returns None on any introspection failure so the
+    caller can fall back to a profile-agnostic hint.
+    """
+    fdtget = shutil.which("fdtget")
+    if not fdtget or not dtb_path.is_file():
+        return None
+    try:
+        subnodes = subprocess.run(
+            [fdtget, "-l", str(dtb_path), "/signature"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if subnodes.returncode != 0:
+            return None
+        key_subnodes = [s for s in subnodes.stdout.split() if s.startswith("key-")]
+        props = subprocess.run(
+            [fdtget, "-p", str(dtb_path), "/signature"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if props.returncode != 0:
+            return None
+        has_required_mode = "required-mode" in props.stdout.split()
+        if len(key_subnodes) == 1 and not has_required_mode:
+            return "release-trust"
+        return "dev"
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def _peek_inner_fit_algo_status(
     archive: pathlib.Path, expected_algo: str
 ) -> tuple[int, int]:
@@ -611,6 +648,15 @@ def sign_bootfiles_archive(
         if not extracted_fit.is_file():
             raise SignFitError(f"fitImage not found in archive (looked at {extracted_fit})")
 
+        # Detect kas trust profile from the control DTB so the "next step"
+        # hint can point at the right resign target. Non-fatal: the operator
+        # ran sign-bootfiles-fit-yk on whatever bootfiles tarball is in
+        # DEPLOY_DIR_IMAGE; if the alternate kas profile's resign target is
+        # used the bundle assembly picks up the wrong sstate and overwrites
+        # the just-signed tarball (see issue #73 validation 2026-05-25).
+        dtbs = list(pathlib.Path(tmpdir).glob("*.dtb"))
+        trust_profile = _detect_trust_profile_from_dtb(dtbs[0]) if dtbs else None
+
         log.info("invoking signing on extracted fitImage")
         mutated = True
         sign_fit_file(
@@ -642,6 +688,7 @@ def sign_bootfiles_archive(
             "post_sha": post_sha,
             "inner_fit_algo": expected_algo,
             "mode": "signed",
+            "trust_profile": trust_profile,
         }
     except Exception:
         if mutated and backup.is_file():
@@ -750,10 +797,24 @@ def cmd_sign_bootfiles(args: argparse.Namespace) -> int:
     )
     _print_summary("sign-bootfiles summary", summary)
     if "post_sha" in summary and summary["post_sha"] != summary["pre_sha"]:
+        trust = summary.get("trust_profile")
+        if trust == "release-trust":
+            target_block = "  make bundle-prod-full-fit-resign\n"
+        elif trust == "dev":
+            target_block = "  make bundle-dev-full-fit-resign\n"
+        else:
+            # Detection failed (no DTB found, fdtget missing, etc.). Print
+            # both so the operator can pick — running the wrong one will
+            # re-stage from sstate and stomp the just-signed tarball.
+            target_block = (
+                "  make bundle-prod-full-fit-resign   # release-trust build "
+                "(kas/fit-release-trust.yml active)\n"
+                "  make bundle-dev-full-fit-resign    # dev / dual-trust build\n"
+            )
         sys.stdout.write(
             "\nNext step: re-drive the bundle recipe so it picks up the new\n"
             "tarball. With this project's KAS+make wrapper, that is:\n"
-            "  make bundle-dev-full-fit-resign\n"
+            + target_block
         )
     return 0
 
