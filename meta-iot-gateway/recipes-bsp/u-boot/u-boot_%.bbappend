@@ -20,6 +20,12 @@ SRC_URI:append = "${@' file://iotgw-uboot-fit-enforce.cfg' \
 # appliance_lockdown: production prompt/env lockdown
 SRC_URI:append = "${@' file://iotgw-uboot-prod.cfg' \
     if 'appliance_lockdown' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
+# CFG_ENV_FLAGS_LIST_STATIC is a C macro (not Kconfig) so the prod
+# writeable-list policy must be injected via a source patch -- see
+# 0005-rpi-iotgw-prod-env-flags-list-static.patch and the comment in
+# iotgw-uboot-prod.cfg next to CONFIG_ENV_WRITEABLE_LIST.
+SRC_URI:append = "${@' file://0005-rpi-iotgw-prod-env-flags-list-static.patch' \
+    if 'appliance_lockdown' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
 
 # ── Production key guard ─────────────────────────────────────────────────────
 inherit iotgw-uboot-prod-key-guard

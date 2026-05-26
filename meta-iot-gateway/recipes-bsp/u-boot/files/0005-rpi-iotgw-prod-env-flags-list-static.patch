@@ -1,0 +1,27 @@
+--- a/include/configs/rpi.h
++++ b/include/configs/rpi.h
+@@ -34 +34,24 @@
++/*
++ * IoT Gateway production env-flag policy.
++ *
++ * CFG_ENV_FLAGS_LIST_STATIC is a C preprocessor override consumed by
++ * include/env_flags.h -- it is NOT a Kconfig symbol and cannot be set
++ * from a defconfig fragment. Define it here so the prod build's
++ * CONFIG_ENV_WRITEABLE_LIST=y policy actually grants writeable/read-only
++ * access to the variables it expects.
++ *
++ * Flag grammar: <name>:<type><access>
++ *   types:  s=string, d=decimal
++ *   access: w=writeable, r=read-only
++ * The 'w' access bit is only meaningful when CONFIG_ENV_WRITEABLE_LIST=y.
++ */
++#ifdef CONFIG_ENV_WRITEABLE_LIST
++#ifndef CFG_ENV_FLAGS_LIST_STATIC
++#define CFG_ENV_FLAGS_LIST_STATIC \
++	"BOOT_ORDER:sw,BOOT_A_LEFT:dw,BOOT_B_LEFT:dw," \
++	"bootcount:dw,upgrade_available:dw," \
++	"iotgw_appliance:sr,iotgw_enable_netboot:sr,iotgw_diag:sr," \
++	"iotgw_bootstage:sr,EXTRA_KERNEL_ARGS:sr"
++#endif
++#endif
+ #endif
