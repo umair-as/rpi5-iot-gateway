@@ -221,3 +221,72 @@ iotgw_rootfs_seed_bashrc() {
     fi
 }
 do_rootfs[postfuncs] += "iotgw_rootfs_seed_bashrc"
+
+# -----------------------------------------------------------------------------
+# Supplementary group membership reconciliation
+# -----------------------------------------------------------------------------
+# Why: USERADD_PARAM's `--groups <X>` is racy when <X> is created by another
+# recipe -- failure is atomic and silently loses the entire useradd. This
+# block mutates /etc/group at ROOTFS_POSTPROCESS time, after all package
+# useradd/groupadd processing has completed. Race-free, deterministic, and
+# does not depend on run-postinsts.service (absent from prod images).
+#
+# Set IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS from distro/feature config, gated on
+# the relevant toggles. Space-separated <user>:<group> pairs. Names must
+# match ^[A-Za-z_][A-Za-z0-9_-]*\$?$ (POSIX form); validated at parse time.
+# A pair that names a missing user or group is fatal -- if a feature gate
+# asked for the membership but either side is absent, the image is
+# internally inconsistent and we want to fail loudly.
+IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS ??= ""
+
+python () {
+    import re
+    NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_-]*\$?$')
+    spec = (d.getVar('IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS') or '').split()
+    for pair in spec:
+        if ':' not in pair:
+            bb.fatal("IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS: '%s' is not <user>:<group>" % pair)
+        user, group = pair.split(':', 1)
+        if not NAME_RE.match(user):
+            bb.fatal("IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS: invalid user name '%s'" % user)
+        if not NAME_RE.match(group):
+            bb.fatal("IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS: invalid group name '%s'" % group)
+}
+
+iotgw_rootfs_supplementary_groups() {
+    local group_file="${IMAGE_ROOTFS}${sysconfdir}/group"
+    local passwd_file="${IMAGE_ROOTFS}${sysconfdir}/passwd"
+    local pair user group tmp
+
+    [ -z "${IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS}" ] && return 0
+
+    for pair in ${IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS}; do
+        user="${pair%%:*}"
+        group="${pair##*:}"
+
+        if ! grep -q "^${user}:" "${passwd_file}"; then
+            bbfatal "iotgw-supplementary-group: user '${user}' missing from rootfs ${passwd_file#${IMAGE_ROOTFS}}"
+        fi
+        if ! grep -q "^${group}:" "${group_file}"; then
+            bbfatal "iotgw-supplementary-group: group '${group}' missing from rootfs ${group_file#${IMAGE_ROOTFS}}"
+        fi
+
+        tmp="${group_file}.iotgw-supp-tmp"
+        awk -F: -v g="${group}" -v u="${user}" '
+        BEGIN { OFS=":" }
+        $1 == g {
+            n = split($4, members, ",")
+            found = 0
+            for (i = 1; i <= n; i++) if (members[i] == u) { found = 1; break }
+            if (!found) {
+                if ($4 == "") $4 = u
+                else          $4 = $4 "," u
+            }
+        }
+        { print }
+        ' "${group_file}" > "${tmp}"
+        mv "${tmp}" "${group_file}"
+        bbnote "iotgw-supplementary-group: applied '${user}' -> '${group}'"
+    done
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_supplementary_groups;"
