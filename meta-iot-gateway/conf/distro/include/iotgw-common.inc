@@ -286,6 +286,15 @@ IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "${@'file' if ((d.getVar('IOTGW_RAUC_
 # Internal helper gate used by OTA/RAUC recipes for TPM-only behavior.
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "${@'1' if ((d.getVar('IOTGW_RAUC_STREAMING_KEY_MODE') or 'file') == 'pkcs11' and (d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').lower() == 'tpm2' and (d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') == '1') else '0'}"
 
+# Cross-recipe supplementary group membership applied at rootfs-postprocess.
+# See meta-iot-gateway/classes/iotgw-rootfs.bbclass for the mechanism. The
+# 'ota:iotgwtpm' pair is gated on the same conditions as the iotgw-tpm-policy
+# RDEPENDS in iotgw-ota-user (which is what causes iotgwtpm to exist in
+# /etc/group at all). Both must fire together; the duplicate-condition
+# pattern is tracked by the parked gating refactor.
+IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS ??= ""
+IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'ota:iotgwtpm' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else ''}"
+
 # Optional encrypted RAUC bundle support (disabled by default):
 # - build side: create `crypt` bundles and encrypt to recipient cert set
 # - target side: populate /etc/rauc/system.conf [encryption] for decrypt key
