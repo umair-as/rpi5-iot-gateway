@@ -665,6 +665,45 @@ With a single trust root the recipe leaves `required-mode` unset, so
 `fdtget "$DTB" /signature required-mode` errors with "not found" — that
 absence is the expected result, not a failure.
 
+### Supported release artifacts under the release profile
+
+Under the release profile, `make prod` does **not** produce a final
+flashable SD image. The `.wic.bz2` it deposits in `${DEPLOY_DIR_IMAGE}`
+contains a `/boot/fitImage` that is still **file-key signed** by the
+kernel recipe at build time — the DTB on the same image only trusts the
+YubiKey root, so flashing that WIC fails U-Boot FIT verification on the
+first boot cycle and exhausts both RAUC slots. This is the failure class
+tracked as **issue #83**.
+
+The detached HSM signing flow (`make sign-bootfiles-fit-yk`) finalizes
+bootfiles for **RAUC bundle delivery only**. It re-signs the FIT inside
+`bootfiles-fit.tar.gz` so the bundle's OTA install hook
+(`bundle-hooks-fit.sh`) writes a YubiKey-signed `/boot/fitImage-{a,b}`
+to the target's existing boot partition. It does **not** touch the
+WIC's `/boot/fitImage` baked into the SD image.
+
+The supported release artifact is therefore the **resigned RAUC bundle**:
+
+```bash
+make bundle-prod-full-fit            # build with file-key FIT
+make sign-bootfiles-fit-yk           # YK + PIN + touch; re-signs bootfiles tarball
+make bundle-prod-full-fit-resign     # reassembles .raucb around the re-signed tarball
+```
+
+The output `iot-gw-image-prod-bundle-full-fit.raucb` is the deliverable
+for field rollout — install it on a device that was previously
+provisioned (initial flash via a dev or dual-trust SD image, then OTA'd
+into release-trust). Signed production initial-flash SD images are not
+currently part of the supported flow; the field path is dev/dual-trust
+SD → OTA to release-trust bundle.
+
+The `iotgw-rauc-image.bbclass` carries a build-time guard
+(`iotgw_release_trust_wic_guard`, prefuncs on `do_image_wic`) that emits
+a `bb.warn` whenever a WIC is produced under release-trust, naming the
+unbootable artifact and pointing at this workflow. The warning is
+loud-by-design; if you have suppressed it locally, you've also taken on
+responsibility for not flashing the resulting `.wic.bz2`.
+
 ## Signing FIT against a PKCS#11 token (YubiKey)
 
 The default flow above signs the FIT inside bitbake against a file-based
