@@ -21,12 +21,17 @@ RPROVIDES:${PN} += "ota-user"
 
 USERADD_PACKAGES = "${PN}"
 GROUPADD_PARAM:${PN} = "-r ota"
+# Supplementary group 'iotgwtpm' (when TPM/PKCS#11 is enabled) is intentionally
+# NOT listed via --groups here: the group is provided by iotgw-tpm-policy and
+# may not yet exist in /etc/group when this useradd runs during rootfs
+# assembly. A baked-in --groups iotgwtpm fails the whole useradd in that case,
+# leaving no 'ota' user or group at all. The pkg_postinst below adds the
+# supplementary group after both packages are installed.
 USERADD_PARAM:${PN} = " \
     --system \
     --home /nonexistent \
     --no-create-home \
     --shell /bin/false \
-    ${@'--groups iotgwtpm' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else ''} \
     --gid ota \
     --comment 'OTA Update Daemon' \
     ota \
