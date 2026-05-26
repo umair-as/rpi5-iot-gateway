@@ -22,7 +22,7 @@ export IOTGW_ENABLE_BTF_CORE_DEV
 help:
 	@echo "Targets (RAUC-enabled by default):"
 	@echo "  make dev                  # Build developer image"
-	@echo "  make prod                 # Build production image"
+	@echo "  make prod                 # Build production image (WIC is intermediate under release-trust; see bundle-prod-full-fit-resign)"
 	@echo "  make base                 # Build base image"
 	@echo "  make desktop              # Build desktop image (Wayland/Weston)"
 	@echo "  -- Bundles (rootfs + kernel/DTBs) --"
@@ -39,7 +39,7 @@ help:
 	@echo "  make bundle-base-full-fit-fast # FIT bundle from base image (OTBR off, faster)"
 	@echo "  make bundle-prod-full     # Bundle from prod image"
 	@echo "  make bundle-prod-full-fit # FIT bundle from prod image (release trust)"
-	@echo "  make bundle-prod-full-fit-resign # Reassemble prod FIT bundle around YK-signed FIT"
+	@echo "  make bundle-prod-full-fit-resign # Reassemble prod FIT bundle around YK-signed FIT [FINAL RELEASE ARTIFACT]"
 	@echo "  make bundle-desktop-full  # Bundle from desktop image"
 	@echo "  -- Bundles (rootfs-only) --"
 	@echo "  make bundle-dev           # Rootfs-only bundle from dev image"

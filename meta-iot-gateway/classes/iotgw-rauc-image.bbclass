@@ -135,3 +135,51 @@ python do_iotgw_validate_wic_alignment() {
 }
 
 addtask iotgw_validate_wic_alignment after do_image_wic before do_image_complete
+
+# -----------------------------------------------------------------------------
+# Release-trust WIC misuse guard (issue #83)
+# -----------------------------------------------------------------------------
+# Under kas/fit-release-trust.yml, the U-Boot control DTB embeds only the
+# YubiKey pubkey. The kernel recipe still signs the fitImage with the file
+# key at build time (linux-iotgw-mainline-fit_6.18.bb do_deploy:append), and
+# the WIC bootimg-partition plugin copies that file-key-signed fitImage to
+# /boot/fitImage via IMAGE_BOOT_FILES. Flashing the produced .wic.bz2 fails
+# U-Boot FIT verification on first boot (see issue #83).
+#
+# Detached signing model: the final release artifact is the resigned RAUC
+# bundle from `make bundle-prod-full-fit-resign`, NOT the WIC. Signed
+# production initial-flash SD images are not part of the supported flow.
+# This guard surfaces the misconfiguration; it does not attempt a second
+# WIC signing pipeline. bbwarn (not bbfatal) is used so the bundle workflow
+# under release-trust (which transitively depends on do_image_wic via
+# do_image_complete) is not broken.
+#
+# Anonymous python at parse time (not a do_image_wic prefunc) so the warning
+# fires on every bitbake invocation against an affected image recipe,
+# including sstate-covered rebuilds where prefuncs would be bypassed.
+python () {
+    fstypes = (d.getVar('IMAGE_FSTYPES') or '').split()
+    if not any('wic' in f for f in fstypes):
+        return
+    file_key = (d.getVar('IOTGW_FIT_TRUST_FILE_KEY') or '1') == '1'
+    yk_key   = (d.getVar('IOTGW_FIT_TRUST_YK_KEY')   or '0') == '1'
+    if (not file_key) and yk_key:
+        bb.warn(
+            "Release-trust FIT profile is active (IOTGW_FIT_TRUST_FILE_KEY=0, "
+            "IOTGW_FIT_TRUST_YK_KEY=1) but the kernel's fitImage on this WIC "
+            "is still file-key signed. The produced .wic.bz2 is NOT a final "
+            "release artifact and is known-unbootable for initial SD flash "
+            "(U-Boot FIT verify will reject the file-key signature -- see "
+            "issue #83).\n"
+            "\n"
+            "The release artifact under the detached signing model is the "
+            "resigned RAUC bundle. Use:\n"
+            "    make bundle-prod-full-fit\n"
+            "    make sign-bootfiles-fit-yk\n"
+            "    make bundle-prod-full-fit-resign\n"
+            "\n"
+            "If you need a flashable SD for development, drop "
+            "kas/fit-release-trust.yml from the kas composition -- the dev "
+            "or dual-trust profile signs the FIT with a key the DTB trusts."
+        )
+}
