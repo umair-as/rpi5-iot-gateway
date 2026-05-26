@@ -697,12 +697,16 @@ into release-trust). Signed production initial-flash SD images are not
 currently part of the supported flow; the field path is dev/dual-trust
 SD → OTA to release-trust bundle.
 
-The `iotgw-rauc-image.bbclass` carries a build-time guard
-(`iotgw_release_trust_wic_guard`, prefuncs on `do_image_wic`) that emits
-a `bb.warn` whenever a WIC is produced under release-trust, naming the
-unbootable artifact and pointing at this workflow. The warning is
-loud-by-design; if you have suppressed it locally, you've also taken on
-responsibility for not flashing the resulting `.wic.bz2`.
+The `iotgw-rauc-image.bbclass` carries a parse-time anonymous Python
+guard that emits a `bb.warn` whenever a WIC-producing image recipe is
+parsed under release-trust (i.e. `IMAGE_FSTYPES` contains a `wic`
+variant, `IOTGW_FIT_TRUST_FILE_KEY="0"`, and `IOTGW_FIT_TRUST_YK_KEY="1"`).
+The check runs at every `bitbake` invocation against an affected image
+recipe — including sstate-covered rebuilds where task prefuncs would be
+bypassed. The warning names the unbootable artifact and points at this
+workflow; it is loud-by-design. If you have suppressed it locally,
+you've also taken on responsibility for not flashing the resulting
+`.wic.bz2`.
 
 ## Signing FIT against a PKCS#11 token (YubiKey)
 
