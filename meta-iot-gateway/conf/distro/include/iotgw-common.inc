@@ -178,8 +178,8 @@ IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE = "${@'1' if (d.getVar('IOTGW_ENABLE_CRASH
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE', '1', ' igw_pstore_persist', '', d)}"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' igw_crash_debug_dev', '', d)}"
 
-# Crash-debug panic timeout (seconds). Drives the lab sysctl + cmdline
-# drop-ins for fast post-mortem turnaround. The kernel-baked default
+# Crash-debug panic timeout (seconds). Drives the lab sysctl + U-Boot
+# cmdline policy for fast post-mortem turnaround. The kernel-baked default
 # (CONFIG_PANIC_TIMEOUT=30 in panic-recovery.cfg, always applied) is the
 # floor that covers early-boot/pre-sysctl panics. Lab sysctl overrides
 # this downward to 5s once userspace is up.
@@ -197,8 +197,9 @@ IOTGW_ENABLE_PANIC_ON_OOPS ?= "1"
 # via fw_setenv. Honoured by iotgw_set_bootargs in U-Boot, which appends
 # the value to bootargs after `root=PARTUUID` and `rauc.slot=`.
 #
-# Default empty — no runtime cmdline injection. Lab/dev profiles that
-# want panic/oops/sysrq handling for crash-debug workflows append below.
+# Default empty — no runtime cmdline injection. The crash-debug lab profile
+# owns its panic/oops/sysrq cmdline through this policy so firmware
+# cmdline.txt stays a stable Raspberry Pi baseline.
 #
 # Production images with `appliance_lockdown` reject EXTRA_KERNEL_ARGS
 # writes via the env writeable-list, so this policy is dev-only at

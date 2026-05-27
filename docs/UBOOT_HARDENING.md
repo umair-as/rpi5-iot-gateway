@@ -199,10 +199,8 @@ policy override; in prod it's blocked, in dev it's an intentional
 operator escape hatch.
 
 If a deployed prod fleet ever needs cmdline tuning, use a signed-image path:
-1. Build a new image with the desired arg in `cmdline.txt` via
-   `rpi-cmdline.bbappend`'s `CMDLINE:append`, and/or
-2. Set build-time policy variable `IOTGW_UBOOT_EXTRA_KERNEL_ARGS` in the
-   image build inputs.
+set build-time policy variable `IOTGW_UBOOT_EXTRA_KERNEL_ARGS` in the image
+build inputs.
 
 `IOTGW_UBOOT_EXTRA_KERNEL_ARGS` is consumed by provisioning policy wiring:
 `iotgw-provision.sh` applies it to U-Boot env only where runtime env writes are

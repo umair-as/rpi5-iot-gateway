@@ -230,10 +230,10 @@ deployments**.
 - `iotgw-crash-debug-sysctl` drops `/etc/sysctl.d/95-iotgw-crash-debug.conf`:
   `kernel.panic = ${IOTGW_CRASH_PANIC_TIMEOUT}`,
   `kernel.panic_on_oops = 1`, `kernel.sysrq = 1`.
-- `rpi-cmdline.bbappend` appends to the kernel command line:
+- `IOTGW_UBOOT_EXTRA_KERNEL_ARGS` sets the U-Boot runtime cmdline policy:
   `panic=${IOTGW_CRASH_PANIC_TIMEOUT} oops=panic sysrq_always_enabled=1`
-  (the cmdline value governs the kernel-phase panic timeout before
-  `sysctl.d` applies; both are driven by the same variable).
+  (the cmdline value governs the kernel phase before `sysctl.d` applies;
+  both are driven by the same variable).
 
 **Layer gates:**
 - `IOTGW_ENABLE_CRASH_DEBUG_DEV` (default `"0"`) — opt-in.
@@ -250,7 +250,7 @@ deployments**.
 | `iotgw-pstore-persist` (`.mount` + tmpfiles + prune) | ✓ | ✓ |
 | `CONFIG_DYNAMIC_DEBUG`, `MAGIC_SYSRQ`, `DETECT_HUNG_TASK`, `SOFTLOCKUP_DETECTOR`, `PSTORE_FTRACE` | ✗ | ✓ |
 | `iotgw-crash-debug-sysctl` (panic/oops/sysrq sysctls) | ✗ | ✓ |
-| Cmdline `panic= oops=panic sysrq_always_enabled=1` | ✗ | ✓ |
+| U-Boot cmdline policy `panic= oops=panic sysrq_always_enabled=1` | ✗ | ✓ |
 
 ---
 
