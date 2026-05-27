@@ -242,8 +242,11 @@ case "${RAUC_SLOT_NAME:-}" in
 esac
 log_info "FIT destination: ${FIT_DEST_NAME} (slot=${RAUC_SLOT_NAME:-unknown})"
 
-# FIT variant: fitImage handled separately above; keep Image/kernel_2712 for compatibility.
-FILES=(boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
+# FIT variant: fitImage handled separately above; keep Image/kernel_2712 for
+# compatibility. cmdline.txt is image-owned firmware baseline; the
+# post-install pass below strips any stale root=/rauc.slot= tokens when
+# U-Boot is in charge.
+FILES=(boot.scr u-boot.bin cmdline.txt splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
 for f in "${FILES[@]}"; do
   if [ -f "$tmpdir/$f" ]; then
     label="$f"

@@ -221,8 +221,10 @@ install_if_changed() {
   return 0
 }
 
-# Files we may replace in /boot
-FILES=(boot.scr u-boot.bin splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
+# Files we may replace in /boot. cmdline.txt is image-owned firmware
+# baseline; the post-install pass below strips any stale root=/rauc.slot=
+# tokens when U-Boot is in charge.
+FILES=(boot.scr u-boot.bin cmdline.txt splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
 for f in "${FILES[@]}"; do
   if [ -f "$tmpdir/$f" ]; then
     label="$f"
