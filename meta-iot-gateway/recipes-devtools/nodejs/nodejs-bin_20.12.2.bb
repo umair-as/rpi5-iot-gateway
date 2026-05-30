@@ -5,7 +5,6 @@ LICENSE = "MIT & ISC & BSD-2-Clause & BSD-3-Clause & Artistic-2.0 & Apache-2.0"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=9a7fcce64128730251dbc58aa41b4674"
 
 # Only for aarch64 targets (arm64 binaries)
-# Only for aarch64 targets (arm64 binaries)
 COMPATIBLE_HOST = "aarch64.*-linux"
 
 SRC_URI = "https://nodejs.org/dist/v${PV}/node-v${PV}-linux-arm64.tar.xz"

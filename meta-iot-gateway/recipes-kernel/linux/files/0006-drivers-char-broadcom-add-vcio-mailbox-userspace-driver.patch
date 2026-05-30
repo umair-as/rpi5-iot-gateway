@@ -3,6 +3,8 @@ From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 Date: Fri, 10 Apr 2026 22:18:16 +0200
 Subject: [PATCH] drivers: char: broadcom: add VCIO mailbox userspace driver
 
+Upstream-Status: Pending
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  .../dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts  |   4 +
  drivers/char/Kconfig                          |   2 +
