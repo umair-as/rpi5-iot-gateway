@@ -1,3 +1,17 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Sat, 30 May 2026 12:00:00 +0000
+Subject: [PATCH] rpi: gate appliance fast-path and netboot init
+
+Gate the netboot MAC-reading code on the iotgw_enable_netboot env var
+so the gateway does not perform any netboot scanning by default
+(appliance images boot from local mmc only). Add iotgw_appliance and
+iotgw_diag mode hooks to misc_init_r so the runtime appliance posture
+and diagnostic mode are decided before boot policy is applied.
+
+Upstream-Status: Inappropriate [product specific — appliance boot policy]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+---
 --- a/board/raspberrypi/rpi/rpi.c
 +++ b/board/raspberrypi/rpi/rpi.c
 @@ -380,6 +380,10 @@

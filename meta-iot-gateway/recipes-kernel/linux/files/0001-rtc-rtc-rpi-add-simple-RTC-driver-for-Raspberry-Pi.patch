@@ -31,6 +31,8 @@ Date:   Fri Jul 7 20:00:45 2023 +0100
     
     Signed-off-by: Jonathan Bell <jonathan@raspberrypi.com>
 
+Upstream-Status: Backport [https://github.com/raspberrypi/linux/commit/35ba3e22a84005bab83fef7ec414147e88b83450]
+
 diff --git a/drivers/rtc/Kconfig b/drivers/rtc/Kconfig
 index 66eb1122248b..36a56d647dfd 100644
 --- a/drivers/rtc/Kconfig

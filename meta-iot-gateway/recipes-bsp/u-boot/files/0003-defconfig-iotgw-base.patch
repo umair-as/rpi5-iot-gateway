@@ -13,6 +13,9 @@ Key changes vs upstream rpi_arm64_defconfig:
 - Environment on dedicated partition (0:2 instead of 0:1)
 - EFI/BOOTSTD/DFU/video subsystems removed (headless appliance)
 - Bootstage instrumentation enabled
+
+Upstream-Status: Inappropriate [product specific — IoT GW defconfig fragment]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  configs/rpi_arm64_defconfig | 63 +++++++++++++++++++++++--------------
  1 file changed, 40 insertions(+), 23 deletions(-)

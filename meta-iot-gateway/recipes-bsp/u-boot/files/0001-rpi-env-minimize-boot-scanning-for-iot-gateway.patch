@@ -1,3 +1,18 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Sat, 30 May 2026 12:00:00 +0000
+Subject: [PATCH] rpi: env: minimize boot scanning for IoT Gateway appliance
+
+Replace the upstream boot_targets="mmc usb pxe dhcp" scan and the
+USB-keyboard / USB-tftp env entries with the IoT Gateway RAUC A/B
+FIT-boot environment. The gateway boots directly from mmc into one of
+two RAUC slots via the iotgw_rauc_select / iotgw_set_bootargs /
+iotgw_load_boot / iotgw_exec_fit chain, with iotgw_halt as the
+no-slot-bootable terminal state.
+
+Upstream-Status: Inappropriate [product specific — appliance boot policy]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+---
 diff --git a/board/raspberrypi/rpi/rpi.env b/board/raspberrypi/rpi/rpi.env
 index 30228285edd..a1b2c3d4e5f 100644
 --- a/board/raspberrypi/rpi/rpi.env

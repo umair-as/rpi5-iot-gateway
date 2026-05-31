@@ -4,6 +4,8 @@ Date: Thu, 7 May 2026 16:24:11 +0200
 Subject: [PATCH] configs: rpi_arm64_defconfig: increase SYS_BOOTM_LEN for
  larger FIT kernels
 
+Upstream-Status: Pending
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  configs/rpi_arm64_defconfig | 1 +
  1 file changed, 1 insertion(+)

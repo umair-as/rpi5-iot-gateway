@@ -7,7 +7,8 @@ Use /run/otbr as the default daemon socket directory on Linux so the
 socket/lock live in a writable tmpfiles-managed path owned by otbr.
 This avoids requiring ACLs on /run.
 
-Upstream-Status: Inappropriate [IoT Gateway custom socket path]
+Upstream-Status: Inappropriate [product specific — IoT Gateway custom socket path]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  src/web/web-service/ot_client.cpp                                   | 2 +-
  .../src/posix/platform/openthread-posix-daemon-config.h             | 2 +-

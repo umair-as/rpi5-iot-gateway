@@ -1,9 +1,11 @@
 From 610cf0556cc4ac2940627ee1fd819a1a27b682c8 Mon Sep 17 00:00:00 2001
-From: IoT Gateway <iotgw@example.local>
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 Date: Fri, 10 Apr 2026 13:38:57 +0200
 Subject: [PATCH] rpi-eeprom-update: allow -d when bootloader config cannot be
  read
 
+Upstream-Status: Pending
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  rpi-eeprom-update | 9 +++++++--
  1 file changed, 7 insertions(+), 2 deletions(-)

@@ -1,3 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Sat, 30 May 2026 12:00:00 +0000
+Subject: [PATCH] rpi: define CFG_ENV_FLAGS_LIST_STATIC for prod env policy
+
+CFG_ENV_FLAGS_LIST_STATIC is a C preprocessor override consumed by
+include/env_flags.h -- it is not a Kconfig symbol and cannot be set
+from a defconfig fragment. When CONFIG_ENV_WRITEABLE_LIST=y is
+enabled in the production defconfig, the env-flag list governs which
+variables are writeable at runtime. Provide the gateway's policy
+list, naming RAUC slot bookkeeping (BOOT_ORDER, BOOT_*_LEFT,
+bootcount, upgrade_available) as writeable and appliance/policy
+variables (iotgw_appliance, iotgw_enable_netboot, iotgw_diag,
+iotgw_bootstage, EXTRA_KERNEL_ARGS) as read-only.
+
+Upstream-Status: Inappropriate [product specific — prod env hardening policy]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+---
 --- a/include/configs/rpi.h
 +++ b/include/configs/rpi.h
 @@ -34 +34,24 @@

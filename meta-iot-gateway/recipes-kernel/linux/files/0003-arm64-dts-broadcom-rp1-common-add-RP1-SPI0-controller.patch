@@ -1,5 +1,5 @@
 From 6ed73a7b31e1d2ce0b6f7d8cb6a5f9c84b9a3f11 Mon Sep 17 00:00:00 2001
-From: IoT Gateway Maintainers <maintainers@iotgw.local>
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 Date: Fri, 27 Mar 2026 22:30:00 +0000
 Subject: [PATCH] arm64: dts: broadcom: rp1-common: add RP1 SPI0 controller
 
@@ -11,7 +11,8 @@ the 40-pin header.
 This keeps the change focused for TPM-over-SPI bring-up without pulling in
 the full downstream RP1 DT surface.
 
-Signed-off-by: IoT Gateway Maintainers <maintainers@iotgw.local>
+Upstream-Status: Backport [from raspberrypi/linux rpi-6.12.y; adapted for mainline 6.18]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  arch/arm64/boot/dts/broadcom/rp1-common.dtsi | 34 +++++++++++++++++++
  1 file changed, 34 insertions(+)

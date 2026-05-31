@@ -14,7 +14,8 @@ Default is enabled for production and dev images; the aggressive lab-only
 debug behaviour (sysrq, panic-on-oops, hung-task detector) is a separate
 opt-in via IOTGW_ENABLE_CRASH_DEBUG_DEV.
 
-Upstream-Status: Inappropriate [IoT Gateway BSP crash persistence]
+Upstream-Status: Inappropriate [product specific — IoT Gateway BSP crash persistence]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts | 13 +++++++++++++
  1 file changed, 13 insertions(+)
