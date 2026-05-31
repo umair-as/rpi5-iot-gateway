@@ -1,5 +1,6 @@
 SUMMARY = "IoT Gateway U-Boot splash logo"
 DESCRIPTION = "Installs a pre-rendered 24-bit BMP splash (splash.bmp) for U-Boot. Convert your PNG externally and place splash.bmp in files/."
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 

@@ -1,6 +1,13 @@
 [Unit]
 Description=IoT Gateway Provisioning (Network + Observability first-boot)
-After=local-fs.target
+# NetworkManager is in this recipe's RDEPENDS so it is guaranteed present.
+# Ordering after NetworkManager.service avoids the early-boot race where
+# nmcli connection reload runs before NM is up and logs
+# "failed to reload connections: NetworkManager is not running".
+# Deliberately ordering against the unit, NOT network-online.target -- we
+# do not want to delay boot waiting for actual link/IP.
+After=local-fs.target NetworkManager.service
+Wants=NetworkManager.service
 Before=mosquitto.service telegraf.service
 RequiresMountsFor=/data
 

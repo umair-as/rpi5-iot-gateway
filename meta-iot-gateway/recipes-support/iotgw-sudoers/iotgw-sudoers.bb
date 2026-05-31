@@ -1,5 +1,6 @@
 SUMMARY = "Sudoers configuration for IoT Gateway devel user"
 DESCRIPTION = "Provides passwordless sudo access for devel user to run admin and security tools"
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 

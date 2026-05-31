@@ -112,12 +112,21 @@ def sanitize_managed_path(path: str) -> str:
 
 
 def resolve_uid(value: str) -> int:
+    # Name-form lookups (uid=<name>) rely on the user existing in the staged
+    # rootfs at hook time. A manifest referencing a user that has not yet
+    # been created raises KeyError and aborts reconciliation, which can
+    # block OTA completion. Prefer numeric uid=<int> in manifests for
+    # cross-recipe identity references; reserve name-form for owners that
+    # are guaranteed to exist (base-passwd entries).
     if value.isdigit():
         return int(value, 10)
     return pwd.getpwnam(value).pw_uid
 
 
 def resolve_gid(value: str) -> int:
+    # See resolve_uid: prefer numeric gid=<int> in manifests for
+    # cross-recipe references; name-form depends on /etc/group population
+    # order at hook time.
     if value.isdigit():
         return int(value, 10)
     return grp.getgrnam(value).gr_gid
