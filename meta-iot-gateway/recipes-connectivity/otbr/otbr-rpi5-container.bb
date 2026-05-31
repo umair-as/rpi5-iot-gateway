@@ -1,5 +1,6 @@
 SUMMARY = "OpenThread Border Router OCI Container Image for Raspberry Pi 5"
 DESCRIPTION = "Builds an OCI container image for OTBR on RPi5, loadable into Podman/Docker"
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "BSD-3-Clause"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/BSD-3-Clause;md5=550794465ba0ec5312d6919e203a55f9"
 

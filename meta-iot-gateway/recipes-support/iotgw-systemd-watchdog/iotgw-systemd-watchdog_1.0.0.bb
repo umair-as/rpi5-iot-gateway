@@ -1,5 +1,6 @@
 SUMMARY = "Systemd PID1 hardware watchdog configuration"
 DESCRIPTION = "Installs systemd.conf drop-in to enable RuntimeWatchdogSec/ShutdownWatchdogSec when explicitly enabled."
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
