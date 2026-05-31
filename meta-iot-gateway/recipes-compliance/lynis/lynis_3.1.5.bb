@@ -6,15 +6,10 @@ HOMEPAGE = "https://cisofy.com/"
 LICENSE = "GPL-3.0-only"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=3edd6782854304fd11da4975ab9799c1"
 
-# Use vendor downloads site for 3.1.5 (stable asset name)
+# Vendor tarball; extracts to 'lynis' (no version suffix).
 SRC_URI = "https://downloads.cisofy.com/lynis/lynis-${PV}.tar.gz"
-
-# TODO: set the correct sha256 after first fetch or provide known value
-# BitBake will print the expected line; paste it here.
 SRC_URI[sha256sum] = "8d2c6652ba60116a82514522b666ca77293f4bfc69f1e581028769f7ebb52ba4"
 
-# The GitHub release tarball extracts to lynis-${PV}
-# Vendor tarball extracts to 'lynis' (no version suffix)
 S = "${WORKDIR}/${BPN}"
 
 inherit autotools-brokensep
