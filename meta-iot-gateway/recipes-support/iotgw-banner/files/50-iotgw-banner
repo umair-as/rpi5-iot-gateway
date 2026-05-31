@@ -1,0 +1,15 @@
+#!/bin/sh
+# NetworkManager dispatcher: regenerate /etc/issue and /etc/issue.net
+# when interface state or DHCP lease changes, so the pre-login banner
+# reflects the current IPs.
+#
+# Args from NM: $1 = interface name, $2 = action.
+# Actions we care about: up, down, dhcp4-change, dhcp6-change.
+# Everything else (pre-up, hostname, vpn-*, connectivity-change, ...)
+# is a no-op.
+
+case "$2" in
+    up|down|dhcp4-change|dhcp6-change)
+        /usr/bin/iotgw-banner.sh all >/dev/null 2>&1 || true
+        ;;
+esac
