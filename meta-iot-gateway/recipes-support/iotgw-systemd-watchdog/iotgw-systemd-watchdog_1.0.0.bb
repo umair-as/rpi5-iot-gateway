@@ -7,6 +7,9 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 SRC_URI = "file://60-iotgw-watchdog.conf.in"
 
 S = "${WORKDIR}"
+# @IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC@ and @IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC@
+# are substituted from MACHINE-specific variables at install time.
+PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 do_install() {
     install -d ${D}${sysconfdir}/systemd/system.conf.d

@@ -42,4 +42,4 @@ FILES:${PN} += " \
     ${sysconfdir}/systemd/system/systemd-pstore.service.d/10-iotgw-pstore-persist.conf \
 "
 
-RDEPENDS:${PN} += "bash util-linux systemd"
+RDEPENDS:${PN} += "bash util-linux systemd xz"
