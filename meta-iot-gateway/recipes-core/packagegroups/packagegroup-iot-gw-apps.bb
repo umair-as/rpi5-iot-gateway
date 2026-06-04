@@ -25,7 +25,6 @@ RDEPENDS:${PN} = " \
 
 # Optional slices (enable per-image as needed)
 # - ${PN}-node-runtime: Node.js runtime for on-host apps
-# - grafana/influxdb: add via RRECOMMENDS or image-specific install when recipes are available
 
 RDEPENDS:${PN}-mqtt = " \
     mosquitto \
