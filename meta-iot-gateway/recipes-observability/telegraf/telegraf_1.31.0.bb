@@ -71,11 +71,10 @@ do_install:append() {
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/telegraf.service ${D}${systemd_system_unitdir}/telegraf.service
-    if [ "${IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE}" = "1" ]; then
-        install -d ${D}${systemd_system_unitdir}/telegraf.service.d
-        install -m 0644 ${WORKDIR}/telegraf-network-online.conf \
-            ${D}${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf
-    fi
+
+    install -d ${D}${systemd_system_unitdir}/telegraf.service.d
+    install -m 0644 ${WORKDIR}/telegraf-network-online.conf \
+        ${D}${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf
 
     install -d ${D}${nonarch_libdir}/tmpfiles.d
     install -m 0644 ${WORKDIR}/telegraf.tmpfiles ${D}${nonarch_libdir}/tmpfiles.d/telegraf.conf
@@ -84,6 +83,7 @@ do_install:append() {
 FILES:${PN}:append = " \
     ${sysconfdir}/telegraf/telegraf.conf \
     ${systemd_system_unitdir}/telegraf.service \
+    ${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf \
     ${nonarch_libdir}/tmpfiles.d/telegraf.conf \
 "
 
