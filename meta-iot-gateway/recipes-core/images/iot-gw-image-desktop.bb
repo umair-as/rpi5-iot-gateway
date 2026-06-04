@@ -14,7 +14,7 @@ IOTGW_DISABLE_VCONSOLE_SETUP = "0"
 # Desktop environment with applications and utilities
 # Includes: Weston/Wayland, Chromium browser, file manager, editors,
 #           media players, system utilities, themes, and network tools
-CORE_IMAGE_EXTRA_INSTALL += " packagegroup-iot-gw-desktop iotgw-dev-ssh-keys iotgw-sudoers"
+CORE_IMAGE_EXTRA_INSTALL += " packagegroup-iot-gw-desktop iotgw-dev-ssh-keys iotgw-sudoers iotgw-systemd-presets-desktop"
 
 # Optional: Install individual sub-packages for customization
 # - packagegroup-iot-gw-desktop-core     (Weston/Wayland foundation)
