@@ -10,10 +10,8 @@ S = "${WORKDIR}"
 
 do_install() {
     install -d ${D}${datadir}/iotgw-sysctl
-    sed "s|@IOTGW_CRASH_PANIC_TIMEOUT@|${IOTGW_CRASH_PANIC_TIMEOUT}|g" \
-        ${WORKDIR}/95-iotgw-crash-debug.conf \
-        > ${D}${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf
-    chmod 0644 ${D}${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf
+    install -m 0644 ${WORKDIR}/95-iotgw-crash-debug.conf \
+        ${D}${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf
 }
 
 FILES:${PN} = "${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf"
