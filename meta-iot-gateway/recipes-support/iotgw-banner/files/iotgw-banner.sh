@@ -130,7 +130,6 @@ EOF
 }
 
 generate_issue() {
-    get_system_info
     {
         printf "\n"
         printf "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n"
@@ -154,7 +153,6 @@ generate_issue() {
 }
 
 generate_issue_net() {
-    get_system_info
     {
         printf "\n"
         printf "================================================================================\n"
@@ -175,7 +173,6 @@ generate_issue_net() {
 }
 
 generate_motd() {
-    get_system_info
     {
         printf "\n"
         printf "\033[1;36m    ██╗ ██████╗ ████████╗     ██████╗  █████╗ ████████╗███████╗██╗    ██╗ █████╗ ██╗   ██╗\033[0m\n"
@@ -222,6 +219,8 @@ EOF
         printf "\033[0m\n"
     } > "${MOTD_FILE}"
 }
+
+get_system_info
 
 case "${1:-all}" in
     issue)
