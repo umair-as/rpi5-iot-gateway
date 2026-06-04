@@ -7,9 +7,6 @@ inherit packagegroup
 # Avoid allarch so we can depend on dynamically renamed libs (ABI/versioned)
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-# Optional application feature toggles
-IOTGW_ENABLE_EDGE_HEALTHD ?= "0"
-
 PACKAGES = " \
     ${PN} \
     ${PN}-mqtt \
@@ -47,8 +44,8 @@ RDEPENDS:${PN}-database = " \
 
 RDEPENDS:${PN}-monitoring = " \
     sysstat \
+    edge-healthd \
 "
-RDEPENDS:${PN}-monitoring:append = "${@bb.utils.contains('IOTGW_ENABLE_EDGE_HEALTHD','1',' edge-healthd','',d)}"
 
 RDEPENDS:${PN}-node-runtime = " \
     nodejs \

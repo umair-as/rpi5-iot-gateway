@@ -21,13 +21,20 @@ SRC_URI += " \
     file://edge-healthd.tmpfiles.conf \
 "
 
-inherit cmake systemd useradd pkgconfig externalsrc
+inherit cmake systemd useradd pkgconfig
+# Conditionally pull in externalsrc so a plain bitbake fetch+build works when
+# EXTERNALSRC is not set; the class is only useful when a developer overrides
+# EXTERNALSRC:pn-edge-healthd in kas/local.yml to point at a local checkout.
+inherit ${@'externalsrc' if d.getVar('EXTERNALSRC') else ''}
 EXTERNALSRC ?= ""
 EXTERNALSRC_BUILD ?= "${WORKDIR}/build"
 PACKAGECONFIG ??= "systemd"
 PACKAGECONFIG[systemd] = "-DEDGE_HAS_SYSTEMD=ON,,systemd"
-PACKAGECONFIG[tests] = "-DEDGE_BUILD_TESTS=ON,-DEDGE_BUILD_TESTS=OFF"
-PACKAGECONFIG[web-ui] = "-DEDGE_WEB_UI=ON,-DEDGE_WEB_UI=OFF,go-native"
+# PACKAGECONFIG[tests] and PACKAGECONFIG[web-ui] intentionally removed:
+# -DEDGE_BUILD_TESTS=OFF and -DEDGE_WEB_UI=OFF are hardcoded in EXTRA_OECMAKE
+# below, reflecting layer policy (tests are host-side; web-ui requires go-native
+# which is not in this layer's scope). Keeping them as PACKAGECONFIG entries
+# implies they are safely toggleable on this target — they are not.
 DEPENDS += " \
     systemd \
     nlohmann-json \
