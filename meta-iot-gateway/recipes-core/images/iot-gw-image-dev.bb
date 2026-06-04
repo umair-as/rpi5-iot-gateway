@@ -5,6 +5,8 @@ LICENSE = "MIT"
 
 # Pull in common base
 require iot-gw-image-base.inc
+# Developer user account (devel + passwordless sudo); not in prod image
+require iotgw-dev-users.inc
 
 # Image features for development
 # NOTE: NOT using debug-tweaks (empty root password, insecure SSH) - secure-by-design
@@ -26,6 +28,7 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     tmux \
     btop \
     iotgw-dev-ssh-keys \
+    iotgw-sudoers \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' libtss2-tcti-device','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5','',d)} \
 "
