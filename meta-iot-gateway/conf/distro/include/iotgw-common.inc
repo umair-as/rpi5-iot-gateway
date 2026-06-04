@@ -287,14 +287,34 @@ IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "${@'file' if ((d.getVar('IOTGW_RAUC_
 # Internal helper gate used by OTA/RAUC recipes for TPM-only behavior.
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "${@'1' if ((d.getVar('IOTGW_RAUC_STREAMING_KEY_MODE') or 'file') == 'pkcs11' and (d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').lower() == 'tpm2' and (d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') == '1') else '0'}"
 
+# Single source of truth for "this build needs the iotgw-tpm-policy package
+# (and therefore the iotgwtpm /etc/group entry)". Consumed by the
+# iotgw-ota-user RDEPENDS, the ota-certs install branch that wires the
+# keyless-device-certs env override, and the IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS
+# entry below. Keeping these three sites in sync via one derived gate avoids
+# the silent-skew failure mode where the supplementary-group reconciler
+# bbfatals because iotgwtpm is missing from /etc/group.
+#
+# The ${@...} expression is lazy: it evaluates whenever the variable is
+# queried, against the datastore at that moment. That works for the normal
+# config path (local.conf / kas overlay / distro include sets the primitive
+# gates, then recipes read the derived gate later). It does NOT work if a
+# downstream layer sets IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE or
+# IOTGW_RAUC_PKCS11_USES_TPM2 in a recipe-scoped .bbappend -- bbappends only
+# mutate their own recipe's datastore, so this derived gate would evaluate
+# differently in that recipe than in the image-rootfs / other-recipe context.
+# Set the underlying primitives (IOTGW_ENABLE_TPM_SLB9672,
+# IOTGW_ENABLE_OTA_TPM_MTLS, IOTGW_RAUC_STREAMING_KEY_MODE,
+# IOTGW_RAUC_PKCS11_BACKEND) at distro / local.conf / kas-overlay level, not
+# in a bbappend.
+IOTGW_NEED_TPM_POLICY ?= "${@'1' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else '0'}"
+
 # Cross-recipe supplementary group membership applied at rootfs-postprocess.
 # See meta-iot-gateway/classes/iotgw-rootfs.bbclass for the mechanism. The
-# 'ota:iotgwtpm' pair is gated on the same conditions as the iotgw-tpm-policy
-# RDEPENDS in iotgw-ota-user (which is what causes iotgwtpm to exist in
-# /etc/group at all). Both must fire together; the duplicate-condition
-# pattern is tracked by the parked gating refactor.
+# 'ota:iotgwtpm' pair fires whenever the iotgw-tpm-policy package is pulled
+# in (which is what causes iotgwtpm to exist in /etc/group at all).
 IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS ??= ""
-IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'ota:iotgwtpm' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else ''}"
+IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'ota:iotgwtpm' if (d.getVar('IOTGW_NEED_TPM_POLICY') or '0') == '1' else ''}"
 
 # Optional encrypted RAUC bundle support (disabled by default):
 # - build side: create `crypt` bundles and encrypt to recipient cert set
