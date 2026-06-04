@@ -73,9 +73,6 @@ VIRTUAL-RUNTIME_init_manager ?= "systemd"
 # Journald-only policy: do not pull classic syslog daemons from packagegroups.
 VIRTUAL-RUNTIME_base-utils-syslog = ""
 DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
-# AppArmor distro feature kept for reference while LSM default decision is pending.
-# Remove once SELinux is confirmed as the production default LSM.
-# DISTRO_FEATURES:append = " apparmor"
 # RAUC is mandatory in this distro
 DISTRO_FEATURES:append = " rauc"
 DISTRO_FEATURES:append = " luks"
