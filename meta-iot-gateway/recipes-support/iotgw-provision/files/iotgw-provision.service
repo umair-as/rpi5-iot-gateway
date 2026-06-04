@@ -8,7 +8,7 @@ Description=IoT Gateway Provisioning (Network + Observability first-boot)
 # do not want to delay boot waiting for actual link/IP.
 After=local-fs.target NetworkManager.service
 Wants=NetworkManager.service
-Before=mosquitto.service telegraf.service
+Before=mosquitto.service
 RequiresMountsFor=/data
 
 [Service]
@@ -34,7 +34,7 @@ RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
 # Allow /data mount even when /data/iotgw is absent on fresh systems.
-ReadWritePaths=/etc/NetworkManager /etc/default /etc/credstore /etc/mosquitto /var/lib /data
+ReadWritePaths=/etc/NetworkManager /etc/mosquitto /var/lib /data
 
 [Install]
 WantedBy=multi-user.target
