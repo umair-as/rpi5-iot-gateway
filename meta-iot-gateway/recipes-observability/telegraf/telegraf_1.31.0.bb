@@ -1,3 +1,8 @@
+# Maintained asset: not included in any image variant by default.
+# Kept current against Scarthgap for layer consumers who need host-level
+# metrics collection. To reinstate, add telegraf to IMAGE_INSTALL in a
+# downstream image variant; no layer changes needed.
+
 SUMMARY = "Telegraf native metrics agent"
 DESCRIPTION = "Builds and installs Telegraf as a native systemd service for host-level telemetry collection."
 HOMEPAGE = "https://github.com/influxdata/telegraf"
