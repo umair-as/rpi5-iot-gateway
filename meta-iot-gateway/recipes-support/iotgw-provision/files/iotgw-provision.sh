@@ -252,7 +252,7 @@ else
 fi
 
 # Observability credentials/bootstrap (authoritative source: /data).
-OBS_SRC="$SRC_DIR/observability.env"
+OBS_SRC="$SRC_DIR/iotgw-observability.env"
 if [ -r "$OBS_SRC" ]; then
     OBS_SOURCE="$OBS_SRC"
     obs_secret_present=0
@@ -305,7 +305,13 @@ if [ -r "$OBS_SRC" ]; then
             obs_apply_ok=0
         fi
     else
-        log "ℹ️  [provision] $OBS_SRC found but MQTT credentials are empty; skipping"
+        if [ -n "$mqtt_user" ] || [ -n "$mqtt_pass" ]; then
+            warn "$OBS_SRC: MQTT credentials are incomplete (need both username and password); skipping"
+        else
+            log "ℹ️  [provision] $OBS_SRC found but MQTT credentials are empty; skipping"
+        fi
+        # Keep the cleanup block from shredding $OBS_SRC when nothing was applied.
+        obs_apply_ok=0
     fi
 
     if [ "$obs_secret_present" -eq 1 ] && [ "$obs_apply_ok" -eq 1 ]; then
