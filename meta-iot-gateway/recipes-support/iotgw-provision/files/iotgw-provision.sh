@@ -3,9 +3,7 @@ set -euo pipefail
 
 STAMP="/var/lib/iotgw-provision.done"
 SRC_DIR="/data/iotgw"
-OBS_DST="/etc/default/iotgw-observability"
 UBOOT_POLICY="/etc/default/iotgw-uboot-policy"
-OBS_CRED_DIR="/etc/credstore"
 CHANGED=0
 WARNINGS=0
 
@@ -17,9 +15,7 @@ RC_MOSQ_USER_MISSING=42
 NM_PROFILE_UPDATES=0
 NM_CONF_UPDATES=0
 OBS_SOURCE="none"
-OBS_CRED_UPDATES=0
 OBS_BROKER_APPLIED=0
-LEGACY_SECRET_KEYS_REMOVED=0
 UBOOT_ENV_UPDATES=0
 
 mkdir -p /var/lib
@@ -41,31 +37,6 @@ get_env_value() {
     local file="$1"
     local key="$2"
     sed -n "s/^${key}=//p" "$file" | tail -n 1
-}
-
-unset_env_key() {
-    local file="$1"
-    local key="$2"
-    [ -e "$file" ] || return 1
-    grep -q "^${key}=" "$file" || return 1
-
-    tmp="$(mktemp "${file}.tmp.XXXXXX")"
-    removed=0
-    while IFS= read -r line || [ -n "$line" ]; do
-        if [ "${line#"${key}"=}" != "$line" ]; then
-            removed=1
-            continue
-        fi
-        printf '%s\n' "$line" >> "$tmp"
-    done < "$file"
-
-    chmod --reference="$file" "$tmp" 2>/dev/null || true
-    chown --reference="$file" "$tmp" 2>/dev/null || true
-    mv "$tmp" "$file"
-    if [ "$removed" -eq 1 ]; then
-        return 0
-    fi
-    return 1
 }
 
 set_credential_value() {
@@ -281,45 +252,16 @@ else
 fi
 
 # Observability credentials/bootstrap (authoritative source: /data).
-OBS_SRC="$SRC_DIR/observability.env"
+OBS_SRC="$SRC_DIR/iotgw-observability.env"
 if [ -r "$OBS_SRC" ]; then
     OBS_SOURCE="$OBS_SRC"
     obs_secret_present=0
     obs_apply_ok=1
     mqtt_user="$(get_env_value "$OBS_SRC" "MQTT_USERNAME")"
     mqtt_pass="$(get_env_value "$OBS_SRC" "MQTT_PASSWORD")"
-    influx_user="$(get_env_value "$OBS_SRC" "INFLUXDB_USERNAME")"
-    influx_pass="$(get_env_value "$OBS_SRC" "INFLUXDB_PASSWORD")"
 
-    install -d -m 0700 "$OBS_CRED_DIR"
-
-    if [ -n "$mqtt_user" ]; then
+    if [ -n "$mqtt_user" ] || [ -n "$mqtt_pass" ]; then
         obs_secret_present=1
-        if set_credential_value "$OBS_CRED_DIR/telegraf.service.mqtt_username" "$mqtt_user"; then
-            CHANGED=1
-            OBS_CRED_UPDATES=$((OBS_CRED_UPDATES + 1))
-        fi
-    fi
-    if [ -n "$mqtt_pass" ]; then
-        obs_secret_present=1
-        if set_credential_value "$OBS_CRED_DIR/telegraf.service.mqtt_password" "$mqtt_pass"; then
-            CHANGED=1
-            OBS_CRED_UPDATES=$((OBS_CRED_UPDATES + 1))
-        fi
-    fi
-    if [ -n "$influx_user" ]; then
-        obs_secret_present=1
-        if set_credential_value "$OBS_CRED_DIR/telegraf.service.influxdb_username" "$influx_user"; then
-            CHANGED=1
-            OBS_CRED_UPDATES=$((OBS_CRED_UPDATES + 1))
-        fi
-    fi
-    if [ -n "$influx_pass" ]; then
-        obs_secret_present=1
-        if set_credential_value "$OBS_CRED_DIR/telegraf.service.influxdb_password" "$influx_pass"; then
-            CHANGED=1
-            OBS_CRED_UPDATES=$((OBS_CRED_UPDATES + 1))
-        fi
     fi
 
     if [ -n "$mqtt_user" ] && [ -n "$mqtt_pass" ]; then
@@ -357,13 +299,19 @@ if [ -r "$OBS_SRC" ]; then
 
             CHANGED=1
             OBS_BROKER_APPLIED=1
-            log "[provision] Applied MQTT credentials for telegraf/mosquitto (credstore + broker)"
+            log "[provision] Applied MQTT credentials to mosquitto broker"
         else
             warn "mosquitto_passwd not found; skipping MQTT credential provisioning"
             obs_apply_ok=0
         fi
     else
-        log "ℹ️  [provision] $OBS_SRC found but MQTT credentials are empty; skipping"
+        if [ -n "$mqtt_user" ] || [ -n "$mqtt_pass" ]; then
+            warn "$OBS_SRC: MQTT credentials are incomplete (need both username and password); skipping"
+        else
+            log "ℹ️  [provision] $OBS_SRC found but MQTT credentials are empty; skipping"
+        fi
+        # Keep the cleanup block from shredding $OBS_SRC when nothing was applied.
+        obs_apply_ok=0
     fi
 
     if [ "$obs_secret_present" -eq 1 ] && [ "$obs_apply_ok" -eq 1 ]; then
@@ -379,24 +327,6 @@ if [ -r "$OBS_SRC" ]; then
     elif [ "$obs_secret_present" -eq 1 ]; then
         warn "Bootstrap source retained due to incomplete credential apply"
     fi
-fi
-
-# Migrate away from env-file stored secrets if legacy keys exist.
-if unset_env_key "$OBS_DST" "MQTT_USERNAME"; then
-    CHANGED=1
-    LEGACY_SECRET_KEYS_REMOVED=$((LEGACY_SECRET_KEYS_REMOVED + 1))
-fi
-if unset_env_key "$OBS_DST" "MQTT_PASSWORD"; then
-    CHANGED=1
-    LEGACY_SECRET_KEYS_REMOVED=$((LEGACY_SECRET_KEYS_REMOVED + 1))
-fi
-if unset_env_key "$OBS_DST" "INFLUXDB_USERNAME"; then
-    CHANGED=1
-    LEGACY_SECRET_KEYS_REMOVED=$((LEGACY_SECRET_KEYS_REMOVED + 1))
-fi
-if unset_env_key "$OBS_DST" "INFLUXDB_PASSWORD"; then
-    CHANGED=1
-    LEGACY_SECRET_KEYS_REMOVED=$((LEGACY_SECRET_KEYS_REMOVED + 1))
 fi
 
 # Also seed profiles shipped in the image if missing (handles overlayfs on /etc)
@@ -422,10 +352,10 @@ fi
 if [ "$CHANGED" -eq 1 ]; then
     log "✅ [provision] Completed: applied profiles and stamped"
     if command -v systemctl >/dev/null 2>&1; then
-        systemctl try-restart mosquitto.service telegraf.service || true
+        systemctl try-restart mosquitto.service || true
     fi
 else
     log "✅ [provision] Completed: no changes"
 fi
-log "[provision] Summary: changed=${CHANGED} source=${OBS_SOURCE} nm_profiles=${NM_PROFILE_UPDATES} nm_conf=${NM_CONF_UPDATES} cred_updates=${OBS_CRED_UPDATES} broker_applied=${OBS_BROKER_APPLIED} legacy_keys_removed=${LEGACY_SECRET_KEYS_REMOVED} uboot_env_updates=${UBOOT_ENV_UPDATES} warnings=${WARNINGS}"
+log "[provision] Summary: changed=${CHANGED} source=${OBS_SOURCE} nm_profiles=${NM_PROFILE_UPDATES} nm_conf=${NM_CONF_UPDATES} broker_applied=${OBS_BROKER_APPLIED} uboot_env_updates=${UBOOT_ENV_UPDATES} warnings=${WARNINGS}"
 exit "$RC_OK"

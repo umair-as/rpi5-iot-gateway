@@ -42,7 +42,6 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     iotgw-firewall \
     iotgw-systemd-presets \
     iotgw-provision \
-    iotgw-sudoers \
     iotgw-nftables \
     iotgw-sshd-hardening \
     nftables \

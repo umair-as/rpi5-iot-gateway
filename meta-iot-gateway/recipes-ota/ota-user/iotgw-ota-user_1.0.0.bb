@@ -12,8 +12,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 inherit useradd
 
-IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE ?= "0"
-IOTGW_RAUC_PKCS11_USES_TPM2 ?= "0"
+IOTGW_NEED_TPM_POLICY ?= "0"
 
 # useradd-only recipe (no payload files)
 ALLOW_EMPTY:${PN} = "1"
@@ -43,5 +42,5 @@ USERADD_PARAM:${PN} = " \
 # (see IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS in iotgw-common.inc) -- race-free,
 # does not depend on run-postinsts.service.
 RDEPENDS:${PN} = " \
-    ${@'iotgw-tpm-policy' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else ''} \
+    ${@'iotgw-tpm-policy' if (d.getVar('IOTGW_NEED_TPM_POLICY') or '0') == '1' else ''} \
 "

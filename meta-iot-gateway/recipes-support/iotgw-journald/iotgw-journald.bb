@@ -6,7 +6,11 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 SRC_URI = "file://iotgw.conf file://iotgw-journald.tmpfiles"
 
 S = "${WORKDIR}"
-PACKAGE_ARCH = "${MACHINE_ARCH}"
+
+# Recipe ships only static config (journald.conf.d drop-in + tmpfiles.d
+# entry). No machine- or tune-specific expansions, so allarch is correct
+# and avoids per-tune rebuilds.
+inherit allarch
 
 do_install() {
     install -d ${D}${datadir}/iotgw-journald

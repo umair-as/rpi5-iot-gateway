@@ -73,9 +73,6 @@ VIRTUAL-RUNTIME_init_manager ?= "systemd"
 # Journald-only policy: do not pull classic syslog daemons from packagegroups.
 VIRTUAL-RUNTIME_base-utils-syslog = ""
 DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
-# AppArmor distro feature kept for reference while LSM default decision is pending.
-# Remove once SELinux is confirmed as the production default LSM.
-# DISTRO_FEATURES:append = " apparmor"
 # RAUC is mandatory in this distro
 DISTRO_FEATURES:append = " rauc"
 DISTRO_FEATURES:append = " luks"
@@ -105,7 +102,7 @@ ROOT_HOME ?= "/root"
 
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR IOTGW_ENABLE_EDGE_HEALTHD"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OTA_TPM_MTLS IOTGW_OTA_TPM_KEY_URI IOTGW_OTA_TPM_KEY_ENGINE IOTGW_OTA_OPENSSL_CONF"
@@ -114,7 +111,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION IOTGW_RAUC
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_KEYRING_CERTS IOTGW_RAUC_ALLOWED_SIGNER_CNS IOTGW_RAUC_CHECK_PURPOSE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OBSERVABILITY IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_ENCRYPTED_STORE_DEV IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_ENCRYPTED_STORE_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_HW_WATCHDOG IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG"
@@ -287,14 +284,34 @@ IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "${@'file' if ((d.getVar('IOTGW_RAUC_
 # Internal helper gate used by OTA/RAUC recipes for TPM-only behavior.
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "${@'1' if ((d.getVar('IOTGW_RAUC_STREAMING_KEY_MODE') or 'file') == 'pkcs11' and (d.getVar('IOTGW_RAUC_PKCS11_BACKEND') or 'tpm2').lower() == 'tpm2' and (d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') == '1') else '0'}"
 
+# Single source of truth for "this build needs the iotgw-tpm-policy package
+# (and therefore the iotgwtpm /etc/group entry)". Consumed by the
+# iotgw-ota-user RDEPENDS, the ota-certs install branch that wires the
+# keyless-device-certs env override, and the IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS
+# entry below. Keeping these three sites in sync via one derived gate avoids
+# the silent-skew failure mode where the supplementary-group reconciler
+# bbfatals because iotgwtpm is missing from /etc/group.
+#
+# The ${@...} expression is lazy: it evaluates whenever the variable is
+# queried, against the datastore at that moment. That works for the normal
+# config path (local.conf / kas overlay / distro include sets the primitive
+# gates, then recipes read the derived gate later). It does NOT work if a
+# downstream layer sets IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE or
+# IOTGW_RAUC_PKCS11_USES_TPM2 in a recipe-scoped .bbappend -- bbappends only
+# mutate their own recipe's datastore, so this derived gate would evaluate
+# differently in that recipe than in the image-rootfs / other-recipe context.
+# Set the underlying primitives (IOTGW_ENABLE_TPM_SLB9672,
+# IOTGW_ENABLE_OTA_TPM_MTLS, IOTGW_RAUC_STREAMING_KEY_MODE,
+# IOTGW_RAUC_PKCS11_BACKEND) at distro / local.conf / kas-overlay level, not
+# in a bbappend.
+IOTGW_NEED_TPM_POLICY ?= "${@'1' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else '0'}"
+
 # Cross-recipe supplementary group membership applied at rootfs-postprocess.
 # See meta-iot-gateway/classes/iotgw-rootfs.bbclass for the mechanism. The
-# 'ota:iotgwtpm' pair is gated on the same conditions as the iotgw-tpm-policy
-# RDEPENDS in iotgw-ota-user (which is what causes iotgwtpm to exist in
-# /etc/group at all). Both must fire together; the duplicate-condition
-# pattern is tracked by the parked gating refactor.
+# 'ota:iotgwtpm' pair fires whenever the iotgw-tpm-policy package is pulled
+# in (which is what causes iotgwtpm to exist in /etc/group at all).
 IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS ??= ""
-IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'ota:iotgwtpm' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else ''}"
+IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'ota:iotgwtpm' if (d.getVar('IOTGW_NEED_TPM_POLICY') or '0') == '1' else ''}"
 
 # Optional encrypted RAUC bundle support (disabled by default):
 # - build side: create `crypt` bundles and encrypt to recipient cert set
@@ -338,20 +355,10 @@ IOTGW_ENABLE_VCIO ?= "${IOTGW_ENABLE_RPI_EEPROM}"
 #   early-boot noise.
 RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', '\\ndtoverlay=%s\\n' % d.getVar('IOTGW_TPM_DTO_OVERLAY'), '', d)}"
 
-# Optional observability stack (native services: InfluxDB + Telegraf).
-# Containerized observability is paused on Scarthgap due to Rust toolchain skew
-# in netavark/aardvark-dns and will be revisited on the next Yocto LTS rebase.
-IOTGW_ENABLE_OBSERVABILITY ?= "0"
-IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_OBSERVABILITY', '1', ' igw_observability_dev', '', d)}"
-
 # Optional BTF/CO-RE lab kernel metadata gate. Kept separate from generic
 # observability so profiles can choose one or both without coupling.
 IOTGW_ENABLE_BTF_CORE_DEV ?= "0"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_BTF_CORE_DEV', '1', ' igw_btf_core_dev', '', d)}"
-# Telegraf dependency mode:
-#   0: local-first startup (network.target) with runtime retries (default)
-#   1: strict startup ordering via network-online.target (remote endpoints)
-IOTGW_OBSERVABILITY_REQUIRE_NETWORK_ONLINE ?= "0"
 
 # Optional dev TPM/LUKS loopback store (/data/encstore). Keep opt-in to avoid
 # boot-time/setup overhead on images where encrypted-store testing is not active.

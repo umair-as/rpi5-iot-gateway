@@ -130,7 +130,6 @@ EOF
 }
 
 generate_issue() {
-    get_system_info
     {
         printf "\n"
         printf "\033[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\033[0m\n"
@@ -154,7 +153,6 @@ generate_issue() {
 }
 
 generate_issue_net() {
-    get_system_info
     {
         printf "\n"
         printf "================================================================================\n"
@@ -175,7 +173,6 @@ generate_issue_net() {
 }
 
 generate_motd() {
-    get_system_info
     {
         printf "\n"
         printf "\033[1;36m    ██╗ ██████╗ ████████╗     ██████╗  █████╗ ████████╗███████╗██╗    ██╗ █████╗ ██╗   ██╗\033[0m\n"
@@ -223,19 +220,28 @@ EOF
     } > "${MOTD_FILE}"
 }
 
-case "${1:-all}" in
-    issue)
-        generate_issue
-        ;;
-    issue.net)
-        generate_issue_net
-        ;;
-    motd)
-        generate_motd
-        ;;
-    all|*)
-        generate_issue
-        generate_issue_net
-        generate_motd
-        ;;
-esac
+get_system_info
+
+# Iterate over all args so multi-surface callers (e.g. the NM dispatcher
+# at 50-iotgw-banner invoking "issue issue.net") update every requested
+# surface. A single-arg "case $1" silently dropped trailing args, which
+# kept /etc/issue.net stale across the session because every dispatcher
+# event only ever regenerated /etc/issue.
+for surface in "${@:-all}"; do
+    case "$surface" in
+        issue)
+            generate_issue
+            ;;
+        issue.net)
+            generate_issue_net
+            ;;
+        motd)
+            generate_motd
+            ;;
+        all|*)
+            generate_issue
+            generate_issue_net
+            generate_motd
+            ;;
+    esac
+done

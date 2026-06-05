@@ -1,0 +1,6 @@
+# Desktop-only systemd presets — included in iot-gw-image-desktop only.
+# Weston compositor and socket are only meaningful on desktop variants;
+# enabling them on headless images produces degraded-state noise at boot.
+
+enable weston.service
+enable weston.socket

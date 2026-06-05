@@ -3,6 +3,12 @@ Description=Setup overlayfs for read-only rootfs
 DefaultDependencies=no
 After=data.mount
 Before=sysinit.target
+# Make journal-flush wait for /var to become writable. Without this ordering,
+# systemd-journal-flush runs while /var is still the read-only rootfs lowerdir,
+# silently finds nothing to flush, and journald stays on /run/log/journal for
+# the rest of the boot. Pre-existing bug in this overlay stack; surfaced
+# while verifying the 9a1c520 journald move.
+Before=systemd-journal-flush.service
 Wants=data.mount
 RequiresMountsFor=/data
 ConditionPathIsMountPoint=/data

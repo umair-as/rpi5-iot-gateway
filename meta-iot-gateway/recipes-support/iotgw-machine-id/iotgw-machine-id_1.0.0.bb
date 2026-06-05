@@ -1,5 +1,6 @@
 SUMMARY = "Persistent machine-id setup for immutable rootfs deployments"
 DESCRIPTION = "Ensures machine-id is persisted under /data and bind-mounted to /etc/machine-id before regular services."
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 

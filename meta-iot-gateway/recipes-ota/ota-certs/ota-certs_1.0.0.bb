@@ -27,7 +27,7 @@ S = "${WORKDIR}"
 PACKAGES =+ "${PN}-devca"
 
 RAUC_OTA_CA_DIR ?= ""
-IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE ?= "0"
+IOTGW_NEED_TPM_POLICY ?= "0"
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "0"
 IOTGW_TPM2_PKCS11_STORE ?= "/var/lib/tpm2_pkcs11"
 
@@ -44,7 +44,7 @@ do_install() {
     # Install systemd service
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/ota-certs-provision.service ${D}${systemd_system_unitdir}/
-    if ${@'true' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE') or '0') == '1' or (d.getVar('IOTGW_RAUC_PKCS11_USES_TPM2') or '0') == '1') else 'false'}; then
+    if ${@'true' if (d.getVar('IOTGW_NEED_TPM_POLICY') or '0') == '1' else 'false'}; then
         sed -i '/^\[Service\]/a Environment=OTA_CERTS_ALLOW_KEYLESS_DEVICE_CERTS=1' \
             ${D}${systemd_system_unitdir}/ota-certs-provision.service
     fi

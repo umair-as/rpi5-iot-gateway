@@ -29,7 +29,6 @@ Feature-gated build examples:
 
 ```bash
 IOTGW_ENABLE_OTBR=1 make dev
-IOTGW_ENABLE_OBSERVABILITY=1 make dev
 IOTGW_KERNEL_FEATURES="igw_containers igw_networking_iot igw_security_prod" make prod
 ```
 
@@ -282,8 +281,8 @@ Architecture and policy details:
 ## 8) Service Health Checks
 
 ```bash
-systemctl status mosquitto telegraf influxdb
-journalctl -u telegraf --no-pager -n 100
+systemctl status mosquitto edge-healthd
+journalctl -u edge-healthd --no-pager -n 100
 ```
 
 ## 9) Persistent Remote Session Pattern

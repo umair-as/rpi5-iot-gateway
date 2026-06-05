@@ -3,9 +3,9 @@ DESCRIPTION = "Renders /etc/issue (TTY pre-login), /etc/issue.net (SSH \
 pre-login), and /etc/motd (TTY post-login via /bin/login MOTD_FILE) with \
 runtime system information -- distro identity, RAUC slot + boot status, \
 kernel, default-route source IP and other global-scope addresses, OTA \
-state. Includes a NetworkManager dispatcher script that refreshes all \
-three on interface state and DHCP lease changes so IP fields do not go \
-stale across the boot lifetime."
+state. A NetworkManager dispatcher script refreshes issue and issue.net \
+on interface up/down and connectivity-change events; motd is written once \
+at boot by the systemd service."
 HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
