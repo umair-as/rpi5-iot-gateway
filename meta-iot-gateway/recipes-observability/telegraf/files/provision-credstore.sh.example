@@ -1,0 +1,68 @@
+#!/bin/sh
+# Worked example: first-boot population of Telegraf's systemd credstore.
+#
+# Not active. Integrate into an image-specific provisioning unit / script
+# when reinstating the observability stack (telegraf + influxdb) via
+# IMAGE_INSTALL. See docs/OBSERVABILITY.md for the credential-flow design.
+#
+# Source of secrets: /data/iotgw/iotgw-observability.env (operator-supplied,
+# mode 0600 root:root). Keys read:
+#   MQTT_USERNAME, MQTT_PASSWORD, INFLUXDB_USERNAME, INFLUXDB_PASSWORD
+#
+# Destinations (created and owned by this recipe's do_install as 0600 root:root):
+#   /etc/credstore/telegraf.service.mqtt_username
+#   /etc/credstore/telegraf.service.mqtt_password
+#   /etc/credstore/telegraf.service.influxdb_username
+#   /etc/credstore/telegraf.service.influxdb_password
+#
+# telegraf.service consumes these via LoadCredential= and surfaces them at
+# $CREDENTIALS_DIRECTORY for the secretstores.systemd Telegraf plugin.
+# Empty values keep the unit in ConditionFileNotEmpty=-skipped state.
+
+set -eu
+
+OBS_SRC="/data/iotgw/iotgw-observability.env"
+OBS_CRED_DIR="/etc/credstore"
+
+get_env_value() {
+    local file="$1"
+    local key="$2"
+    sed -n "s/^${key}=//p" "$file" | tail -n 1
+}
+
+# Idempotent write: only rewrites if value changed; restores 0600 root:root each call.
+set_credential_value() {
+    local file="$1"
+    local value="$2"
+    local current=""
+
+    if [ -e "$file" ]; then
+        current="$(cat "$file" 2>/dev/null || true)"
+    fi
+    if [ "$current" != "$value" ]; then
+        printf '%s' "$value" > "$file"
+    fi
+    chmod 0600 "$file"
+    chown root:root "$file" 2>/dev/null || true
+}
+
+[ -r "$OBS_SRC" ] || { echo "no observability env at $OBS_SRC; skip" >&2; exit 0; }
+
+install -d -m 0700 "$OBS_CRED_DIR"
+
+mqtt_user="$(get_env_value "$OBS_SRC" "MQTT_USERNAME")"
+mqtt_pass="$(get_env_value "$OBS_SRC" "MQTT_PASSWORD")"
+influx_user="$(get_env_value "$OBS_SRC" "INFLUXDB_USERNAME")"
+influx_pass="$(get_env_value "$OBS_SRC" "INFLUXDB_PASSWORD")"
+
+[ -n "$mqtt_user" ]   && set_credential_value "$OBS_CRED_DIR/telegraf.service.mqtt_username"   "$mqtt_user"
+[ -n "$mqtt_pass" ]   && set_credential_value "$OBS_CRED_DIR/telegraf.service.mqtt_password"   "$mqtt_pass"
+[ -n "$influx_user" ] && set_credential_value "$OBS_CRED_DIR/telegraf.service.influxdb_username" "$influx_user"
+[ -n "$influx_pass" ] && set_credential_value "$OBS_CRED_DIR/telegraf.service.influxdb_password" "$influx_pass"
+
+# After successful population the integrator typically restarts telegraf:
+#   systemctl try-restart telegraf.service
+#
+# And, depending on the secret-rotation policy, removes the env file so
+# secrets do not persist on /data in cleartext:
+#   shred -u "$OBS_SRC"

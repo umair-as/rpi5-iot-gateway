@@ -1,7 +1,22 @@
 # Maintained asset: not included in any image variant by default.
 # Kept current against Scarthgap for layer consumers who need host-level
 # metrics collection. To reinstate, add telegraf to IMAGE_INSTALL in a
-# downstream image variant; no layer changes needed.
+# downstream image variant; no further layer changes needed for the binary.
+#
+# Credential flow shipped with this recipe:
+#   - /etc/credstore/telegraf.service.{mqtt,influxdb}_{username,password}
+#     zero-byte placeholders (0600 root:root) so ConditionFileNotEmpty= in
+#     telegraf.service cleanly skips the unit on a fresh device instead of
+#     returning EACCES from a missing dir.
+#   - /etc/default/iotgw-observability ships with empty INFLUXDB_URL /
+#     INFLUXDB_DATABASE; integrators populate via kas/local.yml or runtime.
+#   - First-boot population of the four credstore files is integrator-owned;
+#     a worked example ships at
+#     ${datadir}/iotgw-observability/provision-credstore.sh.example.
+#
+# Startup ordering: default is local-first (After=network.target). Set
+# TELEGRAF_REQUIRE_NETWORK_ONLINE = "1" in a bbappend / kas overlay to
+# install the network-online drop-in for remote broker/DB deployments.
 
 SUMMARY = "Telegraf native metrics agent"
 DESCRIPTION = "Builds and installs Telegraf as a native systemd service for host-level telemetry collection."
@@ -19,7 +34,15 @@ SRC_URI = " \
     file://telegraf-network-online.conf \
     file://telegraf.conf \
     file://telegraf.tmpfiles \
+    file://iotgw-observability.env \
+    file://provision-credstore.sh.example \
 "
+
+# Local-first ordering (After=network.target) is the default since telegraf,
+# mosquitto and influxdb all listen on 127.0.0.1 in the standard topology.
+# Flip to "1" in a bbappend or kas/local.yml to install the network-online
+# drop-in for remote broker/DB endpoints.
+TELEGRAF_REQUIRE_NETWORK_ONLINE ?= "0"
 
 S = "${WORKDIR}/${BPN}-${PV}"
 
@@ -72,22 +95,68 @@ do_install:append() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${WORKDIR}/telegraf.service ${D}${systemd_system_unitdir}/telegraf.service
 
-    install -d ${D}${systemd_system_unitdir}/telegraf.service.d
-    install -m 0644 ${WORKDIR}/telegraf-network-online.conf \
-        ${D}${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf
+    if [ "${TELEGRAF_REQUIRE_NETWORK_ONLINE}" = "1" ]; then
+        install -d ${D}${systemd_system_unitdir}/telegraf.service.d
+        install -m 0644 ${WORKDIR}/telegraf-network-online.conf \
+            ${D}${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf
+    fi
 
     install -d ${D}${nonarch_libdir}/tmpfiles.d
     install -m 0644 ${WORKDIR}/telegraf.tmpfiles ${D}${nonarch_libdir}/tmpfiles.d/telegraf.conf
+
+    # Non-secret defaults env file (integrator populates INFLUXDB_URL / DB).
+    install -d ${D}${sysconfdir}/default
+    install -m 0644 ${WORKDIR}/iotgw-observability.env \
+        ${D}${sysconfdir}/default/iotgw-observability
+
+    # Credstore scaffolding: four zero-byte placeholders so the
+    # ConditionFileNotEmpty= guards in telegraf.service give a clean
+    # condition-failed skip on a fresh device. Without the placeholders
+    # the ExecCondition runs under User=telegraf, hits the 0700 root:root
+    # /etc/credstore dir without execute permission, and returns EACCES --
+    # indistinguishable from "file exists but is empty", which masks the
+    # real provisioning state.
+    #
+    # /etc/credstore is also shipped by systemd-255 with mode 0700 root:root.
+    # We explicitly install -d with matching attributes so rpm/dnf merges the
+    # dir ownership cleanly between the two packages -- any mode mismatch
+    # (e.g. the 0755 default from install -D) trips a file-conflict
+    # transaction error at do_rootfs time.
+    install -d -m 0700 ${D}${sysconfdir}/credstore
+    install -m 0600 /dev/null ${D}${sysconfdir}/credstore/telegraf.service.mqtt_username
+    install -m 0600 /dev/null ${D}${sysconfdir}/credstore/telegraf.service.mqtt_password
+    install -m 0600 /dev/null ${D}${sysconfdir}/credstore/telegraf.service.influxdb_username
+    install -m 0600 /dev/null ${D}${sysconfdir}/credstore/telegraf.service.influxdb_password
+
+    # First-boot credential-population worked example for integrators.
+    install -d ${D}${datadir}/iotgw-observability
+    install -m 0644 ${WORKDIR}/provision-credstore.sh.example \
+        ${D}${datadir}/iotgw-observability/provision-credstore.sh.example
 }
 
 FILES:${PN}:append = " \
     ${sysconfdir}/telegraf/telegraf.conf \
     ${systemd_system_unitdir}/telegraf.service \
-    ${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf \
     ${nonarch_libdir}/tmpfiles.d/telegraf.conf \
+    ${sysconfdir}/default/iotgw-observability \
+    ${sysconfdir}/credstore/telegraf.service.mqtt_username \
+    ${sysconfdir}/credstore/telegraf.service.mqtt_password \
+    ${sysconfdir}/credstore/telegraf.service.influxdb_username \
+    ${sysconfdir}/credstore/telegraf.service.influxdb_password \
+    ${datadir}/iotgw-observability/provision-credstore.sh.example \
 "
+FILES:${PN} += "${@bb.utils.contains('TELEGRAF_REQUIRE_NETWORK_ONLINE', '1', d.getVar('systemd_system_unitdir') + '/telegraf.service.d/10-network-online.conf', '', d)}"
 
-CONFFILES:${PN}:append = " ${sysconfdir}/telegraf/telegraf.conf"
+# Mark the env file and credstore placeholders as config files so they
+# survive package upgrades and respect operator edits in the /etc overlay.
+CONFFILES:${PN}:append = " \
+    ${sysconfdir}/telegraf/telegraf.conf \
+    ${sysconfdir}/default/iotgw-observability \
+    ${sysconfdir}/credstore/telegraf.service.mqtt_username \
+    ${sysconfdir}/credstore/telegraf.service.mqtt_password \
+    ${sysconfdir}/credstore/telegraf.service.influxdb_username \
+    ${sysconfdir}/credstore/telegraf.service.influxdb_password \
+"
 
 # windows-gen-syso.sh ends up in telegraf-dev (Go source tree) and triggers a
 # file-rdeps QA warning for /bin/bash. It's a Windows build helper — skip it.
