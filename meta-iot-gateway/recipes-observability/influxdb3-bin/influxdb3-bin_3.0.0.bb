@@ -1,8 +1,3 @@
-# Maintained asset: not included in any image variant by default.
-# Kept current for layer consumers needing InfluxDB 3 Core on Scarthgap.
-# To reinstate, set INFLUXDB3_BIN_SRC_URI and add influxdb3-bin to IMAGE_INSTALL
-# in a downstream image variant.
-
 SUMMARY = "InfluxDB 3 Core native binary (custom integration)"
 DESCRIPTION = "Installs InfluxDB 3 Core binary from a prebuilt archive for native target deployment."
 HOMEPAGE = "https://www.influxdata.com/"

@@ -1,7 +1,3 @@
-# Maintained asset: not included in any image variant by default.
-# Kept current for layer consumers deploying InfluxDB 1.x on Scarthgap.
-# To reinstate, add influxdb to IMAGE_INSTALL in a downstream image variant.
-
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 SRC_URI:append = " \

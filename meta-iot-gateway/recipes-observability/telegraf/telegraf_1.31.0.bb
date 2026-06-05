@@ -1,23 +1,3 @@
-# Maintained asset: not included in any image variant by default.
-# Kept current against Scarthgap for layer consumers who need host-level
-# metrics collection. To reinstate, add telegraf to IMAGE_INSTALL in a
-# downstream image variant; no further layer changes needed for the binary.
-#
-# Credential flow shipped with this recipe:
-#   - /etc/credstore/telegraf.service.{mqtt,influxdb}_{username,password}
-#     zero-byte placeholders (0600 root:root) so ConditionFileNotEmpty= in
-#     telegraf.service cleanly skips the unit on a fresh device instead of
-#     returning EACCES from a missing dir.
-#   - /etc/default/iotgw-observability ships with empty INFLUXDB_URL /
-#     INFLUXDB_DATABASE; integrators populate via kas/local.yml or runtime.
-#   - First-boot population of the four credstore files is integrator-owned;
-#     a worked example ships at
-#     ${datadir}/iotgw-observability/provision-credstore.sh.example.
-#
-# Startup ordering: default is local-first (After=network.target). Set
-# TELEGRAF_REQUIRE_NETWORK_ONLINE = "1" in a bbappend / kas overlay to
-# install the network-online drop-in for remote broker/DB deployments.
-
 SUMMARY = "Telegraf native metrics agent"
 DESCRIPTION = "Builds and installs Telegraf as a native systemd service for host-level telemetry collection."
 HOMEPAGE = "https://github.com/influxdata/telegraf"
