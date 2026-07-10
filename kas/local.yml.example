@@ -1,3 +1,11 @@
+# Operator-private overlay. Copy to kas/local.yml (gitignored) and edit.
+#
+# Layers: this project uses the shared git-alternates mechanism (see the
+# Makefile). Upstream layers are SHA-pinned in rpi5.yml / kas/*.yml and cloned
+# into .kas/ (gitignored) using bare mirrors under KAS_REPO_REF_DIR
+# (/mnt/yocto-nvme/layers-wrynose) as alternates — nothing to pre-clone, no
+# path: overrides needed. For standalone `kas` (outside `make`), first run
+# `. scripts/env.sh` to lift the same KAS_* env into your shell.
 header:
   version: 18
   includes:
@@ -11,6 +19,13 @@ env:
   IOTGW_RAUC_KEY_DIR: "$HOME/rauc-keys"
 
 local_conf_header:
+  paths: |
+    # Shared download + sstate caches on the NVMe drive (matches the sibling
+    # edge-ai-yocto project so native/cross/allarch sstate and all source
+    # downloads are reused). Point these at your shared drive.
+    DL_DIR     = "/mnt/yocto-nvme/DL_SHARED"
+    SSTATE_DIR = "/mnt/yocto-nvme/SSTATE"
+
   wifi: |
     # Inject Wi‑Fi profiles (static IPv4) — create 'kas/local.yml' from this file and edit.
     # Multiple lines separated by \n; format: ssid|psk|iface|method|priority|ipv4addr/prefix|gateway|dns1;dns2

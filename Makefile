@@ -4,6 +4,23 @@
         layers parse clean-lock
 
 KAS ?= kas
+
+# === Shared-layer build mechanism (git-alternates; see kas/local.yml.example) ===
+# KAS_REPO_REF_DIR points at a shared bare-repo cache scoped per Yocto release
+# (layers-wrynose). kas clones each layer into .kas/ (gitignored) using those
+# repos as git alternates — near-instant setup, zero extra disk, and the SHA
+# pins in rpi5.yml/kas/*.yml are still enforced. A mirror missing from the
+# ref-dir is auto-created on first use; an absent ref-dir falls back to full
+# clones (no error). KAS_WORK_DIR keeps upstream layer clones out of the repo
+# root; KAS_BUILD_DIR keeps the bitbake build dir at the conventional ./build.
+KAS_REPO_REF_DIR ?= /mnt/yocto-nvme/layers-wrynose
+KAS_WORK_DIR     ?= $(CURDIR)/.kas
+KAS_BUILD_DIR    ?= $(CURDIR)/build
+export KAS_REPO_REF_DIR KAS_WORK_DIR KAS_BUILD_DIR
+# kas refuses to start if KAS_WORK_DIR is absent (it does not mkdir it). Create
+# it at parse time so every target is covered without a per-target prereq.
+$(shell mkdir -p $(KAS_WORK_DIR))
+
 RAUC ?= kas/rauc.yml
 LOCAL ?= kas/local.yml
 UBOOT_PROD_HARDENING_KAS ?= kas/uboot-prod-hardening.yml
