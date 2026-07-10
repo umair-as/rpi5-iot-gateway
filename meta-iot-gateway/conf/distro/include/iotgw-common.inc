@@ -86,8 +86,13 @@ PACKAGECONFIG:append:pn-cryptsetup = " luks2"
 # Always use U-Boot on Raspberry Pi for RAUC boot flow
 RPI_USE_U_BOOT ?= "1"
 
-# Trim unneeded distro features (conservative defaults)
-DISTRO_FEATURES:remove = " pcmcia 3g nfc ptest debuginfod sysvinit nfs"
+# Trim unneeded distro features (conservative defaults).
+# Wrynose (Yocto 6.0) auto-enables multiarch/opengl/ptest/vulkan/wayland by
+# default (via DISTRO_FEATURES_DEFAULTS, the BACKFILL replacement). ptest and
+# multiarch are stripped here for all image variants (no 32-bit userspace, no
+# on-target ptest); opengl/vulkan/wayland are stripped per-profile below
+# (:remove:headless), with the desktop variant re-adding them via :append:desktop.
+DISTRO_FEATURES:remove = " pcmcia 3g nfc ptest multiarch debuginfod sysvinit nfs"
 
 # Exclude unused RPC portmapper (pulled in by base packagegroups)
 PACKAGE_EXCLUDE:append = " rpcbind"
