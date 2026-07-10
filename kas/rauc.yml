@@ -6,19 +6,20 @@ header:
 distro: iotgw
 
 repos:
-  meta-lts-mixins:
-    url: https://github.com/yoctoproject/meta-lts-mixins.git
-    branch: scarthgap/u-boot
-    layers:
-      .:
+  # meta-lts-mixins removed: wrynose ships stock u-boot 2026.01, and
+  # meta-rauc-raspberrypi master no longer LAYERDEPENDS the u-boot mixin.
 
   meta-rauc:
     url: https://github.com/rauc/meta-rauc.git
-    branch: scarthgap
+    branch: wrynose
+    commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
   meta-rauc-community:
     url: https://github.com/rauc/meta-rauc-community.git
-    branch: scarthgap
+    # No wrynose branch; master meta-rauc-raspberrypi/conf/layer.conf is
+    # LAYERSERIES_COMPAT=wrynose and dropped the lts-u-boot-mixin dep.
+    branch: master
+    commit: 00228100ab6dfb4ea53514c15cba02c0d2fa985e
     layers:
       meta-rauc-raspberrypi:
 

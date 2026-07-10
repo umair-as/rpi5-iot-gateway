@@ -3,11 +3,11 @@ header:
   includes:
     - "rpi5.yml"
 
-# CVE check overlay: enables cve-check class and configures reports
+# CVE check overlay. Wrynose removed the cve-check class; CVE scanning is now
+# the sbom-cve-check recipe/class, wired via the yocto/sbom-cve-check fragment.
+# IMAGE_CLASSES is the load-bearing wiring (matches the edge-ai-yocto sibling);
+# OE_FRAGMENTS carries the fragment's CVE-DB fetch defaults.
 local_conf_header:
-  cve_check: |
-    INHERIT += "cve-check"
-    CVE_CHECK_FORMATS ?= "text json"
-    CVE_CHECK_REPORT_DIR ?= "${TMPDIR}/deploy/cve"
-    # Fail build on CVEs above a threshold (optional):
-    # CVE_ERROR_PHRASES += "; CVSSv3/BaseScore=([7-9]|10)"
+  sbom_cve_check: |
+    OE_FRAGMENTS  += "yocto/sbom-cve-check"
+    IMAGE_CLASSES += "sbom-cve-check"

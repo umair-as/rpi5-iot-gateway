@@ -8,7 +8,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=bf72105a69d303b78352c6a39239bc69"
 SRC_URI = "git://github.com/umair-as/tpm-ops.git;protocol=https;nobranch=1"
 S = "${WORKDIR}/git"
 
-inherit cargo_bin
+inherit cargo
 
 # tss-esapi links against libtss2 via pkg-config
 DEPENDS = "tpm2-tss"
