@@ -18,55 +18,55 @@ SRC_URI = " \
     file://service-hardening-mosquitto.conf \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 do_install() {
     # Sysctl hardening (KRNL-6000)
     install -d ${D}${sysconfdir}/sysctl.d
-    install -m 0644 ${WORKDIR}/99-iotgw-hardening.conf ${D}${sysconfdir}/sysctl.d/
+    install -m 0644 ${UNPACKDIR}/99-iotgw-hardening.conf ${D}${sysconfdir}/sysctl.d/
 
     # Module blacklist (runtime prevention)
     install -d ${D}${sysconfdir}/modprobe.d
-    install -m 0644 ${WORKDIR}/blacklist.conf ${D}${sysconfdir}/modprobe.d/iotgw-blacklist.conf
+    install -m 0644 ${UNPACKDIR}/blacklist.conf ${D}${sysconfdir}/modprobe.d/iotgw-blacklist.conf
 
     # Core dump limits (KRNL-5820)
     install -d ${D}${sysconfdir}/security/limits.d
-    install -m 0644 ${WORKDIR}/limits-hardening.conf ${D}${sysconfdir}/security/limits.d/
+    install -m 0644 ${UNPACKDIR}/limits-hardening.conf ${D}${sysconfdir}/security/limits.d/
 
     # Systemd default limits for all services (also enforces core=0 for daemons)
     install -d ${D}${sysconfdir}/systemd/system.conf.d
-    install -m 0644 ${WORKDIR}/50-core-limits.conf ${D}${sysconfdir}/systemd/system.conf.d/
+    install -m 0644 ${UNPACKDIR}/50-core-limits.conf ${D}${sysconfdir}/systemd/system.conf.d/
 
     # Disable persistent core dumps for user processes (coredumpd)
     install -d ${D}${sysconfdir}/systemd/coredump.conf.d
-    install -m 0644 ${WORKDIR}/coredump.conf ${D}${sysconfdir}/systemd/coredump.conf.d/iotgw.conf
+    install -m 0644 ${UNPACKDIR}/coredump.conf ${D}${sysconfdir}/systemd/coredump.conf.d/iotgw.conf
 
     # Harden tmpfs mounts for /tmp and /dev/shm via drop-in units
     install -d ${D}${sysconfdir}/systemd/system/tmp.mount.d
-    install -m 0644 ${WORKDIR}/tmp.mount.override ${D}${sysconfdir}/systemd/system/tmp.mount.d/override.conf
+    install -m 0644 ${UNPACKDIR}/tmp.mount.override ${D}${sysconfdir}/systemd/system/tmp.mount.d/override.conf
     install -d ${D}${sysconfdir}/systemd/system/dev-shm.mount.d
-    install -m 0644 ${WORKDIR}/dev-shm.mount.override ${D}${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf
+    install -m 0644 ${UNPACKDIR}/dev-shm.mount.override ${D}${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf
 
     # Systemd service hardening drop-ins for network-facing services
     for unit in dnsmasq.service avahi-daemon.service; do
         install -d ${D}${sysconfdir}/systemd/system/${unit}.d
-        install -m 0644 ${WORKDIR}/service-hardening.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
+        install -m 0644 ${UNPACKDIR}/service-hardening.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
     done
     for unit in NetworkManager.service wpa_supplicant.service; do
         install -d ${D}${sysconfdir}/systemd/system/${unit}.d
-        install -m 0644 ${WORKDIR}/service-hardening-net.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
+        install -m 0644 ${UNPACKDIR}/service-hardening-net.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
     done
 
     install -d ${D}${sysconfdir}/systemd/system/mosquitto.service.d
-    install -m 0644 ${WORKDIR}/service-hardening-mosquitto.conf ${D}${sysconfdir}/systemd/system/mosquitto.service.d/override.conf
+    install -m 0644 ${UNPACKDIR}/service-hardening-mosquitto.conf ${D}${sysconfdir}/systemd/system/mosquitto.service.d/override.conf
 
     # Ship hardened sshd@ unit directly.
     install -d ${D}${sysconfdir}/systemd/system
-    install -m 0644 ${WORKDIR}/sshd@.service ${D}${sysconfdir}/systemd/system/sshd@.service
+    install -m 0644 ${UNPACKDIR}/sshd@.service ${D}${sysconfdir}/systemd/system/sshd@.service
 
     # Restrictive umask (AUTH-9328)
     install -d ${D}${sysconfdir}/profile.d
-    install -m 0644 ${WORKDIR}/umask.sh ${D}${sysconfdir}/profile.d/
+    install -m 0644 ${UNPACKDIR}/umask.sh ${D}${sysconfdir}/profile.d/
     # Note: login.defs hardening is applied via shadow_%.bbappend at package build time
 }
 

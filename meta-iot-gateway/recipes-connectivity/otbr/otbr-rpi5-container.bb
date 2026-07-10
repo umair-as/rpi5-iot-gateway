@@ -64,7 +64,7 @@ SRC_URI = "file://entrypoint.sh"
 ROOTFS_POSTPROCESS_COMMAND += "otbr_install_entrypoint; "
 otbr_install_entrypoint() {
     install -d ${IMAGE_ROOTFS}/
-    install -m 0755 ${WORKDIR}/entrypoint.sh ${IMAGE_ROOTFS}/entrypoint.sh
+    install -m 0755 ${UNPACKDIR}/entrypoint.sh ${IMAGE_ROOTFS}/entrypoint.sh
 }
 
 # OCI Image Configuration

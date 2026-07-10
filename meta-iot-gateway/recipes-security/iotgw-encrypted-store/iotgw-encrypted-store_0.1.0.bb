@@ -20,17 +20,17 @@ SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 
 do_install() {
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/iotgw-encrypted-store-setup.sh ${D}${sbindir}/iotgw-encrypted-store-setup
+    install -m 0755 ${UNPACKDIR}/iotgw-encrypted-store-setup.sh ${D}${sbindir}/iotgw-encrypted-store-setup
 
     install -d ${D}${sysconfdir}/default
-    install -m 0644 ${WORKDIR}/iotgw-encrypted-store.default ${D}${sysconfdir}/default/iotgw-encrypted-store
+    install -m 0644 ${UNPACKDIR}/iotgw-encrypted-store.default ${D}${sysconfdir}/default/iotgw-encrypted-store
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-encrypted-store-setup.service ${D}${systemd_system_unitdir}/
-    install -m 0644 ${WORKDIR}/data-encstore.mount ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/iotgw-encrypted-store-setup.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/data-encstore.mount ${D}${systemd_system_unitdir}/
 
     install -d ${D}${sysconfdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/iotgw-encrypted-store.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/iotgw-encrypted-store.conf
+    install -m 0644 ${UNPACKDIR}/iotgw-encrypted-store.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/iotgw-encrypted-store.conf
 }
 
 FILES:${PN} += " \

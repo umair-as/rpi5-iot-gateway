@@ -24,7 +24,7 @@ SRC_URI = " \
 # drop-in for remote broker/DB endpoints.
 TELEGRAF_REQUIRE_NETWORK_ONLINE ?= "0"
 
-S = "${WORKDIR}/${BPN}-${PV}"
+S = "${UNPACKDIR}/${BPN}-${PV}"
 
 inherit go-mod systemd
 inherit useradd
@@ -70,23 +70,23 @@ USERADD_PARAM:${PN} = "--system -d /var/lib/telegraf -m -s /sbin/nologin --gid t
 
 do_install:append() {
     install -d ${D}${sysconfdir}/telegraf
-    install -m 0644 ${WORKDIR}/telegraf.conf ${D}${sysconfdir}/telegraf/telegraf.conf
+    install -m 0644 ${UNPACKDIR}/telegraf.conf ${D}${sysconfdir}/telegraf/telegraf.conf
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/telegraf.service ${D}${systemd_system_unitdir}/telegraf.service
+    install -m 0644 ${UNPACKDIR}/telegraf.service ${D}${systemd_system_unitdir}/telegraf.service
 
     if [ "${TELEGRAF_REQUIRE_NETWORK_ONLINE}" = "1" ]; then
         install -d ${D}${systemd_system_unitdir}/telegraf.service.d
-        install -m 0644 ${WORKDIR}/telegraf-network-online.conf \
+        install -m 0644 ${UNPACKDIR}/telegraf-network-online.conf \
             ${D}${systemd_system_unitdir}/telegraf.service.d/10-network-online.conf
     fi
 
     install -d ${D}${nonarch_libdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/telegraf.tmpfiles ${D}${nonarch_libdir}/tmpfiles.d/telegraf.conf
+    install -m 0644 ${UNPACKDIR}/telegraf.tmpfiles ${D}${nonarch_libdir}/tmpfiles.d/telegraf.conf
 
     # Non-secret defaults env file (integrator populates INFLUXDB_URL / DB).
     install -d ${D}${sysconfdir}/default
-    install -m 0644 ${WORKDIR}/iotgw-observability.env \
+    install -m 0644 ${UNPACKDIR}/iotgw-observability.env \
         ${D}${sysconfdir}/default/iotgw-observability
 
     # Credstore scaffolding: four zero-byte placeholders so the
@@ -110,7 +110,7 @@ do_install:append() {
 
     # First-boot credential-population worked example for integrators.
     install -d ${D}${datadir}/iotgw-observability
-    install -m 0644 ${WORKDIR}/provision-credstore.sh.example \
+    install -m 0644 ${UNPACKDIR}/provision-credstore.sh.example \
         ${D}${datadir}/iotgw-observability/provision-credstore.sh.example
 }
 

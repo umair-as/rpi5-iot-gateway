@@ -5,12 +5,12 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = "file://90-iotgw.preset"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 do_install() {
     install -d ${D}${libdir}/systemd/system-preset
-    install -m 0644 ${WORKDIR}/90-iotgw.preset ${D}${libdir}/systemd/system-preset/90-iotgw.preset
+    install -m 0644 ${UNPACKDIR}/90-iotgw.preset ${D}${libdir}/systemd/system-preset/90-iotgw.preset
 }
 
 FILES:${PN} = "${libdir}/systemd/system-preset/90-iotgw.preset"

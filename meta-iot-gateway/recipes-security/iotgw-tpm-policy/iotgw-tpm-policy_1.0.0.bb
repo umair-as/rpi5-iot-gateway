@@ -14,7 +14,7 @@ SRC_URI = " \
     file://10-iotgw-tpm-defaults.conf \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 USERADD_PACKAGES = "${PN}"
 GROUPADD_PARAM:${PN} = "--system iotgwtpm"
@@ -35,10 +35,10 @@ do_install() {
     install -d ${D}${sysconfdir}/systemd/system.conf.d
     # Override upstream tpm-udev.rules to enforce IoTGW policy and avoid
     # user-resolution issues when 'tss' is not present.
-    install -m 0644 ${WORKDIR}/tpm-udev.rules ${D}${sysconfdir}/udev/rules.d/tpm-udev.rules
-    install -m 0644 ${WORKDIR}/iotgw-tpm-env.sh ${D}${sysconfdir}/profile.d/iotgw-tpm-env.sh
-    install -m 0644 ${WORKDIR}/50-iotgw-tpm.conf ${D}${sysconfdir}/environment.d/50-iotgw-tpm.conf
-    install -m 0644 ${WORKDIR}/10-iotgw-tpm-defaults.conf ${D}${sysconfdir}/systemd/system.conf.d/10-iotgw-tpm-defaults.conf
+    install -m 0644 ${UNPACKDIR}/tpm-udev.rules ${D}${sysconfdir}/udev/rules.d/tpm-udev.rules
+    install -m 0644 ${UNPACKDIR}/iotgw-tpm-env.sh ${D}${sysconfdir}/profile.d/iotgw-tpm-env.sh
+    install -m 0644 ${UNPACKDIR}/50-iotgw-tpm.conf ${D}${sysconfdir}/environment.d/50-iotgw-tpm.conf
+    install -m 0644 ${UNPACKDIR}/10-iotgw-tpm-defaults.conf ${D}${sysconfdir}/systemd/system.conf.d/10-iotgw-tpm-defaults.conf
 }
 
 FILES:${PN} = " \

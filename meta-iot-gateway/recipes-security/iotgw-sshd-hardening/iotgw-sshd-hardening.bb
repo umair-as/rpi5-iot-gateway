@@ -5,14 +5,14 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = "file://99-iotgw.conf"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 RDEPENDS:${PN} += "openssh-sshd"
 
 do_install() {
     install -d ${D}${sysconfdir}/ssh/sshd_config.d
-    install -m 0644 ${WORKDIR}/99-iotgw.conf ${D}${sysconfdir}/ssh/sshd_config.d/99-iotgw.conf
+    install -m 0644 ${UNPACKDIR}/99-iotgw.conf ${D}${sysconfdir}/ssh/sshd_config.d/99-iotgw.conf
 }
 
 # No pkg_postinst: the image set does not ship run-postinsts.service, so

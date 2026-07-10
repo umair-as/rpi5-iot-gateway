@@ -8,7 +8,7 @@ SRC_URI = " \
     file://iotgw-provision.service \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit systemd
@@ -18,10 +18,10 @@ SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/iotgw-provision.sh ${D}${bindir}/iotgw-provision.sh
+    install -m 0755 ${UNPACKDIR}/iotgw-provision.sh ${D}${bindir}/iotgw-provision.sh
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-provision.service ${D}${systemd_system_unitdir}/iotgw-provision.service
+    install -m 0644 ${UNPACKDIR}/iotgw-provision.service ${D}${systemd_system_unitdir}/iotgw-provision.service
 }
 
 FILES:${PN} += " \

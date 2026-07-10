@@ -16,10 +16,10 @@ SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/iotgw-machine-id.sh ${D}${sbindir}/iotgw-machine-id
+    install -m 0755 ${UNPACKDIR}/iotgw-machine-id.sh ${D}${sbindir}/iotgw-machine-id
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-machine-id.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/iotgw-machine-id.service ${D}${systemd_system_unitdir}/
 }
 
 FILES:${PN} += " \

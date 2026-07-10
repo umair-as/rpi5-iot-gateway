@@ -24,7 +24,7 @@ SRC_URI = " \
     file://ota-updater.tmpfiles.conf \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 IOTGW_OTA_SERVER_URL ?= "https://updates.example.com:8443"
 IOTGW_OTA_MANIFEST_PATH ?= "/api/v1/manifest.json"
@@ -43,12 +43,12 @@ IOTGW_OTA_OPENSSL_CONF_VALUE = "${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_
 do_install() {
     # Install the check script
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/ota-update-check.sh ${D}${sbindir}/ota-update-check
+    install -m 0755 ${UNPACKDIR}/ota-update-check.sh ${D}${sbindir}/ota-update-check
 
     # Install systemd units
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/ota-updater.service ${D}${systemd_system_unitdir}/
-    install -m 0644 ${WORKDIR}/ota-updater.timer ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/ota-updater.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/ota-updater.timer ${D}${systemd_system_unitdir}/
 
     # Install configuration
     install -d ${D}${sysconfdir}/ota
@@ -57,19 +57,19 @@ do_install() {
         -e "s|@IOTGW_OTA_DEVICE_KEY_URI@|${IOTGW_OTA_DEVICE_KEY_URI}|g" \
         -e "s|@IOTGW_OTA_DEVICE_KEY_ENGINE@|${IOTGW_OTA_DEVICE_KEY_ENGINE}|g" \
         -e "s|@IOTGW_OTA_OPENSSL_CONF@|${IOTGW_OTA_OPENSSL_CONF_VALUE}|g" \
-        ${WORKDIR}/ota-updater.conf.in > ${D}${sysconfdir}/ota/updater.conf
+        ${UNPACKDIR}/ota-updater.conf.in > ${D}${sysconfdir}/ota/updater.conf
     chmod 0640 ${D}${sysconfdir}/ota/updater.conf
 
     if ${@bb.utils.contains('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE', '1', 'true', 'false', d)}; then
-        install -m 0644 ${WORKDIR}/openssl-tpm2.cnf ${D}${sysconfdir}/ota/openssl-tpm2.cnf
+        install -m 0644 ${UNPACKDIR}/openssl-tpm2.cnf ${D}${sysconfdir}/ota/openssl-tpm2.cnf
         install -d ${D}${sysconfdir}/systemd/system/ota-updater.service.d
-        install -m 0644 ${WORKDIR}/ota-updater-tpm.service.conf \
+        install -m 0644 ${UNPACKDIR}/ota-updater-tpm.service.conf \
             ${D}${sysconfdir}/systemd/system/ota-updater.service.d/10-tpm.conf
     fi
 
     # Install tmpfiles.d for state directory
     install -d ${D}${sysconfdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/ota-updater.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/ota-updater.conf
+    install -m 0644 ${UNPACKDIR}/ota-updater.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/ota-updater.conf
 }
 
 # -----------------------------------------------------------------------------

@@ -10,7 +10,7 @@ SRC_URI = " \
     file://otbr-webui.default \
 "
 SRCREV = "b9d735370bd56b269e5c0439b8ca3f68d8425ee0"
-S = "${WORKDIR}/git"
+S = "${UNPACKDIR}/git"
 B = "${WORKDIR}/build"
 
 DEPENDS = "nodejs-bin-native"
@@ -51,11 +51,11 @@ do_install() {
 
     # Systemd service
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/otbr-webui.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/otbr-webui.service ${D}${systemd_system_unitdir}/
 
     # Environment file
     install -d ${D}${sysconfdir}/default
-    install -m 0644 ${WORKDIR}/otbr-webui.default ${D}${sysconfdir}/default/otbr-webui
+    install -m 0644 ${UNPACKDIR}/otbr-webui.default ${D}${sysconfdir}/default/otbr-webui
 }
 
 FILES:${PN} = " \

@@ -1,7 +1,7 @@
 # Shared IoT Gateway kernel fragment policy for all kernel providers.
 #
 # IOTGW_KERNEL_FRAGMENTS is the single source of truth for which fragments
-# are expected in ${WORKDIR}/fragments/.  SRC_URI is derived from it, so
+# are expected in ${UNPACKDIR}/fragments/.  SRC_URI is derived from it, so
 # the two lists cannot drift.  do_configure:append enforces the invariant
 # in both directions:
 #   - every fragment named here must exist (fetch failure guard)
@@ -56,7 +56,7 @@ SRC_URI:append = " ${@' '.join('file://fragments/' + f for f in (d.getVar('IOTGW
 # Merge tracked fragments into the active kernel .config.
 # Two invariants are enforced via bbfatal to catch regressions immediately:
 #   1. Every fragment in IOTGW_KERNEL_FRAGMENTS must be present in the workdir.
-#   2. No .cfg file in ${WORKDIR}/fragments/ may exist outside IOTGW_KERNEL_FRAGMENTS
+#   2. No .cfg file in ${UNPACKDIR}/fragments/ may exist outside IOTGW_KERNEL_FRAGMENTS
 #      — this is the stale-residue guard that prevents leftover files from a
 #      previous build with different gates from silently altering the config.
 do_configure:append() {
@@ -64,7 +64,7 @@ do_configure:append() {
     tracked="${IOTGW_KERNEL_FRAGMENTS}"
     frags=
     for fname in $tracked; do
-        fpath="${WORKDIR}/fragments/$fname"
+        fpath="${UNPACKDIR}/fragments/$fname"
         if [ ! -f "$fpath" ]; then
             bbfatal "iotgw-kernel-fragments: expected fragment missing: $fpath (check SRC_URI fetch)"
         fi
@@ -72,8 +72,8 @@ do_configure:append() {
     done
 
     # Stale-residue guard: reject any .cfg not in the tracked list.
-    if [ -d "${WORKDIR}/fragments" ]; then
-        for present in "${WORKDIR}/fragments/"*.cfg; do
+    if [ -d "${UNPACKDIR}/fragments" ]; then
+        for present in "${UNPACKDIR}/fragments/"*.cfg; do
             [ -f "$present" ] || continue
             bname=$(basename "$present")
             found=0

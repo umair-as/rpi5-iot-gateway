@@ -16,7 +16,7 @@ SRC_URI += " \
     file://iotgw-system.conf \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "file"
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "0"
@@ -67,7 +67,7 @@ do_install() {
     # Render system.conf from template using bundle-compatible
     sed -e "s|@COMPATIBLE@|${RAUC_BUNDLE_COMPATIBLE}|g" \
         -e "s|@TLS_KEY@|${IOTGW_RAUC_STREAMING_TLS_KEY}|g" \
-        ${WORKDIR}/iotgw-system.conf > ${D}${sysconfdir}/rauc/system.conf
+        ${UNPACKDIR}/iotgw-system.conf > ${D}${sysconfdir}/rauc/system.conf
 
     # Keyring locator: directory mode when IOTGW_RAUC_KEYRING_CERTS is set,
     # else legacy single-cert path mode. Steady state for prod is directory.

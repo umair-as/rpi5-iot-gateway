@@ -72,6 +72,6 @@ do_deploy() {
 
 addtask deploy before do_build after do_install
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 

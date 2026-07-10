@@ -4,7 +4,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = "file://iotgw-nftables.service"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 inherit systemd
@@ -16,7 +16,7 @@ RDEPENDS:${PN} += "nftables"
 
 do_install() {
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-nftables.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/iotgw-nftables.service ${D}${systemd_system_unitdir}/
 }
 
 FILES:${PN} = "${systemd_system_unitdir}/iotgw-nftables.service"

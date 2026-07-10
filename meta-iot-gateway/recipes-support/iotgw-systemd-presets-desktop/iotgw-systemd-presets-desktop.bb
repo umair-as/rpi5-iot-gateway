@@ -5,12 +5,12 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = "file://91-iotgw-desktop.preset"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 do_install() {
     install -d ${D}${libdir}/systemd/system-preset
-    install -m 0644 ${WORKDIR}/91-iotgw-desktop.preset \
+    install -m 0644 ${UNPACKDIR}/91-iotgw-desktop.preset \
         ${D}${libdir}/systemd/system-preset/91-iotgw-desktop.preset
 }
 

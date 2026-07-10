@@ -26,14 +26,14 @@ SRC_URI = " \
     file://conf.d/10-wifi-backend.conf \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 do_install() {
     install -d ${D}${datadir}/iotgw-nm/connections
-    install -m 0600 ${WORKDIR}/connections/*.nmconnection ${D}${datadir}/iotgw-nm/connections/
+    install -m 0600 ${UNPACKDIR}/connections/*.nmconnection ${D}${datadir}/iotgw-nm/connections/
     install -d ${D}${datadir}/iotgw-nm/conf.d
-    install -m 0644 ${WORKDIR}/conf.d/*.conf ${D}${datadir}/iotgw-nm/conf.d/
+    install -m 0644 ${UNPACKDIR}/conf.d/*.conf ${D}${datadir}/iotgw-nm/conf.d/
 
     # Emit a MAC randomization policy drop-in for NetworkManager
     cat > ${D}${datadir}/iotgw-nm/conf.d/20-mac-randomization.conf <<EOF

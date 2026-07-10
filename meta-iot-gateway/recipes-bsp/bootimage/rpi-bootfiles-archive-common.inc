@@ -7,7 +7,7 @@ inherit deploy
 # Also pull in kernel deploy artifacts
 DEPENDS += " u-boot rpi-u-boot-scr iotgw-bootlogo virtual/kernel rpi-bootfiles"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 IOTGW_BOOTFILES_ARCHIVE_NAME ?= "bootfiles.tar.gz"
 IOTGW_BOOTFILES_STAGE_FILES ?= "boot.scr u-boot.bin config.txt cmdline.txt splash.bmp Image kernel_2712.img"

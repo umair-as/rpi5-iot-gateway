@@ -11,7 +11,7 @@ SRC_URI = "https://nodejs.org/dist/v${PV}/node-v${PV}-linux-arm64.tar.xz"
 # SHA256 of the official prebuilt linux-arm64 tarball for v${PV}
 SRC_URI[sha256sum] = "b5fc7983fb9506b8c3de53dfa85ff63f9f49cedc94984e29e4c89328536ba4b9"
 
-S = "${WORKDIR}/node-v${PV}-linux-arm64"
+S = "${UNPACKDIR}/node-v${PV}-linux-arm64"
 
 INHIBIT_DEFAULT_DEPS = "1"
 INHIBIT_PACKAGE_STRIP = "1"

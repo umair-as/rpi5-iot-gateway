@@ -26,40 +26,40 @@ RDEPENDS:${PN}-grow-data-part:append = " bash e2fsprogs util-linux udev gptfdisk
 do_install:append() {
     # Override unit with our hardened version
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/rauc-grow-data-partition.service \
+    install -m 0644 ${UNPACKDIR}/rauc-grow-data-partition.service \
         ${D}${systemd_system_unitdir}/rauc-grow-data-partition.service
 
     # Install grow helper script used by the unit
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/grow-data-partition.sh \
+    install -m 0755 ${UNPACKDIR}/grow-data-partition.sh \
         ${D}${sbindir}/grow-data-partition.sh
 
     # Install managed overlay reconciliation metadata consumed by bundle hooks.
     install -d ${D}${datadir}/iotgw/overlay-reconcile
-    install -m 0644 ${WORKDIR}/managed-paths.conf \
+    install -m 0644 ${UNPACKDIR}/managed-paths.conf \
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.conf
     install -d ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d
-    install -m 0644 ${WORKDIR}/managed-paths.d/network.conf \
+    install -m 0644 ${UNPACKDIR}/managed-paths.d/network.conf \
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf
-    install -m 0644 ${WORKDIR}/managed-paths.d/observability.conf \
+    install -m 0644 ${UNPACKDIR}/managed-paths.d/observability.conf \
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d/observability.conf
 
     # Install Python overlay reconciler invoked by bundle hooks.
     install -d ${D}${libexecdir}/rauc
-    install -m 0755 ${WORKDIR}/overlay-reconcile.py \
+    install -m 0755 ${UNPACKDIR}/overlay-reconcile.py \
         ${D}${libexecdir}/rauc/overlay-reconcile.py
 
     # Install stable RAUC slot udev rules — symlinks appear at udev-trigger
     # time so the grow service no longer needs udev-settle.
     install -d ${D}${sysconfdir}/udev/rules.d
-    install -m 0644 ${WORKDIR}/99-iotgw-rauc-slots.rules \
+    install -m 0644 ${UNPACKDIR}/99-iotgw-rauc-slots.rules \
         ${D}${sysconfdir}/udev/rules.d/99-iotgw-rauc-slots.rules
 
     if ${@bb.utils.contains('IOTGW_RAUC_PKCS11_USES_TPM2', '1', 'true', 'false', d)}; then
         install -d ${D}${sysconfdir}/systemd/system/rauc.service.d
         sed -e "s|@IOTGW_TPM2_PKCS11_STORE@|${IOTGW_TPM2_PKCS11_STORE}|g" \
             -e "s|@IOTGW_RAUC_PKCS11_MODULE@|${IOTGW_RAUC_PKCS11_MODULE}|g" \
-            ${WORKDIR}/rauc-tpm2-pkcs11-store.service.conf \
+            ${UNPACKDIR}/rauc-tpm2-pkcs11-store.service.conf \
             > ${D}${sysconfdir}/systemd/system/rauc.service.d/10-tpm2-pkcs11-store.conf
         chmod 0644 ${D}${sysconfdir}/systemd/system/rauc.service.d/10-tpm2-pkcs11-store.conf
     fi

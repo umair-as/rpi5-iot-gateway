@@ -22,7 +22,7 @@ SRC_URI = " \
     file://generate-dev-cert.sh \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 PACKAGES =+ "${PN}-devca"
 
@@ -38,12 +38,12 @@ SYSTEMD_AUTO_ENABLE:${PN} = "enable"
 do_install() {
     # Install provisioning script
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/ota-certs-provision.sh ${D}${sbindir}/ota-certs-provision
-    install -m 0755 ${WORKDIR}/generate-dev-cert.sh ${D}${sbindir}/ota-generate-dev-cert
+    install -m 0755 ${UNPACKDIR}/ota-certs-provision.sh ${D}${sbindir}/ota-certs-provision
+    install -m 0755 ${UNPACKDIR}/generate-dev-cert.sh ${D}${sbindir}/ota-generate-dev-cert
 
     # Install systemd service
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/ota-certs-provision.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/ota-certs-provision.service ${D}${systemd_system_unitdir}/
     if ${@'true' if (d.getVar('IOTGW_NEED_TPM_POLICY') or '0') == '1' else 'false'}; then
         sed -i '/^\[Service\]/a Environment=OTA_CERTS_ALLOW_KEYLESS_DEVICE_CERTS=1' \
             ${D}${systemd_system_unitdir}/ota-certs-provision.service

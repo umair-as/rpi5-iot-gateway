@@ -10,7 +10,7 @@ COMPATIBLE_HOST = "aarch64.*-linux"
 SRC_URI = "https://nodejs.org/dist/v${PV}/node-v${PV}-linux-arm64.tar.xz"
 SRC_URI[sha256sum] = "1bf1eb9ee63ffc4e5d324c0b9b62cf4a289f44332dfef9607cea1a0d9596ba6f"
 
-S = "${WORKDIR}/node-v${PV}-linux-arm64"
+S = "${UNPACKDIR}/node-v${PV}-linux-arm64"
 
 INHIBIT_DEFAULT_DEPS = "1"
 INHIBIT_PACKAGE_STRIP = "1"

@@ -12,7 +12,7 @@ COMPATIBLE_HOST = "x86_64.*-linux"
 SRC_URI = "https://nodejs.org/dist/v${PV}/node-v${PV}-linux-x64.tar.xz"
 SRC_URI[sha256sum] = "595272130310cbe12301430756f23d153f7ab95d00174c02adc11a2e3703d183"
 
-S = "${WORKDIR}/node-v${PV}-linux-x64"
+S = "${UNPACKDIR}/node-v${PV}-linux-x64"
 
 INHIBIT_DEFAULT_DEPS = "1"
 INHIBIT_PACKAGE_STRIP = "1"

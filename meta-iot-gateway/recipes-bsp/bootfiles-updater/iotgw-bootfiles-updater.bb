@@ -11,17 +11,17 @@ inherit systemd
 
 SRC_URI = "file://iotgw-update-bootfiles.sh file://iotgw-update-bootfiles.service"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "iotgw-update-bootfiles.service"
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/iotgw-update-bootfiles.sh ${D}${bindir}/iotgw-update-bootfiles.sh
+    install -m 0755 ${UNPACKDIR}/iotgw-update-bootfiles.sh ${D}${bindir}/iotgw-update-bootfiles.sh
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-update-bootfiles.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/iotgw-update-bootfiles.service ${D}${systemd_system_unitdir}/
 }
 
 FILES:${PN} += "${systemd_system_unitdir}/iotgw-update-bootfiles.service ${bindir}/iotgw-update-bootfiles.sh"

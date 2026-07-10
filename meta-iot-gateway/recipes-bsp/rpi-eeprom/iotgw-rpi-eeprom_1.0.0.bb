@@ -11,7 +11,7 @@ SRC_URI = " \
     file://iotgw-rpi-eeprom.default \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "iotgw-rpi-eeprom.service"
@@ -19,13 +19,13 @@ SYSTEMD_AUTO_ENABLE = "disable"
 
 do_install() {
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/iotgw-rpi-eeprom ${D}${sbindir}/iotgw-rpi-eeprom
+    install -m 0755 ${UNPACKDIR}/iotgw-rpi-eeprom ${D}${sbindir}/iotgw-rpi-eeprom
 
     install -d ${D}${sysconfdir}/default
-    install -m 0644 ${WORKDIR}/iotgw-rpi-eeprom.default ${D}${sysconfdir}/default/iotgw-rpi-eeprom
+    install -m 0644 ${UNPACKDIR}/iotgw-rpi-eeprom.default ${D}${sysconfdir}/default/iotgw-rpi-eeprom
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-rpi-eeprom.service ${D}${systemd_system_unitdir}/iotgw-rpi-eeprom.service
+    install -m 0644 ${UNPACKDIR}/iotgw-rpi-eeprom.service ${D}${systemd_system_unitdir}/iotgw-rpi-eeprom.service
 }
 
 FILES:${PN} += " \

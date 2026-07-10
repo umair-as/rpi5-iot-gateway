@@ -13,7 +13,7 @@ python __anonymous() {
 }
 
 SRC_URI = "${INFLUXDB3_BIN_SRC_URI}"
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 inherit systemd
 
@@ -25,9 +25,9 @@ do_install() {
     install -d ${D}${bindir}
 
     # Try common archive layouts; fail explicitly if binary is missing.
-    bin="$(find ${WORKDIR} -maxdepth 5 -type f \( -name influxdb3 -o -name influxd3 \) | head -n 1)"
+    bin="$(find ${UNPACKDIR} -maxdepth 5 -type f \( -name influxdb3 -o -name influxd3 \) | head -n 1)"
     if [ -z "$bin" ]; then
-        bbfatal "Unable to locate influxdb3/influxd3 binary in ${WORKDIR}; check INFLUXDB3_BIN_SRC_URI archive layout"
+        bbfatal "Unable to locate influxdb3/influxd3 binary in ${UNPACKDIR}; check INFLUXDB3_BIN_SRC_URI archive layout"
     fi
     install -m 0755 "$bin" ${D}${bindir}/influxdb3
 

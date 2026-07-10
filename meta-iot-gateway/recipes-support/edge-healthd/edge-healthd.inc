@@ -13,7 +13,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=291c1ca2c1503b0e42022cd4bff87df5"
 
 BRANCH ?= "main"
 SRC_URI = "git://github.com/umair-as/edge-healthd.git;branch=${BRANCH};protocol=https"
-S = "${WORKDIR}/git"
+S = "${UNPACKDIR}/git"
 
 # Platform-specific configuration and tmpfiles
 SRC_URI += " \
@@ -94,14 +94,14 @@ do_install:append() {
 
     # Install platform-specific config (overrides upstream example)
     install -d ${D}${sysconfdir}/edge
-    install -m 0644 ${WORKDIR}/healthd.conf ${D}${sysconfdir}/edge/healthd.conf
+    install -m 0644 ${UNPACKDIR}/healthd.conf ${D}${sysconfdir}/edge/healthd.conf
 
     # Remove upstream example config if installed
     rm -f ${D}${sysconfdir}/edge/healthd.conf.example
 
     # Install tmpfiles.d configuration for state directory
     install -d ${D}${sysconfdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/edge-healthd.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/edge-healthd.conf
+    install -m 0644 ${UNPACKDIR}/edge-healthd.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/edge-healthd.conf
 }
 
 # -----------------------------------------------------------------------------

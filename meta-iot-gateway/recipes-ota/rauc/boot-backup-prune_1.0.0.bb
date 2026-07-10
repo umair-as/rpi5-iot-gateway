@@ -12,7 +12,7 @@ SRC_URI = " \
     file://boot-backup-prune.service \
 "
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 SYSTEMD_SERVICE:${PN} = "boot-backup-prune.service"
 SYSTEMD_AUTO_ENABLE = "enable"
@@ -21,10 +21,10 @@ RDEPENDS:${PN} += "bash"
 
 do_install() {
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/boot-backup-prune.sh ${D}${sbindir}/boot-backup-prune
+    install -m 0755 ${UNPACKDIR}/boot-backup-prune.sh ${D}${sbindir}/boot-backup-prune
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/boot-backup-prune.service \
+    install -m 0644 ${UNPACKDIR}/boot-backup-prune.service \
         ${D}${systemd_system_unitdir}/boot-backup-prune.service
 }
 

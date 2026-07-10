@@ -9,7 +9,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 IOTGW_DEV_ROOT_AUTH_KEYS_FILE ?= ""
 IOTGW_DEV_DEVEL_AUTH_KEYS_FILE ?= ""
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 # Produce a package even if no keys are provided, so the image build
 # (DNF install) never fails on missing package.

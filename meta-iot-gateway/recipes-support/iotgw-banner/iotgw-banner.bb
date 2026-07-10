@@ -24,7 +24,7 @@ SYSTEMD_AUTO_ENABLE = "enable"
 do_install() {
     # Generator script with build-time identity baked in.
     install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/iotgw-banner.sh ${D}${bindir}/iotgw-banner.sh
+    install -m 0755 ${UNPACKDIR}/iotgw-banner.sh ${D}${bindir}/iotgw-banner.sh
     sed -i -e "s|@DISTRO_NAME@|${DISTRO_NAME}|g" \
            -e "s|@DISTRO_VERSION@|${DISTRO_VERSION}|g" \
            -e "s|@MACHINE@|${MACHINE}|g" \
@@ -32,12 +32,12 @@ do_install() {
 
     # Boot oneshot: writes the initial /etc/issue + /etc/issue.net.
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-banner.service ${D}${systemd_system_unitdir}/iotgw-banner.service
+    install -m 0644 ${UNPACKDIR}/iotgw-banner.service ${D}${systemd_system_unitdir}/iotgw-banner.service
 
     # NetworkManager dispatcher: regenerates banners when interface state
     # or DHCP lease changes, so the IP fields stay current.
     install -d ${D}${sysconfdir}/NetworkManager/dispatcher.d
-    install -m 0755 ${WORKDIR}/50-iotgw-banner ${D}${sysconfdir}/NetworkManager/dispatcher.d/50-iotgw-banner
+    install -m 0755 ${UNPACKDIR}/50-iotgw-banner ${D}${sysconfdir}/NetworkManager/dispatcher.d/50-iotgw-banner
 }
 
 FILES:${PN} += " \
