@@ -48,5 +48,5 @@ do_configure:append:raspberrypi5() {
 
 do_install:append() {
     # Override fw_env.config from lower-priority layers.
-    install -m 0644 ${WORKDIR}/fw_env.config ${D}${sysconfdir}/fw_env.config
+    install -m 0644 ${UNPACKDIR}/fw_env.config ${D}${sysconfdir}/fw_env.config
 }

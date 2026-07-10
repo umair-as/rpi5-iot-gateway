@@ -18,10 +18,10 @@ RDEPENDS:${PN} = "bash"
 
 do_install() {
     install -d ${D}${bindir}
-    install -m 0755 ${WORKDIR}/iotgw-bootstage.sh ${D}${bindir}/iotgw-bootstage
+    install -m 0755 ${UNPACKDIR}/iotgw-bootstage.sh ${D}${bindir}/iotgw-bootstage
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-bootstage.service ${D}${systemd_system_unitdir}/iotgw-bootstage.service
+    install -m 0644 ${UNPACKDIR}/iotgw-bootstage.service ${D}${systemd_system_unitdir}/iotgw-bootstage.service
 }
 
 FILES:${PN} += " \

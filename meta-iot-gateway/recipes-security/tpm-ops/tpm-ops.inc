@@ -6,7 +6,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=bf72105a69d303b78352c6a39239bc69"
 
 # Fetch by pinned SRCREV without enforcing branch containment checks.
 SRC_URI = "git://github.com/umair-as/tpm-ops.git;protocol=https;nobranch=1"
-S = "${WORKDIR}/git"
+S = "${UNPACKDIR}/git"
 
 inherit cargo
 

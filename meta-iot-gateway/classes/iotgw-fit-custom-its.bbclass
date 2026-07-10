@@ -2,7 +2,7 @@
 # kernel-fitimage. This keeps multi-config policy logic out of recipe files.
 
 IOTGW_FIT_CUSTOM_ITS ?= "0"
-IOTGW_FIT_CUSTOM_ITS_TEMPLATE ?= "${WORKDIR}/iotgw-fit-single.its.in"
+IOTGW_FIT_CUSTOM_ITS_TEMPLATE ?= "${UNPACKDIR}/iotgw-fit-single.its.in"
 IOTGW_FIT_CUSTOM_ITS_DEFAULT_DTB ?= "broadcom/bcm2712-rpi-5-b.dtb"
 IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH ?= ""
 IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG ?= "gzip"

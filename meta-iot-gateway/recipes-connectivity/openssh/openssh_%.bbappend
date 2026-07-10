@@ -25,7 +25,7 @@ do_install:append() {
 
     # Ensure persistent host key directory exists with strict permissions.
     install -d ${D}${sysconfdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/openssh-hostkeys.tmpfiles.conf \
+    install -m 0644 ${UNPACKDIR}/openssh-hostkeys.tmpfiles.conf \
         ${D}${sysconfdir}/tmpfiles.d/openssh-hostkeys.conf
 }
 

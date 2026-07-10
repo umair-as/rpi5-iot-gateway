@@ -18,7 +18,7 @@ SRC_URI += " \
     file://otbr-config-paths.patch \
 "
 
-S = "${WORKDIR}/git"
+S = "${UNPACKDIR}/git"
 # Ship systemd units
 FILES:${PN} += "${systemd_system_unitdir} ${sysconfdir}/udev/rules.d/99-otbr-rcp.rules"
 
@@ -97,31 +97,31 @@ SYSTEMD_SERVICE:${PN} = "otbr-agent.service"
 # Install fixed systemd service files
 do_install:append() {
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/otbr-agent.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/otbr-agent.service ${D}${systemd_system_unitdir}/
 
     # Provide default env for agent
     install -d ${D}${sysconfdir}/default
-    install -m 0644 ${WORKDIR}/otbr-agent.default ${D}${sysconfdir}/default/otbr-agent
+    install -m 0644 ${UNPACKDIR}/otbr-agent.default ${D}${sysconfdir}/default/otbr-agent
 
     # Install ipset init helper
     install -d ${D}${libexecdir}/otbr
-    install -m 0755 ${WORKDIR}/otbr-ipset-init.sh ${D}${libexecdir}/otbr/otbr-ipset-init
+    install -m 0755 ${UNPACKDIR}/otbr-ipset-init.sh ${D}${libexecdir}/otbr/otbr-ipset-init
 
     # tmpfiles rule to allow otbr to create /run sockets
     install -d ${D}${libdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/otbr-tmpfiles.conf ${D}${libdir}/tmpfiles.d/otbr.conf
+    install -m 0644 ${UNPACKDIR}/otbr-tmpfiles.conf ${D}${libdir}/tmpfiles.d/otbr.conf
 
     # Ensure DBus policy allows otbr user
     install -d ${D}${sysconfdir}/dbus-1/system.d
-    install -m 0644 ${WORKDIR}/otbr-agent.conf ${D}${sysconfdir}/dbus-1/system.d/otbr-agent.conf
+    install -m 0644 ${UNPACKDIR}/otbr-agent.conf ${D}${sysconfdir}/dbus-1/system.d/otbr-agent.conf
 
     # Udev rule for RCP device access
     install -d ${D}${sysconfdir}/udev/rules.d
-    install -m 0644 ${WORKDIR}/otbr-rcp.rules ${D}${sysconfdir}/udev/rules.d/99-otbr-rcp.rules
+    install -m 0644 ${UNPACKDIR}/otbr-rcp.rules ${D}${sysconfdir}/udev/rules.d/99-otbr-rcp.rules
 
     # Install DBus wrapper helper (debug/testing)
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/dbus-wrapper-otbr.sh ${D}${sbindir}/dbus-wrapper-otbr.sh
+    install -m 0755 ${UNPACKDIR}/dbus-wrapper-otbr.sh ${D}${sbindir}/dbus-wrapper-otbr.sh
 }
 
 FILES:${PN} += "${sysconfdir}/default/otbr-agent"

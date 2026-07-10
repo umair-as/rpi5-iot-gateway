@@ -8,7 +8,7 @@ LIC_FILES_CHKSUM = "file://LICENSE.txt;md5=d32239bcb673463ab874e80d47fae504"
 SRCREV = "v${PV}"
 SRC_URI = "git://github.com/a13xp0p0v/kernel-hardening-checker.git;branch=master;protocol=https"
 
-S = "${WORKDIR}/git"
+S = "${UNPACKDIR}/git"
 
 inherit python3native
 

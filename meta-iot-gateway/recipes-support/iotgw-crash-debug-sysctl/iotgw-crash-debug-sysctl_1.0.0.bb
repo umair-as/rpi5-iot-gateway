@@ -6,11 +6,11 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = "file://95-iotgw-crash-debug.conf"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 
 do_install() {
     install -d ${D}${datadir}/iotgw-sysctl
-    install -m 0644 ${WORKDIR}/95-iotgw-crash-debug.conf \
+    install -m 0644 ${UNPACKDIR}/95-iotgw-crash-debug.conf \
         ${D}${datadir}/iotgw-sysctl/95-iotgw-crash-debug.conf
 }
 

@@ -20,17 +20,17 @@ SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/iotgw-pstore-prune.sh ${D}${sbindir}/iotgw-pstore-prune
+    install -m 0755 ${UNPACKDIR}/iotgw-pstore-prune.sh ${D}${sbindir}/iotgw-pstore-prune
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/var-lib-systemd-pstore.mount ${D}${systemd_system_unitdir}/var-lib-systemd-pstore.mount
-    install -m 0644 ${WORKDIR}/iotgw-pstore-prune.service ${D}${systemd_system_unitdir}/iotgw-pstore-prune.service
+    install -m 0644 ${UNPACKDIR}/var-lib-systemd-pstore.mount ${D}${systemd_system_unitdir}/var-lib-systemd-pstore.mount
+    install -m 0644 ${UNPACKDIR}/iotgw-pstore-prune.service ${D}${systemd_system_unitdir}/iotgw-pstore-prune.service
 
     install -d ${D}${sysconfdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/iotgw-pstore.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/iotgw-pstore.conf
+    install -m 0644 ${UNPACKDIR}/iotgw-pstore.tmpfiles.conf ${D}${sysconfdir}/tmpfiles.d/iotgw-pstore.conf
 
     install -d ${D}${sysconfdir}/systemd/system/systemd-pstore.service.d
-    install -m 0644 ${WORKDIR}/10-iotgw-pstore-persist.conf \
+    install -m 0644 ${UNPACKDIR}/10-iotgw-pstore-persist.conf \
         ${D}${sysconfdir}/systemd/system/systemd-pstore.service.d/10-iotgw-pstore-persist.conf
 }
 

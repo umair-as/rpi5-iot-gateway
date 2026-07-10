@@ -6,7 +6,7 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 SRC_URI = "file://60-iotgw-watchdog.conf.in"
 
-S = "${WORKDIR}"
+S = "${UNPACKDIR}"
 # @IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC@ and @IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC@
 # are substituted from MACHINE-specific variables at install time.
 PACKAGE_ARCH = "${MACHINE_ARCH}"
@@ -15,7 +15,7 @@ do_install() {
     install -d ${D}${sysconfdir}/systemd/system.conf.d
     sed -e "s|@IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC@|${IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC}|g" \
         -e "s|@IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC@|${IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC}|g" \
-        ${WORKDIR}/60-iotgw-watchdog.conf.in \
+        ${UNPACKDIR}/60-iotgw-watchdog.conf.in \
         > ${D}${sysconfdir}/systemd/system.conf.d/60-iotgw-watchdog.conf
     chmod 0644 ${D}${sysconfdir}/systemd/system.conf.d/60-iotgw-watchdog.conf
 }

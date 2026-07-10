@@ -16,13 +16,13 @@ SYSTEMD_AUTO_ENABLE = "enable"
 
 do_install() {
     install -d ${D}${sbindir}
-    install -m 0755 ${WORKDIR}/iotgw-tpm-health.sh ${D}${sbindir}/iotgw-tpm-health
+    install -m 0755 ${UNPACKDIR}/iotgw-tpm-health.sh ${D}${sbindir}/iotgw-tpm-health
 
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/iotgw-tpm-health.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/iotgw-tpm-health.service ${D}${systemd_system_unitdir}/
 
     install -d ${D}${nonarch_libdir}/tmpfiles.d
-    install -m 0644 ${WORKDIR}/iotgw-tpm-health.tmpfiles.conf ${D}${nonarch_libdir}/tmpfiles.d/iotgw-tpm-health.conf
+    install -m 0644 ${UNPACKDIR}/iotgw-tpm-health.tmpfiles.conf ${D}${nonarch_libdir}/tmpfiles.d/iotgw-tpm-health.conf
 }
 
 FILES:${PN} += " \
