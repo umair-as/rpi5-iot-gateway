@@ -124,6 +124,11 @@ local_conf_header:
   sanity_check: |
     # Add Ubuntu 24.04 to tested distributions to avoid warnings
     SANITY_TESTED_DISTROS:append = " ubuntu-24.04"
+
   hashserve: |
-    # Enable hash equivalence for better sstate reuse
+    # Enable hash equivalence for better sstate reuse. Put the hashequiv DB in
+    # the shared SSTATE location (not inside build/) so hash-equivalence — and
+    # therefore native/cross/allarch sstate — is reused across builds and with
+    # the edge-ai-yocto sibling on the same /mnt/yocto-nvme/SSTATE.
     BB_HASHSERVE = "auto"
+    BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
