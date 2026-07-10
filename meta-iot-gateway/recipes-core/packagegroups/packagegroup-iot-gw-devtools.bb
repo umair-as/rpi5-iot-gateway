@@ -23,7 +23,7 @@ RDEPENDS:${PN} = " \
     libmnl-dev \
     libcap-bin \
     systemd-dev \
-    pkgconfig \
+    pkgconf \
 "
 
 # bpftool from kernel tools is reliable in our mainline flow; skip it for

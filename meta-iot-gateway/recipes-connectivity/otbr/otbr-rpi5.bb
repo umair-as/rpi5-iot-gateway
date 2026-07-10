@@ -26,7 +26,7 @@ DEPENDS += " \
     jsoncpp \
     avahi \
     boost \
-    pkgconfig-native \
+    pkgconf-native \
     mdns \
     libnetfilter-queue \
     ipset \
