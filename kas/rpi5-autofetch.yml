@@ -9,19 +9,22 @@ target:
   - iot-gw-image
 
 repos:
+  # Full standalone wrynose stack (SHA-pinned to match rpi5.yml / kas/rauc.yml
+  # / kas/tpm.yml). Kept in lockstep with those files; meta-security and
+  # meta-lts-mixins removed for wrynose.
   bitbake:
     url: https://git.openembedded.org/bitbake
-    refspec: "2.8"
+    commit: 33581c84f3a85008239acbd940501a35de48dc91
     layers: {}
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
-    refspec: scarthgap
+    commit: 42fa856a00ac16b2a7a83d7ecfa60a5be192b16c
     layers:
       meta:
 
   meta-openembedded:
-    url: https://github.com/openembedded/meta-openembedded.git
-    refspec: scarthgap
+    url: https://git.openembedded.org/meta-openembedded
+    commit: 420222862f5a6d95023b8f5f3b7e1808b2264ef9
     layers:
       meta-oe:
       meta-python:
@@ -30,19 +33,18 @@ repos:
 
   meta-raspberrypi:
     url: https://github.com/agherzan/meta-raspberrypi.git
-    refspec: scarthgap
+    branch: master
+    commit: b0f0a6c0bfbf5d0e464c13944dda73fa69f31f6b
 
   meta-virtualization:
-    url: https://github.com/openembedded/meta-virtualization.git
-    refspec: scarthgap
-
-  meta-security:
-    url: git://git.yoctoproject.org/meta-security
-    refspec: scarthgap
+    url: https://git.yoctoproject.org/meta-virtualization
+    branch: wrynose
+    commit: 781735b97ae5013cacabbecd38e6da6b510cf3fb
 
   meta-secure-core:
     url: https://github.com/Wind-River/meta-secure-core
-    refspec: scarthgap
+    branch: wrynose
+    commit: 07a99ae241acd488a2feda1ededf87dc70dfde80
     layers:
       meta-tpm2:
       meta-signing-key:
@@ -50,26 +52,21 @@ repos:
 
   meta-rauc:
     url: https://github.com/rauc/meta-rauc.git
-    refspec: scarthgap
+    branch: wrynose
+    commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
   meta-rauc-community:
     url: https://github.com/rauc/meta-rauc-community.git
-    refspec: scarthgap
+    branch: master
+    commit: 00228100ab6dfb4ea53514c15cba02c0d2fa985e
     layers:
       meta-rauc-raspberrypi:
 
-  meta-lts-mixins:
-    url: https://github.com/yoctoproject/meta-lts-mixins.git
-    refspec: scarthgap/u-boot
+  # Project layer lives in this repo (see rpi5.yml for the rationale on the
+  # no-url/path current-repo form vs KAS_WORK_DIR).
+  rpi5-iot-gw:
     layers:
-      .:
-
-  meta-rust-bin:
-    url: https://github.com/rust-embedded/meta-rust-bin.git
-    refspec: master
-
-  meta-iot-gateway:
-    path: meta-iot-gateway
+      meta-iot-gateway:
 
 bblayers_conf_header:
   standard: |
@@ -128,13 +125,6 @@ local_conf_header:
   prefer_bin_node: |
     # Use prebuilt Node.js binary to avoid long V8 builds
     PREFERRED_PROVIDER_nodejs = "nodejs-bin"
-
-  prefer_bin_rust: |
-    # Use prebuilt Rust toolchain from meta-rust-bin (Scarthgap native is 1.75)
-    PREFERRED_VERSION_rust-native = "1.94.%"
-    PREFERRED_VERSION_rust-cross-${TUNE_ARCH} = "1.94.%"
-    PREFERRED_VERSION_cargo-native = "1.94.%"
-    PREFERRED_VERSION_libstd-rs = "1.94.%"
 
   sanity_check: |
     # Add Ubuntu 24.04 to tested distributions to avoid warnings

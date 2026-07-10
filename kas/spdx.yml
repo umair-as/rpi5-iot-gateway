@@ -3,14 +3,11 @@ header:
   includes:
     - "rpi5.yml"
 
-# SPDX overlay: enables SPDX generation class and configures output
+# SPDX overlay. Wrynose ships SPDX 3.0 only (2.2/2.3 removed); create-spdx is
+# now the 3.0 generator, so the SPDX_VERSION pin is dropped.
 local_conf_header:
   spdx: |
     INHERIT += "create-spdx"
-    SPDX_VERSION ?= "SPDX-2.3"
-    SPDX_LICENSE_MANIFEST ?= "1"
-    # Write SPDX docs to deploy/spdx
-    SPDX_DEPLOY_DIR ?= "${TMPDIR}/deploy/spdx"
-    # Optional knobs (uncomment as needed):
-    # SPDX_INCLUDE_SOURCES = "0"   # include source archives (large)
-    # SPDX_ARCHIVE_PACKED  = "0"   # pack archives (tar.gz)
+    SPDX_INCLUDE_SOURCES ?= "0"
+    # Optional: pack SPDX source archives (tar.gz)
+    # SPDX_ARCHIVE_PACKED = "0"

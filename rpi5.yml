@@ -10,20 +10,27 @@ target:
 
 repos:
 
+  # Upstream Yocto layers — SHA-pinned to the wrynose (Yocto 6.0) baseline,
+  # matching the edge-ai-yocto sibling so shared native/cross/allarch sstate
+  # and all source downloads on /mnt/yocto-nvme are reused. Layers resolve via
+  # git alternates from KAS_REPO_REF_DIR (see Makefile); pins stay enforced.
   bitbake:
     url: https://git.openembedded.org/bitbake
-    branch: "2.8"
+    # yocto-6.0 tag
+    commit: 33581c84f3a85008239acbd940501a35de48dc91
     layers: {}
 
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
-    branch: scarthgap
+    # yocto-6.0 tag
+    commit: 42fa856a00ac16b2a7a83d7ecfa60a5be192b16c
     layers:
       meta:
 
   meta-openembedded:
-    url: https://github.com/openembedded/meta-openembedded.git
-    branch: scarthgap
+    url: https://git.openembedded.org/meta-openembedded
+    # wrynose HEAD at baseline
+    commit: 420222862f5a6d95023b8f5f3b7e1808b2264ef9
     layers:
       meta-oe:
       meta-python:
@@ -32,18 +39,29 @@ repos:
 
   meta-raspberrypi:
     url: https://github.com/agherzan/meta-raspberrypi.git
-    branch: scarthgap
+    # No wrynose branch upstream (agherzan/meta-raspberrypi#1598); master
+    # carries LAYERSERIES_COMPAT=wrynose. Pinned by commit.
+    branch: master
+    commit: b0f0a6c0bfbf5d0e464c13944dda73fa69f31f6b
 
   meta-virtualization:
-    url: https://github.com/openembedded/meta-virtualization.git
-    branch: scarthgap
+    url: https://git.yoctoproject.org/meta-virtualization
+    branch: wrynose
+    commit: 781735b97ae5013cacabbecd38e6da6b510cf3fb
 
-  meta-security:
-    url: git://git.yoctoproject.org/meta-security
-    branch: scarthgap
+  # meta-rust-bin dropped: wrynose OE-core ships rust/cargo 1.94.1 (the version
+  # meta-rust-bin used to pin), and meta-rust-bin master lacks wrynose
+  # LAYERSERIES_COMPAT. tpm-ops now inherits the OE-core `cargo` class instead
+  # of `cargo_bin`, matching the edge-ai-yocto sibling.
 
-  meta-iot-gateway:
-    path: meta-iot-gateway
+  # Project layer lives in this repo. No url/path: kas resolves it against the
+  # repo containing this kas file, so layer paths under `layers:` are relative
+  # to the repo root. Sidesteps the path:-vs-KAS_WORK_DIR interaction — a bare
+  # `path: meta-iot-gateway` resolves to .kas/meta-iot-gateway once
+  # KAS_WORK_DIR=.kas is set (see Makefile).
+  rpi5-iot-gw:
+    layers:
+      meta-iot-gateway:
 
 bblayers_conf_header:
   standard: |
