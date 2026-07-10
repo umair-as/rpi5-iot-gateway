@@ -53,7 +53,7 @@ This layer depends on the following OpenEmbedded layers:
 
 ### System Enhancements
 
-- 🔐 **Security**: nftables firewall, AppArmor profiles
+- 🔐 **Security**: nftables firewall, SELinux MAC (refpolicy-mcs)
 - 📋 **Logging**: Configured journald with persistence
 - 🌐 **Networking**: systemd-networkd (br0 bridge + Wi-Fi via wpa_supplicant), systemd-resolved
 - 🔄 **OTA Updates**: RAUC A/B update framework

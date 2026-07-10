@@ -99,6 +99,24 @@ DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
 # RAUC is mandatory in this distro
 DISTRO_FEATURES:append = " rauc"
 DISTRO_FEATURES:append = " luks"
+# SELinux is the distro's active MAC (always on). This bit both flips
+# PACKAGECONFIG[selinux] in oe-core recipes (systemd, PAM, ...) and fires
+# the meta-selinux bbappends. Kernel-side LSM stack: security-prod.cfg.
+# Userspace/policy: packagegroup-iot-gw-selinux. Primer: docs/SELINUX.md.
+DISTRO_FEATURES:append = " selinux"
+
+# MCS refpolicy variant: full module set plus the single non-hierarchical
+# sensitivity level. The container runtime (podman/netavark/container-selinux)
+# relabels netns/overlay dirs with 4-field :s0 contexts; a non-MCS (3-field)
+# policy rejects those at lsetxattr() with EINVAL even in permissive mode,
+# breaking rootless bridge/host networking. This concrete package name must
+# stay in sync with packagegroup-iot-gw-selinux's refpolicy RDEPENDS.
+PREFERRED_PROVIDER_virtual/refpolicy = "refpolicy-mcs"
+
+# Permissive floor: AVC denials log to audit, nothing is blocked. Flip to
+# "enforcing" only after policy coverage is validated against the full image
+# surface. Recovery escape stays the selinux=0 kernel param.
+DEFAULT_ENFORCING = "permissive"
 
 # openssl unblocks systemd-creds/cryptenroll crypto flows. The systemd `tpm2`
 # PACKAGECONFIG (libtss2) is added by kas/tpm.yml, not here: tpm2-tss lives in
@@ -154,7 +172,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_STREAMING_KEY_MODE IOTGW_RAUC_PKCS1
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_KEYRING_CERTS IOTGW_RAUC_ALLOWED_SIGNER_CNS IOTGW_RAUC_CHECK_PURPOSE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_SELINUX IOTGW_ENABLE_IMA"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_ENCRYPTED_STORE_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
@@ -189,7 +207,8 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 
 
 # Optional kernel feature sets (selected via IOTGW_KERNEL_FEATURES)
-# Globally enabled: networking (WireGuard/CAN/VLAN) + security (AppArmor/Seccomp/no-SCTP)
+# Globally enabled: networking (WireGuard/CAN/VLAN) + security (SELinux LSM
+# stack/Seccomp/KSPP/no-SCTP, always applied via igw_security_prod).
 # Per-image additions via IOTGW_KERNEL_FEATURES (space or comma-separated):
 #   igw_containers         - namespaces, cgroups (for podman/docker)
 #   igw_compute_media      - GPU/V4L2/cameras/hugepages (for desktop/ML)
@@ -198,7 +217,6 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_pstore_persist     - pstore ramoops capture stack (production-safe; default on)
 #   igw_crash_debug_dev    - aggressive lab-only debug (sysrq, hung-task, panic-on-oops)
 #   igw_no_efi             - disable kernel EFI runtime/stub surface (opt-in)
-#   igw_selinux            - SELinux compiled in, AppArmor remains default LSM
 #   igw_ima                - IMA measurement (PCR10, SHA256, ima-ng template)
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 
@@ -366,11 +384,10 @@ IOTGW_RAUC_ENCRYPTION_CERT ?= ""
 IOTGW_ENABLE_KERNEL_NO_EFI ?= "1"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_KERNEL_NO_EFI', '1', ' igw_no_efi', '', d)}"
 
-# Optional SELinux kernel support. Compiled in alongside AppArmor; AppArmor
-# remains the default LSM until meta-selinux userspace is available and policy
-# is ready. Switch at runtime: lsm=selinux on the kernel cmdline.
-IOTGW_ENABLE_SELINUX ?= "0"
-IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_SELINUX', '1', ' igw_selinux', '', d)}"
+# SELinux is the always-on default MAC — not an opt-in feature. The kernel
+# LSM stack lives in security-prod.cfg (applied on every image via
+# igw_security_prod), userspace/policy in packagegroup-iot-gw-selinux, and
+# the DISTRO_FEATURES/refpolicy/enforcing wiring above. See docs/SELINUX.md.
 
 # Optional IMA measurement support. Requires TPM for replay-protected log.
 # Measurement-only by default (no appraise) — safe without signed xattrs.

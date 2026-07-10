@@ -4,6 +4,12 @@
 inherit core-image iotgw-rootfs extrausers
 inherit iotgw-rauc-image
 
+# Label the rootfs with SELinux file contexts at do_rootfs (runs setfiles
+# against refpolicy-mcs's file_contexts). Without this, files ship as
+# unlabeled_t and the first boot pays a slow full autorelabel. RAUC OTA
+# slots inherit labels because the bundled rootfs is built with this class.
+IMAGE_CLASSES += "selinux-image"
+
 # Include centralized user/group definitions
 require iotgw-users.inc
 
@@ -35,6 +41,7 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-base \
     packagegroup-iot-gw-hwtools \
     packagegroup-iot-gw-apps \
+    packagegroup-iot-gw-selinux \
     iotgw-banner \
     iotgw-network-units \
     iotgw-sysctl \

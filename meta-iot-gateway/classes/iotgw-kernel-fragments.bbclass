@@ -45,7 +45,6 @@ IOTGW_KERNEL_FRAGMENTS += "${@'debug-crash-dev.cfg' if 'igw_crash_debug_dev' in 
 IOTGW_KERNEL_FRAGMENTS += "${@'security-prod.cfg' if 'igw_security_prod' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 IOTGW_KERNEL_FRAGMENTS += "${@'tpm-slb9672.cfg' if 'igw_tpm_slb9672' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 IOTGW_KERNEL_FRAGMENTS += "${@'efi-surface-reduction.cfg' if 'igw_no_efi' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
-IOTGW_KERNEL_FRAGMENTS += "${@'selinux.cfg' if 'igw_selinux' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 IOTGW_KERNEL_FRAGMENTS += "${@'ima.cfg' if 'igw_ima' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 
 # Derive SRC_URI from IOTGW_KERNEL_FRAGMENTS so the two lists cannot diverge.

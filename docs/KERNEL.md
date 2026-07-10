@@ -267,7 +267,7 @@ Comprehensive kernel hardening for production.
 - Access restrictions (dmesg, devmem, kcore disabled)
 - ASLR (increased entropy)
 - Module signing (SHA256, enforced)
-- AppArmor LSM
+- SELinux LSM (active MAC; lockdown/yama/bpf/landlock stacked)
 - Audit framework
 
 **See:** [SECURITY.md](SECURITY.md) for full details

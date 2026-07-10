@@ -175,6 +175,7 @@ Detailed documentation is available in the `docs/` directory:
 
 - **[Operations](docs/OPERATIONS.md)** — Host build, networking, dev SSH keys, OTA runtime workflows
 - **[Security Hardening](docs/SECURITY.md)** — Kernel hardening, compiler flags, audit framework, validation
+- **[SELinux](docs/SELINUX.md)** — Active MAC: concept primer, local wiring, refpolicy-mcs, and bring-up-to-enforcing roadmap
 - **[Kernel Configuration](docs/KERNEL.md)** — Feature sets, fragments, runtime parameters
 - **[Partition Layouts](docs/PARTITIONS.md)** — RAUC A/B partitions, WKS variants, sizing
 - **[OpenThread Border Router](docs/OTBR.md)** — OTBR setup, configuration, commissioning
