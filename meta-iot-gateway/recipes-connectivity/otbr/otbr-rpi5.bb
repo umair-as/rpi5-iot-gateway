@@ -1,5 +1,6 @@
 SUMMARY = "OpenThread Border Router for Raspberry Pi 5"
 DESCRIPTION = "OpenThread Border Router (OTBR) - POSIX implementation for RPi5"
+HOMEPAGE = "https://github.com/openthread/ot-br-posix"
 LICENSE = "BSD-3-Clause"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=87109e44b2fda96a8991f27684a7349c"
 
@@ -18,7 +19,6 @@ SRC_URI += " \
     file://otbr-config-paths.patch \
 "
 
-S = "${UNPACKDIR}/git"
 # Ship systemd units
 FILES:${PN} += "${systemd_system_unitdir} ${sysconfdir}/udev/rules.d/99-otbr-rcp.rules"
 
@@ -52,7 +52,7 @@ RDEPENDS:${PN} += " \
     otbr-webui \
 "
 
-inherit cmake systemd useradd
+inherit cmake pkgconfig systemd useradd
 
 USERADD_PACKAGES = "${PN}"
 GROUPADD_PARAM:${PN} = "--system otbr"
@@ -87,6 +87,25 @@ EXTRA_OECMAKE = " \
 
 # Enable telemetry and link metrics for richer D-Bus/dashboard data.
 EXTRA_OECMAKE:append = " -DOTBR_TELEMETRY_DATA_API=ON -DOTBR_LINK_METRICS_TELEMETRY=ON -DOTBR_FEATURE_FLAGS=ON"
+
+# CMake 4 (wrynose ships cmake 4.3) removed compatibility with
+# cmake_minimum_required(VERSION < 3.5). OTBR's vendored third_party/cJSON
+# (used because system libcjson is not pulled in) still declares an old
+# minimum, so raise the policy floor to let it configure.
+EXTRA_OECMAKE:append = " -DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+
+# GCC 15 (wrynose) emits stricter warnings (e.g. -Wattributes visibility) in
+# the vendored OpenThread/mbedtls sources, which are pinned to versions that
+# predate this toolchain. OTBR's top CMakeLists hardcodes `-Werror
+# -Wfatal-errors` in a directory-scope add_compile_options that propagates into
+# those subtrees, and OpenThread adds its own via OT_COMPILE_WARNING_AS_ERROR.
+# Turn both off so the warnings stay visible in the log but are not fatal;
+# gate the OT option and strip OTBR's hardcoded flags before configure.
+EXTRA_OECMAKE:append = " -DOT_COMPILE_WARNING_AS_ERROR=OFF -DOTBR_COMPILE_WARNING_AS_ERROR=OFF"
+
+do_configure:prepend() {
+    sed -i 's/ -Werror -Wfatal-errors//' ${S}/CMakeLists.txt
+}
 
 # otbr-agent is udev-activated (see otbr-rcp.rules: SYSTEMD_WANTS).
 # Do not enable via WantedBy=multi-user.target — that would pull the unit
