@@ -7,6 +7,12 @@ Covers concepts, observed behaviour on target, and annotated commands with their
 **Kernel:** `6.18.13-v8-16k-igw` (RPi5 downstream, Scarthgap build)
 **Date:** 2026-04-10
 
+> **Historical snapshot.** Commands and output below were captured as-is on the
+> pre-wrynose scarthgap baseline (NetworkManager, systemd 255). The distro has
+> since moved to wrynose with systemd-networkd — substitute process/service
+> names accordingly when re-running; the LSM/IMA findings themselves are
+> unaffected.
+
 ---
 
 ## Table of Contents
@@ -498,7 +504,7 @@ None implemented. Options for future work:
 1. **Initramfs extend** — early-boot script reads IMA log and manually extends a PCR after
    TPM becomes reachable. Requires custom initramfs with tpm2-tools inside.
 2. **U-Boot TPM extend** — U-Boot extends PCRs for FIT blob hashes. RP1 SPI problem exists
-   at U-Boot stage too (parked — see WORKBOARD).
+   at U-Boot stage too (parked).
 3. **OS-managed PCR** — Seal keys to a PCR the OS controls (e.g. PCR7), rather than relying
    on firmware measured boot.
 4. **Software-only audit** — Use IMA log for forensics without TPM sealing. Tamper-evident
@@ -708,7 +714,7 @@ To disable a config option via a `.cfg` fragment:
 AppArmor is intentionally left enabled (it is the current default MAC). This is noted
 here so the syntax distinction is clear for future fragment authors.
 
-### `systemd-machine-id-commit.service` failing (tracked in WORKBOARD)
+### `systemd-machine-id-commit.service` failing (known issue)
 
 `iotgw-machine-id.service` writes a real file to overlayfs. The commit service fails because
 machine-id is not on a transient filesystem. Fix: mask the unit in the image.

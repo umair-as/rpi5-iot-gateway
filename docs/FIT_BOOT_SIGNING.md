@@ -173,10 +173,15 @@ Expected:
   - `kernel-2` is auto-generated according to
     `IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG`
 
-To test runtime config selection on target (U-Boot env):
+Runtime config selection: by default `iotgw_fit_conf` is **unset** and
+U-Boot boots the FIT's own signed `default` configuration (`bootm` with
+no explicit `#conf`) — the config name is not duplicated anywhere in the
+environment or OTA hooks. Setting the variable is an operator override
+for non-default configs. The OTA bundle hook clears the variable on
+every install, so an override does not survive an update:
 
 ```bash
-fw_printenv iotgw_fit_conf iotgw_fit_conf_default
+fw_printenv iotgw_fit_conf          # expect: not defined
 fw_setenv iotgw_fit_conf conf-recovery
 reboot
 ```
@@ -668,7 +673,7 @@ absence is the expected result, not a failure.
 ### Supported release artifacts under the release profile
 
 Under the release profile, `make prod` does **not** produce a final
-flashable SD image. The `.wic.bz2` it deposits in `${DEPLOY_DIR_IMAGE}`
+flashable SD image. The `.wic.zst` it deposits in `${DEPLOY_DIR_IMAGE}`
 contains a `/boot/fitImage` that is still **file-key signed** by the
 kernel recipe at build time — the DTB on the same image only trusts the
 YubiKey root, so flashing that WIC fails U-Boot FIT verification on the
@@ -706,7 +711,7 @@ recipe — including sstate-covered rebuilds where task prefuncs would be
 bypassed. The warning names the unbootable artifact and points at this
 workflow; it is loud-by-design. If you have suppressed it locally,
 you've also taken on responsibility for not flashing the resulting
-`.wic.bz2`.
+`.wic.zst`.
 
 ## Signing FIT against a PKCS#11 token (YubiKey)
 
@@ -746,10 +751,10 @@ the original signature bytes untouched. The `sign-fit.sh` wrapper
 guards against this by requiring at least one `Signature written` line
 in mkimage's captured output before declaring success.
 
-Upstream migration note: the meta-oe `fitimage.bbclass` merged
-post-Scarthgap provides native PKCS#11 FIT signing support and is the
-intended migration target once this project moves beyond its current
-Scarthgap layer set.
+Upstream note: the meta-oe `fitimage.bbclass` available on wrynose
+provides native PKCS#11 FIT signing support. This project deliberately
+keeps the post-build `sign_fit.py` flow instead — HSM keys and operator
+PIN/touch never enter the bitbake build environment.
 
 ### How `scripts/sign_fit.py sign-fit` works
 

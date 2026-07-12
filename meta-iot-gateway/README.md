@@ -5,7 +5,7 @@
 **Custom Yocto meta-layer for IoT Gateway functionality on Raspberry Pi 5**
 
 [![Layer](https://img.shields.io/badge/Layer-meta--iot--gateway-blue.svg)](.)
-[![Compatible](https://img.shields.io/badge/Compatible-Yocto%20Scarthgap-orange.svg)](https://docs.yoctoproject.org)
+[![Compatible](https://img.shields.io/badge/Compatible-Yocto%20wrynose-orange.svg)](https://docs.yoctoproject.org)
 [![BSP](https://img.shields.io/badge/BSP-Raspberry%20Pi%205-c51a4a.svg)](https://www.raspberrypi.com/products/raspberry-pi-5/)
 
 </div>
@@ -55,7 +55,7 @@ This layer depends on the following OpenEmbedded layers:
 
 - 🔐 **Security**: nftables firewall, AppArmor profiles
 - 📋 **Logging**: Configured journald with persistence
-- 🌐 **Networking**: NetworkManager with Wi-Fi/Ethernet profiles
+- 🌐 **Networking**: systemd-networkd (br0 bridge + Wi-Fi via wpa_supplicant), systemd-resolved
 - 🔄 **OTA Updates**: RAUC A/B update framework
 - 🐳 **Containers**: Podman/Buildah for containerized workloads
 
@@ -82,6 +82,17 @@ Build an image:
 ```bash
 bitbake iot-gw-image-dev
 ```
+
+---
+
+## 🩹 Contributing & Patches
+
+Submit changes as pull requests against
+[umair-as/rpi5-iot-gateway](https://github.com/umair-as/rpi5-iot-gateway).
+Every patch shipped in this layer (`SRC_URI` `file://*.patch`) must carry an
+`Upstream-Status:` tag — the accepted taxonomy (Pending / Submitted /
+Backport / Inappropriate) and commit conventions are documented in the
+repository's `AGENTS.md`.
 
 ---
 
