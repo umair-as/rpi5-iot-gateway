@@ -77,8 +77,11 @@ DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
 DISTRO_FEATURES:append = " rauc"
 DISTRO_FEATURES:append = " luks"
 
-# This unblocks systemd-creds TPM operations and cryptenroll-based flows.
-PACKAGECONFIG:append:pn-systemd = " tpm2 openssl"
+# openssl unblocks systemd-creds/cryptenroll crypto flows. The systemd `tpm2`
+# PACKAGECONFIG (libtss2) is added by kas/tpm.yml, not here: tpm2-tss lives in
+# meta-secure-core, which is composed only with the TPM overlay — adding the
+# PACKAGECONFIG unconditionally would break non-TPM builds.
+PACKAGECONFIG:append:pn-systemd = " openssl"
 PACKAGECONFIG:append:pn-systemd = " pcre2 audit"
 PACKAGECONFIG:append:pn-systemd = " cryptsetup cryptsetup-plugins"
 PACKAGECONFIG:append:pn-cryptsetup = " luks2"

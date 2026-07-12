@@ -10,17 +10,25 @@ repos:
       meta-secure-core-common:
       meta-signing-key:
       meta-tpm2:
+      # IMA/EVM userspace (ima-policy, ima-evm-utils, ima-inspect). Pulled when
+      # IOTGW_ENABLE_IMA=1; pre-wrynose these also came from meta-security.
+      meta-integrity:
       # Phase 2: uncomment for LUKS-encrypted /data with TPM-sealed keys
       # meta-encrypted-storage:
 
 local_conf_header:
+  systemd_tpm2: |
+    # Build systemd with tpm2 (libtss2) for systemd-creds / cryptenroll TPM
+    # flows. tpm2-tss is provided by meta-secure-core/meta-tpm2, composed by
+    # this overlay — so the PACKAGECONFIG lives here, not in the always-on
+    # distro include (see iotgw-common.inc).
+    PACKAGECONFIG:append:pn-systemd = " tpm2"
+
   tpm_spi: |
     # Enable TPM2 over SPI (Infineon SLB9672 class profile + overlay wiring).
     IOTGW_ENABLE_TPM_SLB9672 = "1"
     # Optional overlay override if wiring/CS differs:
     # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
 
-    # TPM2 userspace comes from meta-secure-core/meta-tpm2. The former
-    # BBMASK block that suppressed meta-security/meta-tpm duplicates is gone:
-    # meta-security is no longer in the layer stack (wrynose migration), so
-    # there is no overlapping provider to mask.
+    # TPM2 userspace comes from meta-secure-core/meta-tpm2 — the only tpm2
+    # provider in the layer stack, so no BBMASK deduplication is needed.
