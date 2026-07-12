@@ -1,5 +1,14 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
+# The U-Boot bootloader backend needs fw_printenv/fw_setenv and the compiled
+# environment at runtime.
+RDEPENDS:${PN} += "u-boot-fw-utils u-boot-env"
+
+PACKAGES += "rauc-grow-data-part"
+SYSTEMD_PACKAGES += "${PN}-grow-data-part"
+SYSTEMD_SERVICE:${PN}-grow-data-part = "rauc-grow-data-partition.service"
+RDEPENDS:${PN}-grow-data-part = "parted"
+
 # Provide improved grow-partition unit and script
 SRC_URI:append = " \
     file://rauc-grow-data-partition.service \

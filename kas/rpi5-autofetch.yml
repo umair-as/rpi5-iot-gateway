@@ -55,12 +55,7 @@ repos:
     branch: wrynose
     commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
-  meta-rauc-community:
-    url: https://github.com/rauc/meta-rauc-community.git
-    branch: master
-    commit: 00228100ab6dfb4ea53514c15cba02c0d2fa985e
-    layers:
-      meta-rauc-raspberrypi:
+  # meta-rauc-community dropped — see kas/rauc.yml for the absorption note.
 
   # Project layer lives in this repo (see rpi5.yml for the rationale on the
   # no-url/path current-repo form vs KAS_WORK_DIR).
