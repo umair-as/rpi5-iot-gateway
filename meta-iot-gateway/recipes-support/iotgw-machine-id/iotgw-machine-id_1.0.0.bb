@@ -20,11 +20,22 @@ do_install() {
 
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/iotgw-machine-id.service ${D}${systemd_system_unitdir}/
+
+    # Mask systemd's machine-id commit unit: it exists to persist a
+    # TRANSIENT id (tmpfs bind) to disk and drop the bind. This image's
+    # bind-mount is permanent by design (persistent id under /data), so
+    # the unit's job never applies — and when its
+    # ConditionPathIsMountPoint=/etc/machine-id races true against our
+    # bind, it fails with "not on a temporary file system" and degrades
+    # the boot.
+    install -d ${D}${sysconfdir}/systemd/system
+    ln -sf /dev/null ${D}${sysconfdir}/systemd/system/systemd-machine-id-commit.service
 }
 
 FILES:${PN} += " \
     ${sbindir}/iotgw-machine-id \
     ${systemd_system_unitdir}/iotgw-machine-id.service \
+    ${sysconfdir}/systemd/system/systemd-machine-id-commit.service \
 "
 
 RDEPENDS:${PN} += "bash util-linux systemd"
