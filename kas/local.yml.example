@@ -20,9 +20,8 @@ env:
 
 local_conf_header:
   paths: |
-    # Shared download + sstate caches on the NVMe drive (matches the sibling
-    # edge-ai-yocto project so native/cross/allarch sstate and all source
-    # downloads are reused). Point these at your shared drive.
+    # Shared download + sstate caches on the NVMe drive so native/cross/allarch
+    # sstate and all source downloads are reused. Point these at your shared drive.
     DL_DIR     = "/mnt/yocto-nvme/DL_SHARED"
     SSTATE_DIR = "/mnt/yocto-nvme/SSTATE"
 

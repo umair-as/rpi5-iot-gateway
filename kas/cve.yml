@@ -5,8 +5,8 @@ header:
 
 # CVE check overlay. Wrynose removed the cve-check class; CVE scanning is now
 # the sbom-cve-check recipe/class, wired via the yocto/sbom-cve-check fragment.
-# IMAGE_CLASSES is the load-bearing wiring (matches the edge-ai-yocto sibling);
-# OE_FRAGMENTS carries the fragment's CVE-DB fetch defaults.
+# IMAGE_CLASSES is the load-bearing wiring; OE_FRAGMENTS carries the
+# fragment's CVE-DB fetch defaults.
 local_conf_header:
   sbom_cve_check: |
     OE_FRAGMENTS  += "yocto/sbom-cve-check"
