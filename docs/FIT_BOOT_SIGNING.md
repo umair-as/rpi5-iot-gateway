@@ -809,6 +809,25 @@ bash scripts/sign-fit.sh --fit /tmp/fit-test/fitImage.yk --verify
 
 ### What success looks like
 
+On the serial console, a healthy verified boot under the multi-trust-root
+control DTB (`required-mode=any`) prints one `error!` line per non-matching
+trust root before the matching key verifies — this is expected, not a
+failure:
+
+```
+   Using 'conf-bcm2712-rpi-5-b.dtb' configuration
+   Verifying Hash Integrity ... sha256,rsa2048:iotgw-fit-dev-  error!
+Verification failed for '<NULL>' hash node in 'conf-bcm2712-rpi-5-b.dtb' config node
+sha256,rsa2048:iotgw-fit-dev-  error!
+Verification failed for '<NULL>' hash node in 'conf-bcm2712-rpi-5-b.dtb' config node
+sha256,rsa2048:iotgw-fit-dev+ OK
+```
+
+U-Boot tries the FIT's signature against every required key in the control
+DTB (file / YubiKey / SoftHSM) until one matches; `required-mode=any` needs
+exactly one `+ OK`. Only an output ending with **no** `+ OK` line (followed
+by the slot being marked non-bootable) is an actual verification failure.
+
 On a YubiKey-signed fitImage, `dumpimage -l` shows, for every
 configuration:
 
