@@ -106,7 +106,7 @@ PACKAGECONFIG:append:pn-myapp = " debug"
 *different* recipe in this layer. Rootfs assembly doesn't guarantee recipe
 B's `groupadd` runs before recipe A's `useradd --groups <B-group>`. When
 the ordering loses the race, `useradd` fails *atomically* — recipe A's
-primary user AND group both vanish. Hit on prod 2026-05-26: PR #84 fixed.
+primary user AND group both vanish from the image (see PR #84).
 
 Safe `--groups` uses: base-passwd groups that land in `/etc/group` very
 early — `dialout`, `tty`, `audio`, `video`, `kvm`, `render`, `disk`,
