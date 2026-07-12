@@ -1,3 +1,3 @@
-# Keep package feed version monotonic across temporary local recipe/PV shifts.
-# We previously emitted epoch 1 for spidev-test in this project, so pin it.
+# Pin epoch so the package feed version stays monotonic across temporary
+# local recipe/PV shifts.
 PE = "1"

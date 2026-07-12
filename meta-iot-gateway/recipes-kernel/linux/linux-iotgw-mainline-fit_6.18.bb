@@ -47,6 +47,11 @@ IOTGW_FIT_SOFTHSM_KEYNAME   ?= "iotgw-fit-softhsm-dev"
 # split-FIT model the fitImage no longer lives in this recipe, so the former
 # `mkimage -F -K <dtb> -r <fit>` file-key path is replaced by fdt_add_pubkey,
 # which writes the same /signature/key-<name> node from the signing cert).
+#
+# Dropping kernel-fitimage (split-FIT re-arch) also dropped its implicit
+# u-boot-tools-native DEPENDS, so declare it explicitly — do_deploy:append
+# below invokes fdt_add_pubkey from the native sysroot.
+DEPENDS += "u-boot-tools-native"
 UBOOT_FDT_ADD_PUBKEY ?= "${STAGING_BINDIR_NATIVE}/fdt_add_pubkey"
 
 # Raspberry Pi firmware passes a runtime-prepared DTB to U-Boot. Inject FIT

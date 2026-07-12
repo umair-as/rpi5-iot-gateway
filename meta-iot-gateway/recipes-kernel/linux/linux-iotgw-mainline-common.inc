@@ -1,5 +1,6 @@
 DESCRIPTION = "IoT Gateway Mainline Linux Kernel"
 SECTION = "kernel"
+HOMEPAGE = "https://www.kernel.org/"
 LICENSE = "GPL-2.0-only"
 LIC_FILES_CHKSUM = "file://${S}/COPYING;md5=6bc538ed5bd9a7fc9398086aedcd7e46"
 
