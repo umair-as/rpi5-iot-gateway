@@ -1,14 +1,37 @@
 ## RAUC image additions (always enabled in this distro)
 
 # Explicitly set image formats (override meta-raspberrypi defaults)
-# - tar.bz2: rootfs archive for backup/inspection
+# - tar.zst: rootfs archive for backup/inspection
 # - ext4: needed for RAUC bundles
-# - wic.bz2: compressed disk image for flashing (best compression)
+# - wic.zst: compressed disk image for flashing (zstd — compresses far faster
+#   than bzip2 at comparable ratio)
 # - wic.bmap: block map for fast flashing with bmaptool
-IMAGE_FSTYPES = "tar.bz2 ext4 wic.bz2 wic.bmap"
+IMAGE_FSTYPES = "tar.zst ext4 wic.zst wic.bmap"
 
 # Use strong assignment to override meta-raspberrypi's default WKS_FILE
 WKS_FILE = "iot-gw-rauc-128g.wks.in"
+
+# A/B root-slot identity model (see the .wks.in files):
+#  - RAUC selects slots by PARTLABEL (/dev/disk/by-partlabel/rootA|rootB;
+#    set via the WKS `--label`), so slot identity does not depend on PARTUUID.
+#  - U-Boot reads the *live* PARTUUID from the GPT at boot (boot.cmd
+#    `part uuid ...`) for root=PARTUUID=, so the literal value is never
+#    referenced from metadata either.
+# The rootA/rootB partitions therefore carry fixed, valid, deterministic
+# GPT PARTUUIDs purely to satisfy WIC (wrynose's `sfdisk --part-uuid` rejects
+# the non-UUID placeholder strings that earlier WIC releases tolerated).
+# Deterministic (not `--use-uuid` random) keeps images reproducible.
+
+# Split-FIT WIC wiring (wrynose): under the FIT boot flow the fitImage is
+# assembled + signed by the separate linux-iotgw-fit recipe (not
+# virtual/kernel, which now yields a plain Image). So the WIC must:
+#  (a) stage the signed fitImage into the boot partition (boot.cmd loads it),
+#  (b) order do_image_wic after that recipe's deploy so fitImage is present in
+#      DEPLOY_DIR_IMAGE before the bootimg-partition plugin copies it.
+# The plain Image stays in IMAGE_BOOT_FILES (harmless; mirrors the RAUC
+# bootfiles archive, which stages both).
+IMAGE_BOOT_FILES:append:fitflow = " fitImage"
+do_image_wic[depends] += "${@bb.utils.contains('IOTGW_BOOT_FLOW', 'fit', 'linux-iotgw-fit:do_deploy', '', d)}"
 
 # Keep stock /etc/fstab from base-files intact.
 # WIC's imager-level fstab update appends mount lines globally and can create
@@ -137,14 +160,14 @@ python do_iotgw_validate_wic_alignment() {
 addtask iotgw_validate_wic_alignment after do_image_wic before do_image_complete
 
 # -----------------------------------------------------------------------------
-# Release-trust WIC misuse guard (issue #83)
+# Release-trust WIC misuse guard
 # -----------------------------------------------------------------------------
 # Under kas/fit-release-trust.yml, the U-Boot control DTB embeds only the
 # YubiKey pubkey. The kernel recipe still signs the fitImage with the file
 # key at build time (linux-iotgw-mainline-fit_6.18.bb do_deploy:append), and
 # the WIC bootimg-partition plugin copies that file-key-signed fitImage to
-# /boot/fitImage via IMAGE_BOOT_FILES. Flashing the produced .wic.bz2 fails
-# U-Boot FIT verification on first boot (see issue #83).
+# /boot/fitImage via IMAGE_BOOT_FILES. Flashing the produced .wic.zst fails
+# U-Boot FIT verification on first boot.
 #
 # Detached signing model: the final release artifact is the resigned RAUC
 # bundle from `make bundle-prod-full-fit-resign`, NOT the WIC. Signed
@@ -167,10 +190,9 @@ python () {
         bb.warn(
             "Release-trust FIT profile is active (IOTGW_FIT_TRUST_FILE_KEY=0, "
             "IOTGW_FIT_TRUST_YK_KEY=1) but the kernel's fitImage on this WIC "
-            "is still file-key signed. The produced .wic.bz2 is NOT a final "
+            "is still file-key signed. The produced .wic.zst is NOT a final "
             "release artifact and is known-unbootable for initial SD flash "
-            "(U-Boot FIT verify will reject the file-key signature -- see "
-            "issue #83).\n"
+            "(U-Boot FIT verify will reject the file-key signature).\n"
             "\n"
             "The release artifact under the detached signing model is the "
             "resigned RAUC bundle. Use:\n"

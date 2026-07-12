@@ -1,10 +1,16 @@
 SUMMARY = "RAUC system configuration for A/B updates"
 DESCRIPTION = "Installs RAUC system.conf and keyring for the device. Compatible string and keyring are parameterized."
 
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
 inherit allarch
+
+# do_install runs `openssl rehash` on the keyring dir. wrynose sanitizes the
+# task PATH (no host /usr/bin), so provide openssl via the native sysroot
+# rather than relying on a host binary.
+DEPENDS += "openssl-native"
 
 # Provide the virtual config RAUC expects
 RPROVIDES:${PN} += "virtual-rauc-conf"
