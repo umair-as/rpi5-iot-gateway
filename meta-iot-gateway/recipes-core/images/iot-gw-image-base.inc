@@ -36,7 +36,7 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-hwtools \
     packagegroup-iot-gw-apps \
     iotgw-banner \
-    iotgw-network-profiles \
+    iotgw-network-units \
     iotgw-sysctl \
     iotgw-journald \
     iotgw-firewall \
@@ -47,10 +47,17 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     nftables \
     figlet \
     wpa-supplicant \
-    networkmanager-wifi \
     kernel-modules \
     linux-firmware-rpidistro-bcm43455 \
 "
+
+# systemd 259's `systemctl preset-all` emits a "Failed to preset all unit:
+# Unit <X> is masked" line for any intentionally-masked unit, which the rootfs
+# log_check counts as an error. This image masks exactly one unit on purpose —
+# systemd-networkd-wait-online (lean boot; see iotgw-rootfs.bbclass) — so filter
+# that benign notice. NB: IMAGE_LOG_CHECK_EXCLUDES splits on literal spaces, so
+# the regex uses \s, never a literal space.
+IMAGE_LOG_CHECK_EXCLUDES += "Failed\sto\spreset\sall\sunit.*is\smasked"
 
 iotgw_write_uboot_policy () {
     install -d ${IMAGE_ROOTFS}${sysconfdir}/default

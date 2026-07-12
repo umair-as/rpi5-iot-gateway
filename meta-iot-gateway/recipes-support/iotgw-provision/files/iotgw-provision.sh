@@ -12,8 +12,8 @@ RC_MOSQ_PASSWD_NOT_PERSISTED=40
 RC_MOSQ_GROUP_MISSING=41
 RC_MOSQ_USER_MISSING=42
 
-NM_PROFILE_UPDATES=0
-NM_CONF_UPDATES=0
+NET_UNIT_UPDATES=0
+WPA_UPDATES=0
 OBS_SOURCE="none"
 OBS_BROKER_APPLIED=0
 UBOOT_ENV_UPDATES=0
@@ -211,44 +211,49 @@ if [ -e "$STAMP" ]; then
     exit 0
 fi
 
-# NetworkManager profiles and conf.d
-if [ -d "$SRC_DIR/nm" ]; then
-    log "🔍 [provision] Checking for .nmconnection files in $SRC_DIR/nm"
-    install -d /etc/NetworkManager/system-connections
+# systemd-networkd units (.network/.netdev/.link) from the provisioning source.
+if [ -d "$SRC_DIR/network" ]; then
+    log "🔍 [provision] Checking for networkd units in $SRC_DIR/network"
+    install -d /etc/systemd/network
     copied=0
-    for f in "$SRC_DIR"/nm/*.nmconnection; do
+    for f in "$SRC_DIR"/network/*.network "$SRC_DIR"/network/*.netdev "$SRC_DIR"/network/*.link; do
         [ -e "$f" ] || continue
         log "⚙️  [provision] Installing $(basename "$f")"
-        install -m 0600 "$f" /etc/NetworkManager/system-connections/
+        install -m 0644 "$f" /etc/systemd/network/
         copied=1
-        NM_PROFILE_UPDATES=$((NM_PROFILE_UPDATES + 1))
+        NET_UNIT_UPDATES=$((NET_UNIT_UPDATES + 1))
     done
     if [ "$copied" -eq 1 ]; then
         CHANGED=1
-    fi
-
-    if [ -d "$SRC_DIR/nm-conf" ]; then
-        log "🔍 [provision] Checking for NetworkManager conf in $SRC_DIR/nm-conf"
-        install -d /etc/NetworkManager/conf.d
-        confcopied=0
-        for c in "$SRC_DIR"/nm-conf/*.conf; do
-            [ -e "$c" ] || continue
-            log "⚙️  [provision] Installing conf $(basename "$c")"
-            install -m 0644 "$c" /etc/NetworkManager/conf.d/
-            confcopied=1
-            NM_CONF_UPDATES=$((NM_CONF_UPDATES + 1))
-        done
-        if [ "$confcopied" -eq 1 ]; then
-            CHANGED=1
+        if command -v networkctl >/dev/null 2>&1; then
+            log "🔄 [provision] Reloading systemd-networkd"
+            networkctl reload || true
         fi
     fi
+else
+    log "ℹ️  [provision] No $SRC_DIR/network directory; skipping"
+fi
 
-    if command -v nmcli >/dev/null 2>&1; then
-        log "🔄 [provision] Reloading NetworkManager connections"
-        nmcli connection reload || true
+# wpa_supplicant per-interface configs (carry Wi-Fi PSKs; 0600).
+if [ -d "$SRC_DIR/wpa" ]; then
+    log "🔍 [provision] Checking for wpa_supplicant configs in $SRC_DIR/wpa"
+    install -d /etc/wpa_supplicant
+    wpacopied=0
+    for c in "$SRC_DIR"/wpa/wpa_supplicant-*.conf; do
+        [ -e "$c" ] || continue
+        log "⚙️  [provision] Installing $(basename "$c")"
+        install -m 0600 "$c" /etc/wpa_supplicant/
+        wpacopied=1
+        WPA_UPDATES=$((WPA_UPDATES + 1))
+        # Restart the matching wpa_supplicant@<iface> instance if present.
+        iface=$(basename "$c" .conf); iface=${iface#wpa_supplicant-}
+        systemctl try-restart "wpa_supplicant@${iface}.service" 2>/dev/null || true
+    done
+    if [ "$wpacopied" -eq 1 ]; then
+        CHANGED=1
     fi
 else
-    log "ℹ️  [provision] No $SRC_DIR/nm directory; skipping"
+    log "ℹ️  [provision] No $SRC_DIR/wpa directory; skipping"
 fi
 
 # Observability credentials/bootstrap (authoritative source: /data).
@@ -329,20 +334,9 @@ if [ -r "$OBS_SRC" ]; then
     fi
 fi
 
-# Also seed profiles shipped in the image if missing (handles overlayfs on /etc)
-if [ -d /usr/share/iotgw-nm/connections ]; then
-    install -d /etc/NetworkManager/system-connections
-    for f in /usr/share/iotgw-nm/connections/*.nmconnection; do
-        [ -e "$f" ] || continue
-        bn=$(basename "$f")
-        if [ ! -e "/etc/NetworkManager/system-connections/$bn" ]; then
-            install -m 0600 "$f" /etc/NetworkManager/system-connections/
-        fi
-    done
-    if command -v nmcli >/dev/null 2>&1; then
-        nmcli connection reload || true
-    fi
-fi
+# The baseline networkd topology + wpa_supplicant conf ship in the image
+# (iotgw-network-units → /etc/systemd/network + /etc/wpa_supplicant), visible
+# through the /etc overlay at boot, so no runtime seeding of defaults is needed.
 
 # Only mark as provisioned if we actually changed something. This allows
 # adding files to /data/iotgw later and having the service run again.
@@ -357,5 +351,5 @@ if [ "$CHANGED" -eq 1 ]; then
 else
     log "✅ [provision] Completed: no changes"
 fi
-log "[provision] Summary: changed=${CHANGED} source=${OBS_SOURCE} nm_profiles=${NM_PROFILE_UPDATES} nm_conf=${NM_CONF_UPDATES} broker_applied=${OBS_BROKER_APPLIED} uboot_env_updates=${UBOOT_ENV_UPDATES} warnings=${WARNINGS}"
+log "[provision] Summary: changed=${CHANGED} source=${OBS_SOURCE} net_units=${NET_UNIT_UPDATES} wpa_configs=${WPA_UPDATES} broker_applied=${OBS_BROKER_APPLIED} uboot_env_updates=${UBOOT_ENV_UPDATES} warnings=${WARNINGS}"
 exit "$RC_OK"

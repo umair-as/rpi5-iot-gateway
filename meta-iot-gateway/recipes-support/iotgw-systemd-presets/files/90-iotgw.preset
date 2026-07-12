@@ -11,3 +11,13 @@ enable iotgw-provision.service
 enable systemd-timesyncd.service
 enable rauc-mark-good.service
 enable boot-backup-prune.service
+
+# Network stack: systemd-networkd + systemd-resolved (replaces NetworkManager).
+# Neither carries a recipe SYSTEMD_SERVICE, so enable positively here. The
+# wpa_supplicant@wlan0 instance is enabled by iotgw-network-units.
+enable systemd-networkd.service
+enable systemd-networkd.socket
+enable systemd-resolved.service
+# wpa_supplicant@wlan0 is enabled by iotgw-network-units (it ships the
+# multi-user.target.wants symlink) — preset-all's enable-only mode cannot
+# reach a template instance, so it is intentionally not listed here.

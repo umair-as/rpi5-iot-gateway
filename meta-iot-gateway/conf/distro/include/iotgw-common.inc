@@ -52,7 +52,7 @@ SDKPATH ?= "/opt/${VENDOR_SHORT_NAME}-${DISTRO}/${SDK_VERSION}"
 PREFERRED_VERSION_lynis ?= "3.1.5"
 
 # Node.js binary provider/version policy
-# Keep default on 20.x until OTBR web UI migration is fully validated.
+# Keep default on 20.x: the OTBR web UI is validated against this runtime.
 # Override in local/product config when testing newer runtime, e.g.:
 #   IOTGW_NODEJS_BIN_VERSION = "22.22.0"
 PREFERRED_PROVIDER_nodejs ?= "nodejs-bin"
@@ -85,6 +85,14 @@ PACKAGECONFIG:append:pn-systemd = " openssl"
 PACKAGECONFIG:append:pn-systemd = " pcre2 audit"
 PACKAGECONFIG:append:pn-systemd = " cryptsetup cryptsetup-plugins"
 PACKAGECONFIG:append:pn-cryptsetup = " luks2"
+
+# Network management: systemd-networkd (not NetworkManager). networkd owns
+# addressing/DHCP; systemd-resolved owns DNS and writes the resolv.conf stub.
+# The topology (br0 bridge + eth0 port + wlan0 WiFi via wpa_supplicant) ships
+# in iotgw-network-units. networkd/resolved are in systemd's default
+# PACKAGECONFIG; keep them and enable via 90-iotgw.preset.
+VIRTUAL-RUNTIME_net_manager = "systemd-networkd"
+RESOLV_CONF = "stub-resolv"
 
 # Always use U-Boot on Raspberry Pi for RAUC boot flow
 RPI_USE_U_BOOT ?= "1"

@@ -1,13 +1,11 @@
 [Unit]
 Description=IoT Gateway Provisioning (Network + Observability first-boot)
-# NetworkManager is in this recipe's RDEPENDS so it is guaranteed present.
-# Ordering after NetworkManager.service avoids the early-boot race where
-# nmcli connection reload runs before NM is up and logs
-# "failed to reload connections: NetworkManager is not running".
-# Deliberately ordering against the unit, NOT network-online.target -- we
-# do not want to delay boot waiting for actual link/IP.
-After=local-fs.target NetworkManager.service
-Wants=NetworkManager.service
+# systemd-networkd is the network stack (RDEPENDS of this recipe). Order after
+# it so `networkctl reload` of any provisioned .network unit runs once networkd
+# is up. Deliberately ordering against the unit, NOT network-online.target --
+# we do not want to delay boot waiting for actual link/IP.
+After=local-fs.target systemd-networkd.service
+Wants=systemd-networkd.service
 Before=mosquitto.service
 RequiresMountsFor=/data
 
@@ -34,7 +32,7 @@ RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
 # Allow /data mount even when /data/iotgw is absent on fresh systems.
-ReadWritePaths=/etc/NetworkManager /etc/mosquitto /var/lib /data
+ReadWritePaths=/etc/systemd/network /etc/wpa_supplicant /etc/mosquitto /var/lib /data
 
 [Install]
 WantedBy=multi-user.target

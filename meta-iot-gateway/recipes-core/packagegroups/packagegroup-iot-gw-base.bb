@@ -10,7 +10,7 @@ RDEPENDS:${PN} = " \
     packagegroup-iot-gw-utils \
     iotgw-bootstage \
     sudo \
-    networkmanager \
+    systemd-networkd \
     systemd-analyze \
     systemd-extra-utils \
     lynis \

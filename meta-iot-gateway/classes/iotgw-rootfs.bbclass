@@ -12,29 +12,9 @@ iotgw_rootfs_setup_sudoers() {
 
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_setup_sudoers;"
 
-###### NetworkManager profiles placement
-iotgw_rootfs_nm_profiles() {
-    if [ -d ${IMAGE_ROOTFS}${datadir}/iotgw-nm/connections ]; then
-        install -d ${IMAGE_ROOTFS}/etc/NetworkManager/system-connections
-        for f in ${IMAGE_ROOTFS}${datadir}/iotgw-nm/connections/*.nmconnection; do
-            [ -e "$f" ] || continue
-            install -m 0600 "$f" ${IMAGE_ROOTFS}/etc/NetworkManager/system-connections/
-        done
-    fi
-}
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_nm_profiles;"
-
-###### NetworkManager conf.d drop-ins placement
-iotgw_rootfs_nm_conf() {
-    if [ -d ${IMAGE_ROOTFS}${datadir}/iotgw-nm/conf.d ]; then
-        install -d ${IMAGE_ROOTFS}/etc/NetworkManager/conf.d
-        for f in ${IMAGE_ROOTFS}${datadir}/iotgw-nm/conf.d/*.conf; do
-            [ -e "$f" ] || continue
-            install -m 0644 "$f" ${IMAGE_ROOTFS}/etc/NetworkManager/conf.d/
-        done
-    fi
-}
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_nm_conf;"
+###### Network topology (systemd-networkd) + wpa_supplicant Wi-Fi config are
+###### shipped directly by iotgw-network-units into /etc; no rootfs placement
+###### step is required.
 
 ###### Journald drop-in
 iotgw_rootfs_journald() {
@@ -100,35 +80,24 @@ iotgw_rootfs_bluetooth_mode() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_bluetooth_mode;"
 
-###### Mask units that preset-all cannot disable (Yocto always runs --preset-mode=enable-only)
-# NM installs its wants symlink via pkg_postinst before our preset is applied, so the
-# disable directive in 90-iotgw.preset is silently ignored. An explicit mask is required.
-iotgw_rootfs_mask_nm_wait_online() {
+###### Keep boot lean under the systemd-networkd stack.
+# systemd-networkd + systemd-resolved are the active stack (enabled via
+# 90-iotgw.preset). Mask exactly one auxiliary unit: systemd-networkd-wait-online.
+# mosquitto and ota-updater pull network-online.target, so an active wait-online
+# would block boot until every managed link (including Wi-Fi association, which
+# may never complete if no PSK is configured) becomes routable — up to its
+# ~120s timeout. Masking it makes network-online.target a trivial sync point,
+# so those services start without waiting on the network (prior lean-boot
+# posture). This is the only intentional mask; systemd 259's preset-all emits a
+# benign "is masked" notice for it, filtered via IMAGE_LOG_CHECK_EXCLUDES in
+# iot-gw-image-base.inc.
+# NOTE: do NOT mask systemd-networkd.service/.socket — those are required.
+iotgw_rootfs_mask_networkd_wait_online() {
     install -d ${IMAGE_ROOTFS}/etc/systemd/system
-    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/NetworkManager-wait-online.service
-    # Also remove the wants symlink if NM's postinst left one
-    rm -f ${IMAGE_ROOTFS}/etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service
-}
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_nm_wait_online;"
-
-###### Disable systemd-network-generator for NetworkManager-only gateway profile
-# We do not use systemd-networkd units in this distro profile. Keep boot path
-# lean by masking the generator that emits networkd units from kernel cmdline.
-iotgw_rootfs_mask_network_generator() {
-    install -d ${IMAGE_ROOTFS}/etc/systemd/system
-    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-network-generator.service
-}
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_network_generator;"
-
-###### Disable systemd-networkd stack for NetworkManager-only gateway profile
-iotgw_rootfs_mask_networkd_stack() {
-    install -d ${IMAGE_ROOTFS}/etc/systemd/system
-    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd.service
-    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd.socket
     ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/systemd-networkd-wait-online.service
     rm -f ${IMAGE_ROOTFS}/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service
 }
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_networkd_stack;"
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_networkd_wait_online;"
 
 ###### Optional vconsole setup masking (headless/serial-focused images)
 iotgw_rootfs_mask_vconsole_setup() {

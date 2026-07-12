@@ -41,7 +41,6 @@ RDEPENDS:${PN}-utils = " \
     wl-clipboard \
     grim \
     slurp \
-    networkmanager \
     polkit \
     polkit-gnome \
     gvfs \
@@ -49,8 +48,9 @@ RDEPENDS:${PN}-utils = " \
     udiskie \
     pavucontrol \
     hicolor-icon-theme \
-    noto-fonts \
-    dejavu-fonts \
+    ttf-dejavu-sans \
+    ttf-dejavu-sans-mono \
+    ttf-dejavu-serif \
 "
 
 # Applications (GTK/Wayland-friendly) with minimal deps

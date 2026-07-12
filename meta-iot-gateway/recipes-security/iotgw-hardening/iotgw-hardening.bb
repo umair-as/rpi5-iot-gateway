@@ -1,5 +1,6 @@
 SUMMARY = "IoT Gateway Security Hardening"
 DESCRIPTION = "Security hardening configurations based on Lynis audit recommendations"
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
@@ -14,6 +15,7 @@ SRC_URI = " \
     file://dev-shm.mount.override \
     file://service-hardening.conf \
     file://service-hardening-net.conf \
+    file://service-hardening-wpa-supplicant.conf \
     file://sshd@.service \
     file://service-hardening-mosquitto.conf \
 "
@@ -52,9 +54,15 @@ do_install() {
         install -d ${D}${sysconfdir}/systemd/system/${unit}.d
         install -m 0644 ${UNPACKDIR}/service-hardening.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
     done
-    for unit in NetworkManager.service wpa_supplicant.service; do
+    install -d ${D}${sysconfdir}/systemd/system/systemd-networkd.service.d
+    install -m 0644 ${UNPACKDIR}/service-hardening-net.conf ${D}${sysconfdir}/systemd/system/systemd-networkd.service.d/override.conf
+
+    # wlan0 runs its own wpa_supplicant@wlan0 instance (not the singleton
+    # wpa_supplicant.service). Keep a dedicated profile so its control socket
+    # remains usable with wpa_cli.
+    for unit in wpa_supplicant@wlan0.service; do
         install -d ${D}${sysconfdir}/systemd/system/${unit}.d
-        install -m 0644 ${UNPACKDIR}/service-hardening-net.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
+        install -m 0644 ${UNPACKDIR}/service-hardening-wpa-supplicant.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
     done
 
     install -d ${D}${sysconfdir}/systemd/system/mosquitto.service.d
@@ -79,8 +87,8 @@ FILES:${PN} = " \
     ${sysconfdir}/systemd/coredump.conf.d/iotgw.conf \
     ${sysconfdir}/systemd/system/tmp.mount.d/override.conf \
     ${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf \
-    ${sysconfdir}/systemd/system/NetworkManager.service.d/override.conf \
-    ${sysconfdir}/systemd/system/wpa_supplicant.service.d/override.conf \
+    ${sysconfdir}/systemd/system/systemd-networkd.service.d/override.conf \
+    ${sysconfdir}/systemd/system/wpa_supplicant@wlan0.service.d/override.conf \
     ${sysconfdir}/systemd/system/dnsmasq.service.d/override.conf \
     ${sysconfdir}/systemd/system/mosquitto.service.d/override.conf \
     ${sysconfdir}/systemd/system/avahi-daemon.service.d/override.conf \

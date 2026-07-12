@@ -29,4 +29,4 @@ FILES:${PN} += " \
     ${systemd_system_unitdir}/iotgw-provision.service \
 "
 
-RDEPENDS:${PN} = "bash networkmanager mosquitto"
+RDEPENDS:${PN} = "bash systemd-networkd mosquitto"
