@@ -8,6 +8,9 @@ inherit packagegroup
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 # Runtime stack needed to run containers on target.
+# tzdata-core: podman's tz="local" resolves the host /etc/localtime when
+# configuring container timezones and hard-fails when it is absent; the
+# base image ships no zoneinfo at all.
 IOTGW_CONTAINER_RUNTIME_PACKAGES ?= " \
     podman \
     conmon \
@@ -17,6 +20,7 @@ IOTGW_CONTAINER_RUNTIME_PACKAGES ?= " \
     slirp4netns \
     fuse-overlayfs \
     catatonit \
+    tzdata-core \
     packagegroup-iot-gw-containers-ops \
     container-host-config \
 "
