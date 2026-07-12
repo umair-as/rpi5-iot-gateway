@@ -1,0 +1,15 @@
+# br0 carries the LAN L3 address (DHCPv4, IPv6 ignored). The eth0 port
+# (15-eth0.network) has no address of its own; wlan0 is a separate WiFi
+# uplink (25-wlan0.network).
+[Match]
+Name=br0
+
+[Network]
+DHCP=ipv4
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+
+[DHCPv4]
+# Bridge MAC is inherited from the first enslaved port; keep the DHCP client
+# id tied to the MAC so lease identity is stable across reboots.
+ClientIdentifier=mac

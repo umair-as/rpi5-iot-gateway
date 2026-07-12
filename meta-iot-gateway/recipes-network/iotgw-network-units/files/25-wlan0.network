@@ -1,0 +1,13 @@
+# wlan0 WiFi uplink. Association is done by wpa_supplicant@wlan0; networkd
+# only does L3: DHCPv4 plus SLAAC with stable-privacy IPv6 addressing.
+[Match]
+Name=wlan0
+
+[Network]
+DHCP=ipv4
+IPv6AcceptRA=yes
+IPv6LinkLocalAddressing=yes
+
+[IPv6AcceptRA]
+# stable-privacy equivalent for SLAAC addresses.
+Token=prefixstable

@@ -1,0 +1,6 @@
+# eth0 is a bridge port of br0 — no L3 config of its own.
+[Match]
+Name=eth0
+
+[Network]
+Bridge=br0

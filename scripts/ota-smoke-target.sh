@@ -231,6 +231,54 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "Network stack (systemd-networkd)"
+# This distro uses systemd-networkd + systemd-resolved (NetworkManager was
+# removed). Assert the stack is the expected one, not just that nothing failed.
+if command -v NetworkManager >/dev/null 2>&1; then
+    say_fail "NetworkManager binary present (expected removed after networkd migration)"
+else
+    say_pass "NetworkManager absent"
+fi
+
+for svc in systemd-networkd.service systemd-resolved.service; do
+    if systemctl is-active --quiet "$svc"; then
+        say_pass "$svc active"
+    else
+        say_fail "$svc not active (state=$(systemctl is-active "$svc" 2>/dev/null))"
+    fi
+done
+
+# wpa_supplicant is per-interface (wpa_supplicant@wlan0); only assert when the
+# radio exists on this board.
+if [ -e /sys/class/net/wlan0 ]; then
+    if systemctl is-active --quiet wpa_supplicant@wlan0.service; then
+        say_pass "wpa_supplicant@wlan0 active"
+    else
+        say_fail "wlan0 present but wpa_supplicant@wlan0 not active"
+    fi
+else
+    say_skip "wpa_supplicant@wlan0" "no wlan0 interface on this board"
+fi
+
+# Connectivity: at least one non-loopback interface holds a global-scope IPv4
+# (br0 wired uplink and/or wlan0). networkd assigns these once a link is up.
+globs=$(ip -o -4 addr show scope global up 2>/dev/null | awk '{print $2"="$4}')
+if [ -n "$globs" ]; then
+    say_pass "global IPv4 up: $(printf '%s' "$globs" | tr '\n' ' ')"
+else
+    say_fail "no global-scope IPv4 on any interface"
+fi
+
+if command -v networkctl >/dev/null 2>&1; then
+    if networkctl --no-legend 2>/dev/null | grep -qw routable; then
+        say_pass "networkctl reports a routable link"
+    else
+        say_fail "networkctl: no routable link"
+        networkctl --no-legend 2>/dev/null | sed 's/^/      /'
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 section "Image / OTA identity"
 check_match "/etc/os-release reports iotgw" 'iotgw|IoT Gateway' cat /etc/os-release
 check_match "/etc/machine-id is non-zero"   '^[0-9a-f]{32}$' cat /etc/machine-id

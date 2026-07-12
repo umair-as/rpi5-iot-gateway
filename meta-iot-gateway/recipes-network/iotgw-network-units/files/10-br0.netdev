@@ -1,0 +1,7 @@
+[NetDev]
+Name=br0
+Kind=bridge
+
+[Bridge]
+STP=no
+ForwardDelay=0

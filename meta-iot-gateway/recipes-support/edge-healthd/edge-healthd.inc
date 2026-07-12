@@ -13,7 +13,6 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=291c1ca2c1503b0e42022cd4bff87df5"
 
 BRANCH ?= "main"
 SRC_URI = "git://github.com/umair-as/edge-healthd.git;branch=${BRANCH};protocol=https"
-S = "${UNPACKDIR}/git"
 
 # Platform-specific configuration and tmpfiles
 SRC_URI += " \
