@@ -84,7 +84,7 @@ if [[ -n "$deploy_root" && -d "$deploy_root" ]]; then
     find "$deploy_root" -type f \( \
         -name "*.raucb" -o \
         -name "*.wic" -o \
-        -name "*.wic.bz2" -o \
+        -name "*.wic.zst" -o \
         -name "fitImage*" -o \
         -name "u-boot.bin" -o \
         -name "Image" -o \
