@@ -10,10 +10,13 @@ SRC_URI = " \
     file://otbr-webui.default \
 "
 SRCREV = "b9d735370bd56b269e5c0439b8ca3f68d8425ee0"
-S = "${UNPACKDIR}/git"
 B = "${WORKDIR}/build"
 
 DEPENDS = "nodejs-bin-native"
+# The nodejs-bin runtime this UI depends on ships prebuilt aarch64 binaries
+# (COMPATIBLE_HOST there); gate identically so this recipe drops out of
+# world on other architectures.
+COMPATIBLE_HOST = "aarch64.*-linux"
 
 inherit systemd externalsrc
 
