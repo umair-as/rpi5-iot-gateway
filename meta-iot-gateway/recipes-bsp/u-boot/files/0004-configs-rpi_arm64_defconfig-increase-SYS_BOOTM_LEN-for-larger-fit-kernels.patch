@@ -11,10 +11,10 @@ Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
  1 file changed, 1 insertion(+)
 
 diff --git a/configs/rpi_arm64_defconfig b/configs/rpi_arm64_defconfig
-index 361ea8d8fd5..ade6860e6da 100644
+index 0da3e7558de..41c0a8e36bb 100644
 --- a/configs/rpi_arm64_defconfig
 +++ b/configs/rpi_arm64_defconfig
-@@ -7,6 +7,7 @@ CONFIG_DEFAULT_DEVICE_TREE="bcm2711-rpi-4-b"
+@@ -8,6 +8,7 @@ CONFIG_DEFAULT_DEVICE_TREE="bcm2711-rpi-4-b"
  CONFIG_OF_LIBFDT_OVERLAY=y
  CONFIG_DM_RESET=y
  CONFIG_SYS_LOAD_ADDR=0x1000000
@@ -22,3 +22,6 @@ index 361ea8d8fd5..ade6860e6da 100644
  CONFIG_IDENT_STRING=" (IoT-Gateway)"
  CONFIG_PCI=y
  CONFIG_ENV_VARS_UBOOT_CONFIG=y
+-- 
+2.43.0
+

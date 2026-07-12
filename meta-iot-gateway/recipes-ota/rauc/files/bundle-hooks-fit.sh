@@ -343,10 +343,21 @@ if command -v fw_setenv >/dev/null 2>&1; then
   if [ -n "$now_utc" ]; then
     fw_setenv iotgw_last_update "$now_utc" || log_warn "failed to set iotgw_last_update"
   fi
-  # Fresh OTA starts from primary FIT config.
-  fw_setenv iotgw_fit_conf_default "conf-primary" || log_warn "failed to set iotgw_fit_conf_default"
-  fw_setenv iotgw_fit_conf "conf-primary" || log_warn "failed to set iotgw_fit_conf"
-  log_info "Updated U-Boot env (iotgw_last_slot/iotgw_last_update/iotgw_fit_conf*)"
+  # The FIT config is selected by the FIT's own signed `default` property
+  # (U-Boot boots with no explicit #conf); iotgw_fit_conf is an operator
+  # override only (e.g. a future conf-recovery). DELETE any value a
+  # previous build or hook persisted — both slots load the same FIT, so a
+  # stale pinned name fails bootm on every slot and exhausts all boot
+  # counters. Clearing here self-heals devices that installed a bundle
+  # from a build with a different config name.
+  # Dev-posture caveat: a device whose SAVED env carries an older
+  # iotgw_exec_fit script that dereferences iotgw_fit_conf_default (dev
+  # builds import the whole saved env; prod's ENV_WRITEABLE_LIST ignores
+  # unlisted vars) needs a one-time env reset (zero the ubootenv
+  # partition / reflash) so the binary default scripts take effect.
+  fw_setenv iotgw_fit_conf || log_warn "failed to clear iotgw_fit_conf"
+  fw_setenv iotgw_fit_conf_default || log_warn "failed to clear iotgw_fit_conf_default"
+  log_info "Updated U-Boot env (iotgw_last_slot/iotgw_last_update; cleared iotgw_fit_conf*)"
 else
   log_warn "fw_setenv not available; skipping U-Boot env update"
 fi

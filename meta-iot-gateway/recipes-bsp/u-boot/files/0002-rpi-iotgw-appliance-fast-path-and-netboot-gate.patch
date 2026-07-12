@@ -1,7 +1,10 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 3a8853403dbbe7f935b9a724d858b4634418a5b8 Mon Sep 17 00:00:00 2001
 From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 Date: Sat, 30 May 2026 12:00:00 +0000
 Subject: [PATCH] rpi: gate appliance fast-path and netboot init
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
 
 Gate the netboot MAC-reading code on the iotgw_enable_netboot env var
 so the gateway does not perform any netboot scanning by default
@@ -12,9 +15,14 @@ and diagnostic mode are decided before boot policy is applied.
 Upstream-Status: Inappropriate [product specific — appliance boot policy]
 Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
+ board/raspberrypi/rpi/rpi.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/board/raspberrypi/rpi/rpi.c b/board/raspberrypi/rpi/rpi.c
+index f9b643555dd..7ced91e6978 100644
 --- a/board/raspberrypi/rpi/rpi.c
 +++ b/board/raspberrypi/rpi/rpi.c
-@@ -380,6 +380,10 @@
+@@ -394,6 +394,10 @@ static void set_usbethaddr(void)
  	ALLOC_CACHE_ALIGN_BUFFER(struct msg_get_mac_address, msg, 1);
  	int ret;
  
@@ -25,7 +33,7 @@ Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
  	if (!model->has_onboard_eth)
  		return;
  
-@@ -446,13 +450,25 @@
+@@ -460,9 +464,21 @@ static void set_serial_number(void)
  
  int misc_init_r(void)
  {
@@ -48,8 +56,6 @@ Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
  #ifdef CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG
  	set_board_info();
  #endif
--	set_serial_number();
-+	set_serial_number();
- 
- 	return 0;
- }
+-- 
+2.43.0
+
