@@ -1,0 +1,13 @@
+
+@ESC@[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━@ESC@[0m
+@ESC@[1;33m                              ℹ Authorized users only@ESC@[0m
+@ESC@[0;37mThis device is intended for authorized use. Connections may be logged to
+help ensure reliability and security. If you weren't expecting access,
+please disconnect and contact the administrator.@ESC@[0m
+@ESC@[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━@ESC@[0m
+
+@ESC@[1;36m@DISTRO_NAME@@ESC@[0m  @ESC@[0;37m@DISTRO_VERSION@@ESC@[0m
+@ESC@[0;33mMachine:@ESC@[0m @MACHINE@    @ESC@[0;33mKernel:@ESC@[0m \r
+@ESC@[0;33mIPv4 (br0):@ESC@[0m \4{br0}    @ESC@[0;33mIPv4 (wlan0):@ESC@[0m \4{wlan0}
+@ESC@[0;33mTTY:@ESC@[0m \l
+
