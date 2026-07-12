@@ -353,8 +353,8 @@ if command -v fw_setenv >/dev/null 2>&1; then
   # Dev-posture caveat: a device whose SAVED env carries an older
   # iotgw_exec_fit script that dereferences iotgw_fit_conf_default (dev
   # builds import the whole saved env; prod's ENV_WRITEABLE_LIST ignores
-  # unlisted vars) needs a one-time env reset (zero the ubootenv
-  # partition / reflash) so the binary default scripts take effect.
+  # unlisted vars) needs a one-time env reset (delete uboot.env from the
+  # ubootenv vfat / reflash) so the binary default scripts take effect.
   fw_setenv iotgw_fit_conf || log_warn "failed to clear iotgw_fit_conf"
   fw_setenv iotgw_fit_conf_default || log_warn "failed to clear iotgw_fit_conf_default"
   log_info "Updated U-Boot env (iotgw_last_slot/iotgw_last_update; cleared iotgw_fit_conf*)"

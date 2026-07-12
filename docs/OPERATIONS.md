@@ -63,19 +63,23 @@ zstdcat build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootf
   | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 ```
 
-Fast path — sparse-aware copy, then wipe the U-Boot env partition:
+Fast path — sparse-aware copy, then drop any stale U-Boot env file:
 
 ```bash
 sudo bmaptool copy \
   build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.zst \
   /dev/sdX
-sudo dd if=/dev/zero of=/dev/sdX2 bs=1M conv=fsync
+sudo mount /dev/sdX2 /mnt && sudo rm -f /mnt/uboot.env && sudo umount /mnt
 ```
 
-`bmaptool` writes only mapped blocks and skips the (empty-in-image) `ubootenv`
-partition, so a reused card keeps its previous U-Boot environment — including
-exhausted RAUC boot-attempt counters, which prevents first boot. Zeroing p2
-restores the built-in default environment on next boot.
+The U-Boot environment lives as a file (`uboot.env`) on the vfat `ubootenv`
+partition (p2). `bmaptool` writes only mapped blocks, so a reused card can
+keep its previous env file — including exhausted RAUC boot-attempt counters,
+which prevents first boot. Deleting the file restores the built-in default
+environment on next boot. Do **not** zero the partition itself: the vfat
+filesystem and its `ubootenv` label must survive, or the `/uboot-env` mount
+(`LABEL=ubootenv` in fstab) times out and boot drops to emergency mode.
+Recovery from an accidentally zeroed p2: `mkfs.vfat -n ubootenv /dev/sdX2`.
 
 ## 3) Provision Network Before First Boot
 

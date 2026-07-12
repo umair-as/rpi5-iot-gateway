@@ -60,16 +60,18 @@ kas build kas/local.yml --target iot-gw-bundle-full
 zstdcat build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.zst \
   | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
 
-# Fast path: sparse-aware copy, then wipe the U-Boot env partition
+# Fast path: sparse-aware copy, then drop any stale U-Boot env file
 sudo bmaptool copy \
   build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.zst \
   /dev/sdX
-sudo dd if=/dev/zero of=/dev/sdX2 bs=1M conv=fsync
+sudo mount /dev/sdX2 /mnt && sudo rm -f /mnt/uboot.env && sudo umount /mnt
 ```
 
-`bmaptool` alone skips unmapped regions, so a reused card keeps its old U-Boot
-environment (stale boot state). Either write the full image or explicitly zero
-the `ubootenv` partition (p2) after the copy. See [Operations](docs/OPERATIONS.md).
+`bmaptool` alone skips unmapped regions, so a reused card can keep its old
+U-Boot environment (`uboot.env` on the `ubootenv` partition, p2). Remove the
+file — do NOT zero the partition: the vfat filesystem and its `ubootenv`
+label must survive or the `/uboot-env` mount fails at boot.
+See [Operations](docs/OPERATIONS.md).
 
 ### Default Accounts
 
