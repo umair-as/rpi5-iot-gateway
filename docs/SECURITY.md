@@ -200,7 +200,7 @@ systemctl enable nftables
 
 ### Kernel Hardening Check
 
-Validate kernel configuration against KSPP recommendations using the `kernel-hardening-checker` tool. The package is built into all image variants.
+Validate kernel configuration against KSPP recommendations using the `kernel-hardening-checker` tool. The development image includes the tool through the dev package group; other variants can add it from meta-oe if needed.
 
 **On the running device:**
 ```bash
@@ -212,7 +212,7 @@ Over SSH from the host:
 ssh root@<device> 'zcat /proc/config.gz | kernel-hardening-checker -c - -m verbose'
 ```
 
-> An automated host-side check that consumes Yocto build artifacts is a planned follow-up — see the workboard. Until then, run the check against a running device using the kernel's own `/proc/config.gz`.
+> An automated host-side check that consumes Yocto build artifacts is a planned follow-up. Until then, run the check against a running device using the kernel's own `/proc/config.gz`.
 
 **What It Checks:**
 - Memory protection features
