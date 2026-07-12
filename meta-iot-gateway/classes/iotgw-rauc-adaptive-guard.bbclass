@@ -76,11 +76,13 @@ python do_iotgw_rauc_alignment_check() {
         return root_sizes
 
     # Keep guard deterministic across bundle contexts: discover IoT GW RAUC
-    # layouts from the layer's wic directory, instead of hardcoding filenames.
+    # layouts from the layer's files/wic directory, instead of hardcoding
+    # filenames. WKS kickstart files live under files/wic/, matching the
+    # WKS_SEARCH_PATH default of "<layer>/files/wic".
     wks_paths = []
 
     thisdir = d.getVar("THISDIR") or ""
-    layer_wic_dir = os.path.normpath(os.path.join(thisdir, "..", "wic"))
+    layer_wic_dir = os.path.normpath(os.path.join(thisdir, "..", "files", "wic"))
     if os.path.isdir(layer_wic_dir):
         for candidate in sorted(glob.glob(os.path.join(layer_wic_dir, "iot-gw-rauc*.wks.in"))):
             wks_paths.append(candidate)
@@ -91,7 +93,7 @@ python do_iotgw_rauc_alignment_check() {
         for base in bbpath.split(":"):
             if not base:
                 continue
-            wic_dir = os.path.join(base, "wic")
+            wic_dir = os.path.join(base, "files", "wic")
             if not os.path.isdir(wic_dir):
                 continue
             for candidate in sorted(glob.glob(os.path.join(wic_dir, "iot-gw-rauc*.wks.in"))):
@@ -107,7 +109,7 @@ python do_iotgw_rauc_alignment_check() {
     if not wks_paths:
         bb.fatal(
             "Adaptive alignment gate could not find IoT GW RAUC WKS layouts to validate. "
-            "Checked layer wic/ directory and BBPATH fallback."
+            "Checked layer files/wic/ directory and BBPATH fallback."
         )
 
     validated = []
