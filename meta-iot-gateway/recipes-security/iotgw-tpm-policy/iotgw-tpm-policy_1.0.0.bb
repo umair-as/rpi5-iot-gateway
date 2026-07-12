@@ -2,6 +2,7 @@
 
 SUMMARY = "IoT Gateway TPM device access policy"
 DESCRIPTION = "Creates dedicated TPM user/group and enforces TPM device node ownership/permissions via udev."
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
