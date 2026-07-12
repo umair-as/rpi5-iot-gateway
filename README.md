@@ -6,7 +6,7 @@
 
 [![release-hygiene](https://github.com/umair-as/rpi5-iot-gateway/actions/workflows/release-hygiene.yml/badge.svg?branch=main)](https://github.com/umair-as/rpi5-iot-gateway/actions/workflows/release-hygiene.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Yocto](https://img.shields.io/badge/Yocto-Scarthgap-orange.svg)](https://www.yoctoproject.org/)
+[![Yocto](https://img.shields.io/badge/Yocto-wrynose-orange.svg)](https://www.yoctoproject.org/)
 [![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%205-c51a4a.svg)](https://www.raspberrypi.com/products/raspberry-pi-5/)
 [![RAUC](https://img.shields.io/badge/OTA-RAUC-green.svg)](https://rauc.io/)
 
@@ -56,10 +56,20 @@ kas build kas/local.yml --target iot-gw-bundle-full
 ### Flash to SD Card
 
 ```bash
+# Full write (recommended, especially for previously used cards)
+zstdcat build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.zst \
+  | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+
+# Fast path: sparse-aware copy, then wipe the U-Boot env partition
 sudo bmaptool copy \
-  build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.bz2 \
+  build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.zst \
   /dev/sdX
+sudo dd if=/dev/zero of=/dev/sdX2 bs=1M conv=fsync
 ```
+
+`bmaptool` alone skips unmapped regions, so a reused card keeps its old U-Boot
+environment (stale boot state). Either write the full image or explicitly zero
+the `ubootenv` partition (p2) after the copy. See [Operations](docs/OPERATIONS.md).
 
 ### Default Accounts
 

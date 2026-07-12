@@ -56,19 +56,38 @@ bitbake -e virtual/kernel | rg "^IOTGW_KERNEL_FEATURES="
 
 ## 2) Flash Media
 
+Full write (recommended, especially for previously used cards):
+
+```bash
+zstdcat build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.zst \
+  | sudo dd of=/dev/sdX bs=4M conv=fsync status=progress
+```
+
+Fast path — sparse-aware copy, then wipe the U-Boot env partition:
+
 ```bash
 sudo bmaptool copy \
-  build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.bz2 \
+  build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.wic.zst \
   /dev/sdX
+sudo dd if=/dev/zero of=/dev/sdX2 bs=1M conv=fsync
 ```
+
+`bmaptool` writes only mapped blocks and skips the (empty-in-image) `ubootenv`
+partition, so a reused card keeps its previous U-Boot environment — including
+exhausted RAUC boot-attempt counters, which prevents first boot. Zeroing p2
+restores the built-in default environment on next boot.
 
 ## 3) Provision Network Before First Boot
 
-Provisioning input source is `/data/iotgw`:
+The image ships a working baseline via `iotgw-network-units`: `br0` bridge with
+`eth0` as port (DHCP) and `wlan0` Wi-Fi driven by `wpa_supplicant@wlan0` +
+systemd-resolved. Provisioning drop-ins under `/data/iotgw` are only needed to
+override it — Wi-Fi credentials, per-SSID static IPs (`[Match] SSID=`), extra
+interfaces:
 
-- `/data/iotgw/nm/*.nmconnection`
-- `/data/iotgw/nm-conf/*.conf`
-- `/data/iotgw/observability.env` (optional)
+- `/data/iotgw/network/*.network|*.netdev|*.link` — installed to `/etc/systemd/network/`, then `networkctl reload`
+- `/data/iotgw/wpa/wpa_supplicant-<iface>.conf` — installed to `/etc/wpa_supplicant/` (mode 0600), matching `wpa_supplicant@<iface>` restarted
+- `/data/iotgw/iotgw-observability.env` (optional)
 
 Default layout note: data partition is `mmcblk0p5` (`/dev/sdX5` on removable media).
 
@@ -76,20 +95,50 @@ Pre-boot media prep:
 
 ```bash
 sudo mount /dev/sdX5 /mnt
-sudo mkdir -p /mnt/iotgw/{nm,nm-conf}
-sudo cp HomeWiFi.nmconnection /mnt/iotgw/nm/
-sudo chmod 600 /mnt/iotgw/nm/HomeWiFi.nmconnection
+sudo mkdir -p /mnt/iotgw/{network,wpa}
+sudo cp wpa_supplicant-wlan0.conf /mnt/iotgw/wpa/
+sudo chmod 600 /mnt/iotgw/wpa/wpa_supplicant-wlan0.conf
+sudo cp 25-wlan0.network /mnt/iotgw/network/   # optional: override shipped wlan0 policy
 sudo umount /mnt
 ```
 
 Runtime network management:
 
 ```bash
-nmcli connection show
-nmcli device wifi list
-nmcli connection up <name>
-nmcli connection modify <name> ipv4.method auto
-nmtui
+networkctl status                 # per-link state, addresses
+networkctl reload                 # re-read /etc/systemd/network
+resolvectl status                 # DNS servers / resolved state
+wpa_cli -i wlan0 scan && wpa_cli -i wlan0 scan_results
+systemctl status systemd-networkd wpa_supplicant@wlan0
+```
+
+Wi-Fi control-plane checks:
+
+```bash
+wpa_cli -p /run/wpa_supplicant -i wlan0 ping
+wpa_cli -p /run/wpa_supplicant -i wlan0 status
+iw dev wlan0 link
+```
+
+Expected healthy output includes `PONG`, `wpa_state=COMPLETED`, the associated
+SSID, and the assigned `wlan0` address. If `iw dev wlan0 link` shows an
+association but `wpa_cli` times out, inspect the `wpa_supplicant@wlan0`
+hardening drop-in:
+
+```bash
+systemctl --no-pager cat wpa_supplicant@wlan0.service
+```
+
+The `wpa_supplicant@wlan0` profile must keep `PrivateTmp=false`.
+`wpa_cli` creates its reply socket under `/tmp`; a private `/tmp` lets
+`wpa_supplicant` receive commands through `/run/wpa_supplicant/wlan0` but
+prevents it from sending replies to the client. On serial console, the
+namespace view can be checked with:
+
+```bash
+pid=$(pidof wpa_supplicant)
+ls -l /proc/1/ns/mnt /proc/$$/ns/mnt /proc/$pid/ns/mnt
+nsenter -t "$pid" -m ls -ld /tmp
 ```
 
 ## 4) Dev SSH Keys (Dev Image Only)
@@ -297,6 +346,29 @@ ssh iotgw "mkdir -p /data/tmux && \
 ```
 
 This keeps long-running OTA/debug sessions stable across SSH reconnects.
+
+## 10) SSH Sessions And Mount Namespaces
+
+Interactive SSH sessions can run in a service-hardening mount namespace
+where `/etc` appears `ro`, while PID1 and system units see the `/etc`
+overlay as `rw`. Do **not** conclude overlayfs is broken from an
+SSH-only check.
+
+Verify both contexts before diagnosing `/etc` write failures:
+
+```bash
+# PID1 mount namespace (source of truth for system services)
+nsenter -t 1 -m findmnt /etc
+nsenter -t 1 -m grep " /etc " /proc/1/mountinfo
+
+# Current shell namespace (may differ over ssh)
+findmnt /etc
+grep " /etc " /proc/self/mountinfo
+```
+
+For provisioning/OTA debugging, prefer the serial console or the
+persistent target tmux session (Section 9) to minimize namespace
+confusion.
 
 ## Related
 

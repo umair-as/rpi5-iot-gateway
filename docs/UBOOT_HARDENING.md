@@ -154,13 +154,13 @@ U-Boot wiring.
 CONFIG_LEGACY_IMAGE_FORMAT=n
 ```
 
-In U-Boot 2025.04, `CONFIG_FIT_SIGNATURE` already disables legacy image
+In U-Boot 2026.01, `CONFIG_FIT_SIGNATURE` already disables legacy image
 format by default when signature verification is active. The explicit
 `LEGACY_IMAGE_FORMAT=n` reinforces this to prevent accidental
 re-enablement.
 
 Note: `CONFIG_FIT_SIGNATURE_ENFORCE` was removed upstream in U-Boot
-2025.04. The enforcement is now implicit with `FIT_SIGNATURE=y`.
+2025.04. The enforcement is implicit with `FIT_SIGNATURE=y`.
 
 ### Production lockdown (`appliance_lockdown`)
 

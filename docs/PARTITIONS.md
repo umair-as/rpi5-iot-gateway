@@ -9,7 +9,7 @@ The IoT Gateway OS uses an **A/B partition layout** for RAUC rootfs slot updates
 - Shared boot partition (kernel, DTBs, U-Boot)
 - Persistent data partition
 
-**WKS Files Location:** `meta-iot-gateway/wic/`
+**WKS Files Location:** `meta-iot-gateway/files/wic/`
 
 ---
 
@@ -178,8 +178,8 @@ On first boot, the `rauc-grow-data-partition` service automatically expands the 
 
 1. Copy an existing layout:
 ```bash
-cp meta-iot-gateway/wic/iot-gw-rauc-16g.wks.in \
-   meta-iot-gateway/wic/iot-gw-rauc-custom.wks.in
+cp meta-iot-gateway/files/wic/iot-gw-rauc-16g.wks.in \
+   meta-iot-gateway/files/wic/iot-gw-rauc-custom.wks.in
 ```
 
 2. Edit partition sizes:

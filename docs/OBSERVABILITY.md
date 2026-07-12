@@ -7,8 +7,8 @@ This layer ships two observability surfaces. The defaults reflect the
 
 | Surface | Scope | Default | Notes |
 |---------|-------|---------|-------|
-| `edge-healthd` | Local unit/mount health, journald-published telemetry | **enabled** in all image variants via `packagegroup-iot-gw-apps`'s `-monitoring` slice | Recipe at `meta-iot-gateway/recipes-support/edge-healthd/`. Monitored set is configured in `files/healthd.conf` (currently `sshd.socket`, `NetworkManager.service`, `mosquitto.service`, `systemd-journald.service`). |
-| **Telegraf + InfluxDB stack** (this document) | Host metrics, MQTT consumer, time-series storage, dashboard-ready | **opt-in**, not in any image variant | Recipes maintained against Scarthgap (`recipes-observability/telegraf/`, `recipes-observability/influxdb/`, `recipes-observability/influxdb3-bin/`). See [Reinstatement](#reinstatement) below. |
+| `edge-healthd` | Local unit/mount health, journald-published telemetry | **enabled** in all image variants via `packagegroup-iot-gw-apps`'s `-monitoring` slice | Recipe at `meta-iot-gateway/recipes-support/edge-healthd/`. Monitored set is configured in `files/healthd.conf` (currently `sshd.socket`, `systemd-networkd.service`, `mosquitto.service`, `systemd-journald.service`). |
+| **Telegraf + InfluxDB stack** (this document) | Host metrics, MQTT consumer, time-series storage, dashboard-ready | **opt-in**, not in any image variant | Recipes last validated on scarthgap (`recipes-observability/telegraf/`, `recipes-observability/influxdb/`, `recipes-observability/influxdb3-bin/`); revalidate on wrynose when reinstating. See [Reinstatement](#reinstatement) below. |
 
 `edge-healthd` covers the "is anything broken right now" question for the
 field. The Telegraf+InfluxDB stack is for richer telemetry — historical
