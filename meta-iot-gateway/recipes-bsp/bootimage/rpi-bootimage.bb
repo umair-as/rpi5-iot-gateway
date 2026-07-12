@@ -1,7 +1,12 @@
 SUMMARY = "Assemble Raspberry Pi boot partition into a VFAT image"
 DESCRIPTION = "Creates boot.vfat containing firmware, kernel, DTBs, U-Boot and boot.scr for use in RAUC boot slot."
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
+
+# rpi-bootfiles (meta-raspberrypi) is COMPATIBLE_MACHINE-gated to rpi;
+# match it so this recipe drops out of world on other machines.
+COMPATIBLE_MACHINE = "^rpi$"
 
 inherit deploy
 

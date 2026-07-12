@@ -1,5 +1,6 @@
 SUMMARY = "Persist systemd-pstore archives on /data for read-only rootfs deployments"
 DESCRIPTION = "Bind-mounts /data/crash/pstore onto /var/lib/systemd/pstore via a systemd .mount unit so kernel pstore records survive reboot, and prunes stale records by count and size."
+HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
