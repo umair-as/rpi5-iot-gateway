@@ -4,7 +4,8 @@ This project uses a lightweight release flow suited for personal infrastructure:
 
 - Cheap CI checks on GitHub Actions (no full Yocto build on hosted runners)
 - Deterministic local build from a tagged commit
-- Published release evidence (manifest + checksums)
+- Generated GitHub Release notes plus published release evidence
+  (manifest + checksums)
 
 ## 1. Release Branch and Scope
 
@@ -12,7 +13,7 @@ This project uses a lightweight release flow suited for personal infrastructure:
    `git checkout -b release-vX.Y.Z`
 2. Freeze scope to release-only changes:
    - version bump
-   - changelog
+   - release notes/doc updates
    - docs/runbook updates
    - critical release fixes only
 
@@ -24,9 +25,10 @@ Update:
   - `IOTGW_VERSION_MAJOR`
   - `IOTGW_VERSION_MINOR`
   - `IOTGW_VERSION_PATCH`
-- `CHANGELOG.md`
-  - cut `## [X.Y.Z] - YYYY-MM-DD` from `Unreleased`
-  - update bottom compare links
+
+`CHANGELOG.md` is historical/manual release evidence. It may carry a curated
+summary when useful, but GitHub Release notes are generated from git history and
+are not committed back to the branch by CI.
 
 ## 3. Tag First, Then Build
 
@@ -37,6 +39,17 @@ git checkout main
 git merge --ff-only release-vX.Y.Z
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin main vX.Y.Z
+```
+
+Pushing the tag triggers `.github/workflows/release-notes.yml`, which generates
+the GitHub Release body from `cliff.toml`. The parser is intentionally adapted
+to this repository's existing commit history; it does not impose a new
+commit-message format.
+
+Optional local preview before tagging, if `git-cliff` is installed:
+
+```bash
+GITHUB_REPO=umair-as/rpi5-iot-gateway git-cliff --config cliff.toml --unreleased --strip header --offline
 ```
 
 ## 4. Deterministic Local Build (Heavy Step)
@@ -102,9 +115,9 @@ Confirm:
 
 ## 7. Publish Release
 
-Attach to GitHub release:
+The tag workflow creates or updates the GitHub Release notes automatically.
+Attach release evidence to the GitHub Release:
 
-- `CHANGELOG.md` notes
 - `release/vX.Y.Z/manifest.txt`
 - `release/vX.Y.Z/checksums.sha256`
 - serial/log evidence links (if available)
@@ -118,7 +131,8 @@ The workflow intentionally runs only fast hygiene checks (no Yocto build):
 - `shellcheck -S warning` on all tracked `scripts/*.sh`
 - `yamllint` on tracked `kas/*.yml` and `.github/workflows/*.yml`
   (rules in `.yamllint`)
-- `CHANGELOG.md` has `[Unreleased]:` link and at least one
+- `cliff.toml` is present for generated release notes
+- historical `CHANGELOG.md` has `[Unreleased]:` link and at least one
   `## [X.Y.Z] - YYYY-MM-DD` section
 - `IOTGW_VERSION_{MAJOR,MINOR,PATCH}` variable form is present in
   `iotgw-common.inc`
