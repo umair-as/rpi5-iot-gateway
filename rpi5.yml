@@ -10,10 +10,10 @@ target:
 
 repos:
 
-  # Upstream Yocto layers — SHA-pinned to the wrynose (Yocto 6.0) baseline,
-  # matching the edge-ai-yocto sibling so shared native/cross/allarch sstate
-  # and all source downloads on /mnt/yocto-nvme are reused. Layers resolve via
-  # git alternates from KAS_REPO_REF_DIR (see Makefile); pins stay enforced.
+  # Upstream Yocto layers — SHA-pinned to the wrynose (Yocto 6.0) baseline so
+  # shared native/cross/allarch sstate and source downloads are reused. Layers
+  # resolve via git alternates from KAS_REPO_REF_DIR (see Makefile); pins stay
+  # enforced.
   bitbake:
     url: https://git.openembedded.org/bitbake
     # yocto-6.0 tag
@@ -52,7 +52,7 @@ repos:
   # meta-rust-bin dropped: wrynose OE-core ships rust/cargo 1.94.1 (the version
   # meta-rust-bin used to pin), and meta-rust-bin master lacks wrynose
   # LAYERSERIES_COMPAT. tpm-ops now inherits the OE-core `cargo` class instead
-  # of `cargo_bin`, matching the edge-ai-yocto sibling.
+  # of `cargo_bin`.
 
   # Project layer lives in this repo. No url/path: kas resolves it against the
   # repo containing this kas file, so layer paths under `layers:` are relative
@@ -128,7 +128,7 @@ local_conf_header:
   hashserve: |
     # Enable hash equivalence for better sstate reuse. Put the hashequiv DB in
     # the shared SSTATE location (not inside build/) so hash-equivalence — and
-    # therefore native/cross/allarch sstate — is reused across builds and with
-    # the edge-ai-yocto sibling on the same /mnt/yocto-nvme/SSTATE.
+    # therefore native/cross/allarch sstate — is reused across builds sharing
+    # the same SSTATE_DIR.
     BB_HASHSERVE = "auto"
     BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
