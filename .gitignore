@@ -41,12 +41,19 @@ kas/*-local.yml
 meta-iot-gateway/recipes-ota/rauc/files/dev-key.pem
 meta-iot-gateway/recipes-ota/bundles/files/dev-key.pem
 
-# Local assistant and scratch files
-AGENTS.md
-claude.md
-CLAUDE.md
+# === AI-agent guidance & scratch ===
+# AGENTS.md, CLAUDE.md, and .claude/{rules,skills,agents} are tracked public
+# agent guidance. Everything else under .claude/ stays ignored by default
+# (settings.local.json, worktrees/ runtime state, *.lock, anything dropped
+# there by habit). Session notes, handoffs, audits, and private working files
+# live in scratch/ — never commit. .agents/ holds legacy Codex-format skills
+# (unused, kept local).
+scratch/
+.claude/*
+!.claude/rules/
+!.claude/skills/
+!.claude/agents/
 .agents/
-.claude/
 .codex
 docs/kernel-config-reference/
 dev/
