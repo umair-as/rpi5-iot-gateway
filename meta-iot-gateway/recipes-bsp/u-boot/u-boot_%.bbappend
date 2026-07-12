@@ -1,7 +1,7 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# Base hardening: Kconfig-validated defconfig patch replaces the old iotgw-uboot.cfg
-# fragment. Produced via savedefconfig after merging iotgw-uboot.cfg on top of
+# Base hardening: a Kconfig-validated defconfig patch, produced via
+# savedefconfig after merging the iotgw-uboot.cfg fragment on top of
 # upstream rpi_arm64_defconfig — captures resolved Kconfig dependencies.
 SRC_URI:append = " file://0003-defconfig-iotgw-base.patch file://0004-configs-rpi_arm64_defconfig-increase-SYS_BOOTM_LEN-for-larger-fit-kernels.patch file://fw_env.config file://0001-rpi-env-minimize-boot-scanning-for-iot-gateway.patch file://0002-rpi-iotgw-appliance-fast-path-and-netboot-gate.patch"
 

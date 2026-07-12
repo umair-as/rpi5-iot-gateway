@@ -15,16 +15,19 @@ inherit kernel-fit-image
 COMPATIBLE_MACHINE = "raspberrypi5"
 
 # Single primary DTB in the FIT — device-tree overlays are applied by the RPi
-# firmware, not carried in the FIT. This makes the class emit exactly one
-# /configurations/conf-bcm2712-rpi-5-b.dtb node, which is the config name
-# boot.cmd selects. (The pre-wrynose custom-ITS dual-config primary/recovery
-# split is deferred; recovery kernel-2 was default-off.)
+# firmware, not carried in the FIT. The class emits exactly one
+# /configurations/conf-<dtb> node and FIT_CONF_DEFAULT_DTB pins it as the
+# FIT's signed `default` property. That property is the ONLY place the
+# config name lives: U-Boot boots the default config (bootm with no
+# explicit #conf), and the env var iotgw_fit_conf is an operator override
+# only. (A dual-config primary/recovery FIT split is tracked as separate
+# future work; this recipe intentionally emits the single config.)
 KERNEL_DEVICETREE = "broadcom/bcm2712-rpi-5-b.dtb"
 FIT_CONF_DEFAULT_DTB = "bcm2712-rpi-5-b.dtb"
 
 # UBOOT_LOADADDRESS / UBOOT_ENTRYPOINT are intentionally left to the
-# environment default (uboot-config.bbclass) so the FIT's kernel load/entry
-# match the pre-wrynose flow, which used the same values on this machine.
+# environment default (uboot-config.bbclass), which yields the load/entry
+# values the boot flow on this board is validated against.
 
 # File-key FIT signing: a config-level signature over the kernel + fdt images.
 # The control-DTB public key that verifies this FIT at boot is injected into
