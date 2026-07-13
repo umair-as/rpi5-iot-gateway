@@ -35,6 +35,9 @@ kas/*-local.yml
 *.secrets.yml
 .kas_shell_history
 
+# Host-local env overrides (real KAS_REPO_REF_DIR / cache paths)
+scripts/env.local.sh
+
 # RAUC signing keys (NEVER commit private keys!)
 **/*-key.pem
 **/dev-key.pem
