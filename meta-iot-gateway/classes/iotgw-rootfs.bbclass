@@ -88,9 +88,9 @@ ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_bluetooth_mode;"
 # may never complete if no PSK is configured) becomes routable — up to its
 # ~120s timeout. Masking it makes network-online.target a trivial sync point,
 # so those services start without waiting on the network (prior lean-boot
-# posture). This is the only intentional mask; systemd 259's preset-all emits a
-# benign "is masked" notice for it, filtered via IMAGE_LOG_CHECK_EXCLUDES in
-# iot-gw-image-base.inc.
+# posture). This is one of two intentional masks (see wpa_supplicant.service
+# below); systemd 259's preset-all emits a benign "is masked" notice for it,
+# filtered via IMAGE_LOG_CHECK_EXCLUDES in iot-gw-image-base.inc.
 # NOTE: do NOT mask systemd-networkd.service/.socket — those are required.
 iotgw_rootfs_mask_networkd_wait_online() {
     install -d ${IMAGE_ROOTFS}/etc/systemd/system
@@ -98,6 +98,22 @@ iotgw_rootfs_mask_networkd_wait_online() {
     rm -f ${IMAGE_ROOTFS}/etc/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_networkd_wait_online;"
+
+###### Mask the unconfined D-Bus-activatable wpa_supplicant.service singleton.
+# The active Wi-Fi path uses the hardened wpa_supplicant@wlan0.service
+# instance (drop-in from iotgw-hardening); the wpa-supplicant package still
+# ships the singleton wpa_supplicant.service (AUTO_ENABLE=disable, unmasked)
+# with its fi.w1.wpa_supplicant1 D-Bus activation file. Anything that bus-
+# activates it would run a network-facing daemon without the
+# NoNewPrivileges/Protect*/Restrict* confinement applied to the @wlan0
+# instance. Mask it so D-Bus activation cannot start it. This is the second
+# of two intentional masks in this class (see systemd-networkd-wait-online
+# above).
+iotgw_rootfs_mask_wpa_supplicant_singleton() {
+    install -d ${IMAGE_ROOTFS}/etc/systemd/system
+    ln -snf /dev/null ${IMAGE_ROOTFS}/etc/systemd/system/wpa_supplicant.service
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_wpa_supplicant_singleton;"
 
 ###### Optional vconsole setup masking (headless/serial-focused images)
 iotgw_rootfs_mask_vconsole_setup() {
