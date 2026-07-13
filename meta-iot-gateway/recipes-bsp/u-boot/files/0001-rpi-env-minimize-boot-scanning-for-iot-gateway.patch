@@ -22,6 +22,18 @@ mutable storage or an OTA hook could pin to a stale value. Both slots
 load the same FIT, so a stale pinned name fails bootm on every slot
 and exhausts all boot counters.
 
+iotgw_load_boot selects the FIT *file* by ${rauc_slot} (fitImage-a /
+fitImage-b), matching what the RAUC bundle post-install hook
+(bundle-hooks-fit.sh) writes per slot on the shared boot partition —
+this pairs each slot's kernel with that slot's rootfs kernel modules,
+so an OTA'd kernel is actually loaded on next boot instead of the
+stale factory fitImage. A plain fitImage fallback covers the
+fresh-flash window before the first OTA has written a per-slot file.
+iotgw_rauc_select runs first in bootcmd and always sets rauc_slot
+before iotgw_load_boot runs. A load failure of both the per-slot file
+and the fallback still burns the slot's attempt counter before
+resetting, preserving the existing no-infinite-retry guarantee.
+
 Upstream-Status: Inappropriate [product specific — appliance boot policy]
 Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
@@ -55,7 +67,7 @@ index 9ac9d6768ca..bef56777b96 100644
 +iotgw_try_b=if test -z "${rauc_slot}"; then if itest ${BOOT_B_LEFT} -gt 0; then setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1; setenv rauc_slot B; setenv rootpartnum 4; fi; fi
 +iotgw_rauc_select=test -n "${BOOT_ORDER}" || setenv BOOT_ORDER A B; test -n "${BOOT_A_LEFT}" || setenv BOOT_A_LEFT 3; test -n "${BOOT_B_LEFT}" || setenv BOOT_B_LEFT 3; setenv rauc_slot; for BOOT_SLOT in ${BOOT_ORDER}; do if test x${BOOT_SLOT} = xA; then run iotgw_try_a; else run iotgw_try_b; fi; done
 +iotgw_set_bootargs=if part uuid mmc 0:${rootpartnum} rootpartuuid; then fdt addr ${fdt_addr}; fdt get value bootargs /chosen bootargs; setenv bootargs ${bootargs} root=PARTUUID=${rootpartuuid} rootwait rauc.slot=${rauc_slot}; if test -n "${EXTRA_KERNEL_ARGS}"; then setenv bootargs ${bootargs} ${EXTRA_KERNEL_ARGS}; fi; else echo [RAUC] part uuid failed; reset; fi
-+iotgw_load_boot=if fatload mmc 0:1 ${iotgw_fit_addr_r} fitImage; then echo [IOTGW] FIT loaded; else echo [IOTGW] FIT load failed; reset; fi
++iotgw_load_boot=if test "x${rauc_slot}" = "xA"; then setenv _fit fitImage-a; elif test "x${rauc_slot}" = "xB"; then setenv _fit fitImage-b; else setenv _fit fitImage; fi; if fatload mmc 0:1 ${iotgw_fit_addr_r} ${_fit}; then echo [IOTGW] FIT ${_fit} loaded; elif fatload mmc 0:1 ${iotgw_fit_addr_r} fitImage; then echo [IOTGW] FIT fallback fitImage loaded; else echo [IOTGW] FIT load failed; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset; fi
 +iotgw_exec_fit=if test -n "${iotgw_fit_conf}"; then bootm ${iotgw_fit_addr_r}#${iotgw_fit_conf} - ${fdt_addr}; else bootm ${iotgw_fit_addr_r} - ${fdt_addr}; fi; echo [IOTGW] bootm returned for slot ${rauc_slot}: marking slot non-bootable; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset
 +iotgw_halt=echo [IOTGW][HALT] All RAUC slots exhausted (A_LEFT=${BOOT_A_LEFT} B_LEFT=${BOOT_B_LEFT}); echo [IOTGW][HALT] No bootable FIT image. Out-of-band recovery required (serial console or SD reflash); while itest 1 -eq 1; do sleep 60; echo [IOTGW][HALT] halted; done
 +bootcmd=run iotgw_rauc_select; if test -z "${rauc_slot}"; then run iotgw_halt; fi; run iotgw_set_bootargs; run iotgw_load_boot; saveenv; run iotgw_exec_fit
