@@ -2,20 +2,49 @@
 
 This guide covers FIT boot flow setup, manual key generation, and FIT signature verification for the IoT Gateway project.
 
-## Configure FIT Flow
-In `kas/local.yml`, ensure FIT flow is selected:
+## Policy: FIT-only, signed-or-fail
+
+FIT signed boot is the **only** supported flow — there is no non-FIT kernel and
+no `IOTGW_BOOT_FLOW` toggle. The distro (`iotgw-common.inc`) sets the FIT kernel
+provider and signing policy unconditionally, so every build (dev/base/prod/
+desktop) is FIT. The `iotgw-fit-signed-or-fail.bbclass` guard **hard-fails the
+build** unless an operator signing key is usable — "signed" means any one of:
+
+- **file key** — `${UBOOT_SIGN_KEYDIR}/${UBOOT_SIGN_KEYNAME}.crt` (the default
+  build-time signer; generate one below);
+- **YubiKey** — `${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt` with
+  `IOTGW_FIT_TRUST_YK_KEY = "1"`;
+- **SoftHSM (dev)** — `${IOTGW_FIT_SOFTHSM_KEYDIR}/${IOTGW_FIT_SOFTHSM_KEYNAME}.crt`
+  with `IOTGW_FIT_TRUST_SOFTHSM_KEY = "1"`.
+
+All key material is operator-generated and gitignored — nothing is shipped. A
+clean checkout with no key configured fails the build fast (at u-boot
+`do_configure`); metadata inspection (`make parse`, `bitbake -e`) still works.
+
+Set the required file key in `kas/local.yml` (bare assignments — the `:fitflow`
+override was removed):
 
 ```yaml
 local_conf_header:
-  kernel_mode_switch: |
-    IOTGW_BOOT_FLOW = "fit"
+  fit_signing: |
+    UBOOT_SIGN_KEYDIR  = "${IOTGW_RAUC_KEY_DIR}/fit"
+    UBOOT_SIGN_KEYNAME = "iotgw-fit-dev"
 ```
 
-Expected FIT setup (split-FIT model, already in this project):
-- `PREFERRED_PROVIDER_virtual/kernel:fitflow = "linux-iotgw-mainline-fit"` — builds the raw kernel `Image`.
-- `KERNEL_IMAGETYPE = "Image"` — the kernel recipe deploys the raw `Image`; it is **not** flipped to `fitImage`.
-- The signed `fitImage` is assembled and signed by the separate `linux-iotgw-fit` recipe (the old in-kernel `kernel-fitimage.bbclass` path was removed) and staged onto `/boot` via `IMAGE_BOOT_FILES:append:fitflow = " fitImage"`.
-- Boot is driven by the **compiled-in U-Boot environment** (`iotgw_load_boot` / `iotgw_exec_fit`), which loads the per-slot `fitImage-a` / `fitImage-b`. There is no `boot.scr` — `CONFIG_CMD_SOURCE` is disabled by the `surface_reduce` hardening, so a bootscript cannot be sourced.
+**Migrating an older `kas/local.yml`:** drop the `kernel_mode_switch` /
+`IOTGW_BOOT_FLOW` block and convert every `:fitflow`-qualified line to a bare
+assignment — the override no longer exists, so `:fitflow` lines are silently
+inert and the build hard-fails as if unconfigured.
+
+### Split-FIT model (already in this project)
+- `PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline-fit"` builds the raw
+  kernel `Image`; `KERNEL_IMAGETYPE = "Image"` (not flipped to `fitImage`).
+- The signed `fitImage` is assembled + signed by the separate `linux-iotgw-fit`
+  recipe (upstream `kernel-fit-image` class) and staged onto `/boot` via
+  `IMAGE_BOOT_FILES:append = " fitImage"`.
+- Boot is the compiled-in U-Boot env (`iotgw_load_boot` / `iotgw_exec_fit`)
+  loading per-slot `fitImage-a` / `fitImage-b`. No `boot.scr` (`CONFIG_CMD_SOURCE`
+  disabled by `surface_reduce` hardening).
 
 ### FIT config model
 
