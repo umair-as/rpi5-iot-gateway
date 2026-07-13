@@ -16,10 +16,23 @@ IOTGW_WIFI_IPV4_METHOD ?= "auto"
 
 # Multi-network syntax (preferred), one network per line:
 #   'ssid|psk|iface|ipv4method|priority|ipv4addr/prefix|gateway|dns1;dns2'
-# Only ssid|psk are required; iface/priority are honoured, the L3 fields are
-# applied via networkd (addressing lives in the .network unit, not here), so
-# for static wlan0 addressing set a matching drop-in. priority maps to the
-# wpa_supplicant network priority.
+# Only ssid|psk are required. Field 3 (iface) and the L3 fields are honoured
+# for the generated networkd '[Match] SSID=' unit only (emit_networkd_ssid);
+# addressing lives in the .network unit, not here, so for static wlan0
+# addressing set a matching drop-in. priority maps to the wpa_supplicant
+# network priority. NOTE: wpa_supplicant itself is NOT per-line-iface-aware —
+# every line's network{} block is written into a single
+# wpa_supplicant-${IOTGW_WIFI_IFACE}.conf and only one
+# wpa_supplicant@${IOTGW_WIFI_IFACE} instance is enabled (see emit_wpa_network
+# and do_install below), regardless of what field 3 says. A line whose iface
+# differs from IOTGW_WIFI_IFACE gets a networkd match unit for that iface but
+# its credentials land in the default iface's wpa_supplicant conf and no
+# wpa_supplicant@<that iface> instance is enabled. Multi-iface wpa_supplicant
+# (per-iface conf + enable symlink) is not yet supported: iotgw-hardening.bb's
+# service-hardening drop-in and rauc's managed-paths.d/network.conf are both
+# hardcoded to the wlan0 instance/conf today, so a genuinely per-iface
+# wpa_supplicant would also need those two recipes updated in lockstep to
+# avoid shipping an unhardened, RAUC-unmanaged Wi-Fi credential file.
 IOTGW_WIFI_NETWORKS   ?= ""
 
 # MAC randomization policy passed through to wpa_supplicant:
@@ -37,9 +50,20 @@ SRC_URI = " \
 
 S = "${UNPACKDIR}"
 
-# Wi-Fi credentials vary the output; keep them out of shared sstate signatures
-# the same way they would be for any secret-bearing generated file.
-do_install[vardepsexclude] += "IOTGW_WIFI_PSK IOTGW_WIFI_NETWORKS IOTGW_WIFI_SSID"
+# Wi-Fi credentials (IOTGW_WIFI_PSK/_NETWORKS/_SSID) are interpolated directly
+# into do_install to generate wpa_supplicant-${IOTGW_WIFI_IFACE}.conf, so they
+# MUST stay in the task's vardeps: excluding them (as this recipe previously
+# did via do_install[vardepsexclude]) drops the rebuild trigger, not just a
+# published hash — editing a credential in kas/local.yml would then leave
+# do_install's signature unchanged and sstate would replay stale creds onto
+# the image with no build warning. A secret's *hash* landing in the local
+# build's task signature is normal, expected BitBake behavior (the plaintext
+# itself is never published — only PACKAGE_ARCH ties this recipe's output to
+# MACHINE_ARCH so it is never shared across machines/sstate mirrors either).
+# If stronger hygiene is ever wanted, depend on a digest of the values via a
+# proper vardeps (e.g. a python anonymous function hashing the vars into a
+# dedicated IOTGW_WIFI_CREDS_HASH and listing that in vardeps) rather than
+# excluding the source variables outright.
 
 # allarch-safe content, but the generated wpa_supplicant conf is host-specific
 # secret material; tie to MACHINE_ARCH so it is never shared across machines.
