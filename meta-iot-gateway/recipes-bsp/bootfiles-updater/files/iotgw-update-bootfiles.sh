@@ -29,7 +29,7 @@ if ! mount -o remount,rw "$BOOT_MP"; then
 fi
 
 updated=0
-for f in boot.scr u-boot.bin splash.bmp; do
+for f in u-boot.bin splash.bmp; do
     if [ -f "$SRC_DIR/$f" ]; then
         # Only copy if different to reduce wear
         if ! cmp -s "$SRC_DIR/$f" "$BOOT_MP/$f" 2>/dev/null; then

@@ -7,7 +7,7 @@ require rpi-bootfiles-archive-common.inc
 COMPATIBLE_MACHINE = "^rpi$"
 
 IOTGW_BOOTFILES_ARCHIVE_NAME = "bootfiles-fit.tar.gz"
-IOTGW_BOOTFILES_STAGE_FILES = "boot.scr u-boot.bin config.txt cmdline.txt splash.bmp fitImage Image kernel_2712.img"
+IOTGW_BOOTFILES_STAGE_FILES = "u-boot.bin config.txt cmdline.txt splash.bmp fitImage Image kernel_2712.img"
 
 # Wrynose split-FIT model: fitImage is produced by the separate linux-iotgw-fit
 # recipe (not virtual/kernel). Order this archive after its deploy so the

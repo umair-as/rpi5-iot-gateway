@@ -1,5 +1,5 @@
 SUMMARY = "Assemble Raspberry Pi boot partition into a VFAT image"
-DESCRIPTION = "Creates boot.vfat containing firmware, kernel, DTBs, U-Boot and boot.scr for use in RAUC boot slot."
+DESCRIPTION = "Creates boot.vfat containing firmware, kernel, DTBs, and U-Boot for use in RAUC boot slot."
 HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
@@ -14,7 +14,6 @@ DEPENDS += " \
     rpi-bootfiles \
     virtual/kernel \
     u-boot \
-    rpi-u-boot-scr \
     dosfstools-native \
     mtools-native \
 "
@@ -41,12 +40,9 @@ do_deploy() {
         mcopy -v -i ${IMG} -s ${DEPLOY_DIR_IMAGE}/${BOOTFILES_DIR_NAME}/* ::/ || true
     fi
 
-    # Copy U-Boot binary and bootscript if available
+    # Copy U-Boot binary if available
     if [ -f ${DEPLOY_DIR_IMAGE}/u-boot.bin ]; then
         mcopy -v -i ${IMG} ${DEPLOY_DIR_IMAGE}/u-boot.bin ::/u-boot.bin || true
-    fi
-    if [ -f ${DEPLOY_DIR_IMAGE}/boot.scr ]; then
-        mcopy -v -i ${IMG} ${DEPLOY_DIR_IMAGE}/boot.scr ::/boot.scr || true
     fi
 
     # Copy kernel image if present

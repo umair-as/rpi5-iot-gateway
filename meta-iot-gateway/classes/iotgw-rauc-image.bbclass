@@ -14,9 +14,9 @@ WKS_FILE = "iot-gw-rauc-128g.wks.in"
 # A/B root-slot identity model (see the .wks.in files):
 #  - RAUC selects slots by PARTLABEL (/dev/disk/by-partlabel/rootA|rootB;
 #    set via the WKS `--label`), so slot identity does not depend on PARTUUID.
-#  - U-Boot reads the *live* PARTUUID from the GPT at boot (boot.cmd
-#    `part uuid ...`) for root=PARTUUID=, so the literal value is never
-#    referenced from metadata either.
+#  - U-Boot reads the *live* PARTUUID from the GPT at boot (the compiled-in
+#    env macro `iotgw_set_bootargs` runs `part uuid ...`) for root=PARTUUID=,
+#    so the literal value is never referenced from metadata either.
 # The rootA/rootB partitions therefore carry fixed, valid, deterministic
 # GPT PARTUUIDs purely to satisfy WIC (wrynose's `sfdisk --part-uuid` rejects
 # the non-UUID placeholder strings that earlier WIC releases tolerated).
@@ -25,12 +25,18 @@ WKS_FILE = "iot-gw-rauc-128g.wks.in"
 # Split-FIT WIC wiring (wrynose): under the FIT boot flow the fitImage is
 # assembled + signed by the separate linux-iotgw-fit recipe (not
 # virtual/kernel, which now yields a plain Image). So the WIC must:
-#  (a) stage the signed fitImage into the boot partition (boot.cmd loads it),
+#  (a) stage the signed fitImage into the boot partition (the compiled-in
+#      U-Boot env loads it),
 #  (b) order do_image_wic after that recipe's deploy so fitImage is present in
 #      DEPLOY_DIR_IMAGE before the bootimg-partition plugin copies it.
 # The plain Image stays in IMAGE_BOOT_FILES (harmless; mirrors the RAUC
 # bootfiles archive, which stages both).
 IMAGE_BOOT_FILES:append:fitflow = " fitImage"
+# Drop the upstream-staged boot.scr: the boot flow runs the compiled-in U-Boot
+# env (iotgw_load_boot/iotgw_exec_fit), and the surface_reduce hardening sets
+# CONFIG_CMD_SOURCE=n so a bootscript can never be sourced. Carrying boot.scr
+# onto /boot is dead weight and misleads readers about the boot path.
+IMAGE_BOOT_FILES:remove = "boot.scr"
 do_image_wic[depends] += "${@bb.utils.contains('IOTGW_BOOT_FLOW', 'fit', 'linux-iotgw-fit:do_deploy', '', d)}"
 
 # Keep stock /etc/fstab from base-files intact.
