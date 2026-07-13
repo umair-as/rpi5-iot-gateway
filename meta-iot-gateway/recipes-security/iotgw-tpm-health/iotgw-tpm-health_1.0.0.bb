@@ -12,6 +12,8 @@ SRC_URI = " \
 
 inherit systemd
 
+S = "${UNPACKDIR}"
+
 SYSTEMD_SERVICE:${PN} = "iotgw-tpm-health.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 

@@ -14,6 +14,8 @@ SRC_URI = " \
 
 inherit systemd
 
+S = "${UNPACKDIR}"
+
 # var-lib-systemd-pstore.mount is pulled in on demand by systemd-pstore.service
 # via the RequiresMountsFor= drop-in, so it does not need [Install] / preset.
 SYSTEMD_SERVICE:${PN} = "iotgw-pstore-prune.service"
