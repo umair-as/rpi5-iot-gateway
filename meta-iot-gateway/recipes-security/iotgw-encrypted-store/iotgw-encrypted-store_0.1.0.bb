@@ -14,6 +14,8 @@ SRC_URI = " \
 
 inherit systemd
 
+S = "${UNPACKDIR}"
+
 SYSTEMD_SERVICE:${PN} = "iotgw-encrypted-store-setup.service data-encstore.mount"
 # Enable at image build time so boot graph sees units on read-only rootfs setups
 # with /etc overlay, where runtime `systemctl enable` can be non-deterministic.

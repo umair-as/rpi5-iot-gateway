@@ -11,6 +11,8 @@ SRC_URI = " \
 
 inherit systemd
 
+S = "${UNPACKDIR}"
+
 SYSTEMD_SERVICE:${PN} = "iotgw-bootstage.service"
 SYSTEMD_AUTO_ENABLE = "enable"
 
