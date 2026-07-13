@@ -131,11 +131,33 @@ else
     setenv iotgw_kernel_load_addr ${kernel_addr_r}
 fi
 
-# Load kernel and boot
-if fatload @@BOOT_MEDIA@@ 0:1 ${iotgw_kernel_load_addr} @@KERNEL_IMAGETYPE@@; then
-    echo "[RAUC] Loaded @@KERNEL_IMAGETYPE@@"
+# Load kernel and boot. For FIT images, select the per-slot file
+# (fitImage-a / fitImage-b) that the RAUC bundle post-install hook
+# (bundle-hooks-fit.sh) writes on the shared boot partition, so the
+# kernel loaded matches the rootfs slot's kernel modules. Fall back to
+# the plain @@KERNEL_IMAGETYPE@@ for the fresh-flash window before the
+# first OTA has written a per-slot file. Non-FIT images have no
+# per-slot variant and load @@KERNEL_IMAGETYPE@@ directly.
+if test "x@@KERNEL_IMAGETYPE@@" = "xfitImage"; then
+    if test "x${rauc_slot}" = "xA"; then
+        setenv iotgw_kernel_image "@@KERNEL_IMAGETYPE@@-a"
+    elif test "x${rauc_slot}" = "xB"; then
+        setenv iotgw_kernel_image "@@KERNEL_IMAGETYPE@@-b"
+    else
+        setenv iotgw_kernel_image "@@KERNEL_IMAGETYPE@@"
+    fi
 else
-    echo "[RAUC] Failed to load @@KERNEL_IMAGETYPE@@ from /boot"
+    setenv iotgw_kernel_image "@@KERNEL_IMAGETYPE@@"
+fi
+
+if fatload @@BOOT_MEDIA@@ 0:1 ${iotgw_kernel_load_addr} ${iotgw_kernel_image}; then
+    echo "[RAUC] Loaded ${iotgw_kernel_image}"
+elif fatload @@BOOT_MEDIA@@ 0:1 ${iotgw_kernel_load_addr} @@KERNEL_IMAGETYPE@@; then
+    echo "[RAUC] Loaded fallback @@KERNEL_IMAGETYPE@@"
+else
+    echo "[RAUC] Failed to load ${iotgw_kernel_image} or @@KERNEL_IMAGETYPE@@ from /boot"
+    setenv BOOT_${rauc_slot}_LEFT 0
+    saveenv
     reset
 fi
 if test ! -e @@BOOT_MEDIA@@ 0:2 uboot.env; then saveenv; fi;
