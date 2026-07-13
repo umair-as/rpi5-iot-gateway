@@ -31,7 +31,7 @@ SRC_URI:append = "${@' file://0005-rpi-iotgw-prod-env-flags-list-static.patch' \
 # Signed-or-fail (all images): fail the build early unless an operator signing
 # key is usable. Prod key guard (prod-intent only): fail unless the release DTB
 # trusts ONLY the YubiKey root.
-inherit iotgw-fit-signed-or-fail
+inherit iotgw-fit-signing-guard
 inherit iotgw-uboot-prod-key-guard
 
 # ── Boot delay override ──────────────────────────────────────────────────────

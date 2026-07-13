@@ -84,7 +84,7 @@ FIT_HASH_ALG = "sha256"
 FIT_SIGN_ALG = "rsa2048"
 FIT_GENERATE_KEYS = "0"
 
-# Signing is REQUIRED. Default ON; iotgw-fit-signed-or-fail.bbclass hard-fails
+# Signing is REQUIRED. Default ON; iotgw-fit-signing-guard.bbclass hard-fails
 # the build if this is off or no operator signing key is usable.
 IOTGW_FIT_SIGNING ?= "1"
 UBOOT_SIGN_ENABLE = "${@bb.utils.contains('IOTGW_FIT_SIGNING','1','1','0',d)}"
