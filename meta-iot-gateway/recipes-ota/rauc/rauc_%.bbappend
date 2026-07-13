@@ -4,7 +4,11 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 # environment at runtime.
 RDEPENDS:${PN} += "u-boot-fw-utils u-boot-env"
 
-PACKAGES += "rauc-grow-data-part"
+# Prepend (=+) so this subpackage is walked before ${PN}: otherwise the default
+# FILES:${PN} ("${sbindir}/*") claims grow-data-partition.sh before
+# FILES:rauc-grow-data-part:append can, misfiling the script into the main
+# package. meta-rauc uses =+ for its own subpackages for the same reason.
+PACKAGES =+ "rauc-grow-data-part"
 SYSTEMD_PACKAGES += "${PN}-grow-data-part"
 SYSTEMD_SERVICE:${PN}-grow-data-part = "rauc-grow-data-partition.service"
 RDEPENDS:${PN}-grow-data-part = "parted"
