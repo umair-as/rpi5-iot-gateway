@@ -345,7 +345,7 @@ if command -v fw_setenv >/dev/null 2>&1; then
   fi
   # The FIT config is selected by the FIT's own signed `default` property
   # (U-Boot boots with no explicit #conf); iotgw_fit_conf is an operator
-  # override only (e.g. a future conf-recovery). DELETE any value a
+  # override only (none is currently defined). DELETE any value a
   # previous build or hook persisted — both slots load the same FIT, so a
   # stale pinned name fails bootm on every slot and exhausts all boot
   # counters. Clearing here self-heals devices that installed a bundle
