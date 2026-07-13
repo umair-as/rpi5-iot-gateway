@@ -100,7 +100,7 @@ local_conf_header:
   fit_signing: |
     # === FIT signing (REQUIRED) — the build FAILS without a usable key ===
     # FIT signed boot is the ONLY supported flow (enforced by
-    # iotgw-fit-signed-or-fail.bbclass; there is no unsigned build). Point these
+    # iotgw-fit-signing-guard.bbclass; there is no unsigned build). Point these
     # at YOUR operator-generated, gitignored file key (never committed).
     # Generate one per docs/FIT_BOOT_SIGNING.md ("Generate a dev signing key").
     UBOOT_SIGN_KEYDIR  = "${IOTGW_RAUC_KEY_DIR}/fit"

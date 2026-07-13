@@ -25,7 +25,7 @@ make layers              # bitbake-layers show-layers
 make clean-lock          # remove stale build/bitbake.lock
 ```
 
-`make help` is the source of truth for the full catalogue (prod/desktop bundles, HSM re-signing, signing-tool tests, uv venv). FIT/HSM signing is **operator-driven** (YubiKey PIN+touch, or SoftHSM for YK-less devs) — profiles, tooling (`scripts/sign_fit.py`), and the resign flow are documented in `docs/FIT_BOOT_SIGNING.md`; do not run HSM signing targets unattended. **FIT signed boot is the only flow and is mandatory:** the distro selects the FIT kernel unconditionally and image builds hard-fail (at u-boot `do_configure`, via `iotgw-fit-signed-or-fail.bbclass`) unless an operator signing key is configured in `kas/local.yml` (file-key, YubiKey, or SoftHSM). Metadata inspection (`make parse`, `bitbake -e`) is not blocked.
+`make help` is the source of truth for the full catalogue (prod/desktop bundles, HSM re-signing, signing-tool tests, uv venv). FIT/HSM signing is **operator-driven** (YubiKey PIN+touch, or SoftHSM for YK-less devs) — profiles, tooling (`scripts/sign_fit.py`), and the resign flow are documented in `docs/FIT_BOOT_SIGNING.md`; do not run HSM signing targets unattended. **FIT signed boot is the only flow and is mandatory:** the distro selects the FIT kernel unconditionally and image builds hard-fail (at u-boot `do_configure`, via `iotgw-fit-signing-guard.bbclass`) unless an operator signing key is configured in `kas/local.yml` (file-key, YubiKey, or SoftHSM). Metadata inspection (`make parse`, `bitbake -e`) is not blocked.
 
 Feature toggles (env vars; default off unless an overlay sets them):
 

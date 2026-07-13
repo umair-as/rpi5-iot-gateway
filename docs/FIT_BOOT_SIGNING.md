@@ -7,7 +7,7 @@ This guide covers FIT boot flow setup, manual key generation, and FIT signature 
 FIT signed boot is the **only** supported flow — there is no non-FIT kernel and
 no `IOTGW_BOOT_FLOW` toggle. The distro (`iotgw-common.inc`) sets the FIT kernel
 provider and signing policy unconditionally, so every build (dev/base/prod/
-desktop) is FIT. The `iotgw-fit-signed-or-fail.bbclass` guard **hard-fails the
+desktop) is FIT. The `iotgw-fit-signing-guard.bbclass` guard **hard-fails the
 build** unless an operator signing key is usable — "signed" means any one of:
 
 - **file key** — `${UBOOT_SIGN_KEYDIR}/${UBOOT_SIGN_KEYNAME}.crt` (the default

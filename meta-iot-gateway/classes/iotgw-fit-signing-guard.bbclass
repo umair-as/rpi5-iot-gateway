@@ -1,4 +1,4 @@
-# ── FIT signed-or-fail guard ─────────────────────────────────────────────────
+# ── FIT signing guard (signed-or-fail policy) ────────────────────────────────
 # Hard-fails the build when FIT signing is off, or when no operator signing key
 # is usable (which would otherwise yield an unsigned FIT that the hardened
 # U-Boot, CONFIG_FIT_SIGNATURE=y, cannot boot anyway). "Signed" = ANY ONE of
@@ -11,7 +11,7 @@
 # WITHOUT blocking `bitbake -e` / `make parse` / `make layers` for keyless
 # metadata inspection. Inherited via u-boot_%.bbappend.
 
-python do_iotgw_fit_signed_or_fail() {
+python do_iotgw_fit_signing_guard() {
     import os
 
     signing = (d.getVar('IOTGW_FIT_SIGNING') or '0').strip()
@@ -66,7 +66,7 @@ python do_iotgw_fit_signed_or_fail() {
             )
         )
 
-    bb.debug(1, 'iotgw-fit-signed-or-fail: usable signing key present, passes.')
+    bb.debug(1, 'iotgw-fit-signing-guard: usable signing key present, passes.')
 }
 
-addtask iotgw_fit_signed_or_fail before do_configure after do_patch
+addtask iotgw_fit_signing_guard before do_configure after do_patch
