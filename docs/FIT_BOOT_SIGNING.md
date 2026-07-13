@@ -11,11 +11,11 @@ local_conf_header:
     IOTGW_BOOT_FLOW = "fit"
 ```
 
-Expected FIT overrides (already in this project):
-- `PREFERRED_PROVIDER_virtual/kernel:fitflow = "linux-iotgw-mainline-fit"`
-- `KERNEL_IMAGETYPE:fitflow = "fitImage"`
-- `KERNEL_CLASSES:fitflow = " kernel-fitimage "`
-- `KERNEL_BOOTCMD:fitflow = "bootm"`
+Expected FIT setup (split-FIT model, already in this project):
+- `PREFERRED_PROVIDER_virtual/kernel:fitflow = "linux-iotgw-mainline-fit"` — builds the raw kernel `Image`.
+- `KERNEL_IMAGETYPE = "Image"` — the kernel recipe deploys the raw `Image`; it is **not** flipped to `fitImage`.
+- The signed `fitImage` is assembled and signed by the separate `linux-iotgw-fit` recipe (the old in-kernel `kernel-fitimage.bbclass` path was removed) and staged onto `/boot` via `IMAGE_BOOT_FILES:append:fitflow = " fitImage"`.
+- Boot is driven by the **compiled-in U-Boot environment** (`iotgw_load_boot` / `iotgw_exec_fit`), which loads the per-slot `fitImage-a` / `fitImage-b`. There is no `boot.scr` — `CONFIG_CMD_SOURCE` is disabled by the `surface_reduce` hardening, so a bootscript cannot be sourced.
 
 ### Optional: Enable Project-Owned Custom ITS
 Default behavior remains Yocto auto-generated ITS. To opt in to project-owned
@@ -192,7 +192,7 @@ Verify FIT bundle payload uses FIT bootfiles:
 tmpd=$(mktemp -d)
 7z x -y -o"$tmpd" build/tmp-glibc/deploy/images/raspberrypi5/iot-gw-image-dev-bundle-full-fit.raucb >/dev/null
 sed -n '1,200p' "$tmpd/manifest.raucm"
-tar -tzf "$tmpd/bootfiles-fit.tar.gz" | grep -E 'boot.scr|fitImage'
+tar -tzf "$tmpd/bootfiles-fit.tar.gz" | grep -E 'fitImage|u-boot.bin'
 rm -rf "$tmpd"
 ```
 
@@ -204,19 +204,19 @@ iotgw-rauc-install <url>/iot-gw-image-dev-bundle-full-fit.raucb
 reboot
 ```
 
-Validate boot mode:
+Validate boot mode. The boot flow is the compiled-in U-Boot environment (there
+is no `boot.scr`), so inspect `u-boot.bin` and the per-slot FIT files:
 
 ```bash
-strings /boot/boot.scr | grep -E "Image:|fatload|bootm|booti"
-ls -l /boot/fitImage /boot/Image
+strings /boot/u-boot.bin | grep -E "iotgw_load_boot|iotgw_exec_fit"
+ls -l /boot/fitImage /boot/fitImage-a /boot/fitImage-b
 rauc status
 ```
 
 Expected:
-- `Image: fitImage`
-- `fatload ... fitImage`
-- `bootm ...`
-- `/boot/fitImage` exists
+- `iotgw_load_boot=...` selects the per-slot file (`fitImage-a` / `fitImage-b`) by `${rauc_slot}`, with a plain `fitImage` fallback.
+- `iotgw_exec_fit=... bootm ...` boots the FIT's signed default config.
+- `/boot/fitImage` (factory) exists; `fitImage-a` / `fitImage-b` appear once each slot has been OTA-updated.
 
 Check U-Boot log for verification path:
 - FIT configuration selected
