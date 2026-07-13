@@ -163,8 +163,8 @@ Valid `Upstream-Status:` values: `Backport`, `Pending`, `Inappropriate`,
 
 ## 6. Wire it into the recipe
 
-For this layer, all three kernel variants (mainline, mainline-fit,
-mainline-recovery) share `linux-iotgw-mainline-common.inc`. Add the
+For this layer, both kernel variants (mainline, mainline-fit) share
+`linux-iotgw-mainline-common.inc`. Add the
 patch there once:
 
 ```bitbake
