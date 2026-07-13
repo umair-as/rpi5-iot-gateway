@@ -15,7 +15,7 @@ no-slot-bootable terminal state.
 
 The FIT configuration is selected by the FIT's own signed `default`
 property (bootm without an explicit #conf). iotgw_fit_conf is an
-optional operator override (e.g. a future conf-recovery) and is
+optional operator override (none is currently defined) and is
 intentionally absent from the default environment: keeping the config
 name out of the environment removes a boot-critical parameter that
 mutable storage or an OTA hook could pin to a stale value. Both slots

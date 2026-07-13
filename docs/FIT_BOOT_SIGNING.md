@@ -17,67 +17,15 @@ Expected FIT setup (split-FIT model, already in this project):
 - The signed `fitImage` is assembled and signed by the separate `linux-iotgw-fit` recipe (the old in-kernel `kernel-fitimage.bbclass` path was removed) and staged onto `/boot` via `IMAGE_BOOT_FILES:append:fitflow = " fitImage"`.
 - Boot is driven by the **compiled-in U-Boot environment** (`iotgw_load_boot` / `iotgw_exec_fit`), which loads the per-slot `fitImage-a` / `fitImage-b`. There is no `boot.scr` — `CONFIG_CMD_SOURCE` is disabled by the `surface_reduce` hardening, so a bootscript cannot be sourced.
 
-### Optional: Enable Project-Owned Custom ITS
-Default behavior remains Yocto auto-generated ITS. To opt in to project-owned
-custom ITS mode:
+### FIT config model
 
-```yaml
-local_conf_header:
-  fit_custom_its: |
-    IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
-```
-
-Notes:
-- Default is `0` (OFF).
-- Template path:
-  `meta-iot-gateway/recipes-kernel/linux/files/iotgw-fit-single.its.in`
-- Current template targets `broadcom/bcm2712-rpi-5-b.dtb` by default.
-- Current template supports multi-config layout:
-  - kernels: `kernel-1`, `kernel-2`
-  - configs: `conf-primary` (primary), `conf-recovery` (secondary)
-
-Optional custom ITS selection overrides:
-
-```yaml
-local_conf_header:
-  fit_custom_its: |
-    IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
-    IOTGW_FIT_CUSTOM_ITS_DEFAULT_CONF:fitflow = "conf-primary"
-    # Default kernel-2 mode: auto-generate from local build artifacts.
-    IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG:fitflow = "gzip"
-    IOTGW_FIT_CUSTOM_ITS_REQUIRE_DISTINCT_KERNELS:fitflow = "1"
-    # Optional recovery-kernel mode: provide an independent kernel-2 payload.
-    # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH:fitflow = "/abs/path/to/linux-alt.bin"
-    # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG:fitflow = "gzip"  # none|gzip|lzo
-```
-
-Notes:
-- `IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG` applies only to auto-generated
-  kernel-2 payloads.
-- `IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG` applies when
-  `IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH` is set.
-
-Concrete wiring for independent recovery-kernel mode:
-
-```yaml
-local_conf_header:
-  fit_custom_its: |
-    IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
-    IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL:fitflow = "1"
-    IOTGW_FIT_RECOVERY_KERNEL_RECIPE:fitflow = "linux-iotgw-mainline-recovery"
-    IOTGW_FIT_RECOVERY_KERNEL_PATH:fitflow = "${DEPLOY_DIR_IMAGE}/linux-recovery.bin"
-    IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG:fitflow = "gzip"
-```
-
-When enabled:
-- Recovery kernel artifact for FIT `kernel-2`: `linux-recovery.bin`
-- `IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG` controls how recovery payload
-  is staged in FIT (`none|gzip|lzo`). Recommended default: `gzip`.
-
-Important compatibility note:
-- If recovery boots the normal rootfs, keep recovery and primary kernel configs
-  module-ABI compatible (same effective module ABI options), otherwise modules
-  fail to load with `Exec format error` / `this_module` size mismatch.
+The FIT carries a single signed `default` configuration (`FIT_CONF_DEFAULT_DTB`),
+assembled by the upstream `kernel-fit-image` class (`linux-iotgw-fit`). U-Boot boots
+that default with a bare `bootm` (no `#conf`); `iotgw_fit_conf` is an operator
+override only, cleared by the OTA hook on every install. If multiple board configs
+are ever needed, use the upstream class's `FIT_CONF_MAPPINGS`. The former
+project-owned custom-ITS / Strategy-A multi-kernel path (`iotgw-fit-custom-its`)
+was removed as dead scarthgap-era code.
 
 ## Generate FIT Signing Keys (Manual)
 Use a dedicated keypair (do not reuse RAUC or mTLS keys):
@@ -150,40 +98,16 @@ Expected:
 - hash nodes present (sha256)
 - signature-related fields present when signing is enabled
 
-If custom ITS mode is enabled, also inspect deployed ITS source:
 
-```bash
-ls build/tmp-glibc/deploy/images/raspberrypi5/fitImage-its-*.its
-grep -nE 'kernel-1|kernel-2|configurations|default =|conf-primary|conf-recovery' \
-  build/tmp-glibc/deploy/images/raspberrypi5/fitImage-its-*.its
-```
-
-Confirm kernel variants are distinct:
-
-```bash
-dumpimage -l build/tmp-glibc/deploy/images/raspberrypi5/fitImage | \
-  grep -E 'Image [0-9] \(kernel-|Compression:|Hash value:'
-```
-
-Expected:
-- Recovery-kernel mode enabled (`IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL = "1"`):
-  - `kernel-1`: primary kernel payload
-  - `kernel-2`: recovery payload from `linux-recovery.bin`
-- Recovery-kernel mode disabled:
-  - `kernel-2` is auto-generated according to
-    `IOTGW_FIT_CUSTOM_ITS_KERNEL2_COMP_ALG`
-
-Runtime config selection: by default `iotgw_fit_conf` is **unset** and
-U-Boot boots the FIT's own signed `default` configuration (`bootm` with
-no explicit `#conf`) — the config name is not duplicated anywhere in the
-environment or OTA hooks. Setting the variable is an operator override
-for non-default configs. The OTA bundle hook clears the variable on
-every install, so an override does not survive an update:
+Runtime config selection: the FIT carries only its single signed `default`
+configuration, so `iotgw_fit_conf` must stay **unset** — U-Boot boots the
+default with a bare `bootm` (no `#conf`). There is no alternate config to
+select; setting `iotgw_fit_conf` to any name would fail `bootm` and burn the
+slot's boot attempts. The OTA bundle hook clears the variable on every install
+so a stale value cannot persist:
 
 ```bash
 fw_printenv iotgw_fit_conf          # expect: not defined
-fw_setenv iotgw_fit_conf conf-recovery
-reboot
 ```
 
 Verify FIT bundle payload uses FIT bootfiles:
@@ -222,19 +146,6 @@ Check U-Boot log for verification path:
 - FIT configuration selected
 - hash verification success lines
 - no `Bad Data Hash` / `Unsupported hash algorithm`
-
-Quick functional checks after booting `conf-recovery`:
-
-```bash
-lsmod | head
-ip -4 a
-dmesg | grep -E "this_module|Exec format error|Bad Data Hash|Unsupported hash algorithm"
-```
-
-Expected:
-- modules load normally (`lsmod` non-empty)
-- recovery network interfaces are present
-- no module ABI mismatch errors
 
 ## Negative Test (Tamper Protection)
 Goal: confirm tampered FIT does not boot.
@@ -736,9 +647,9 @@ post-build wrapper use:
 2. **`-k <bare-keydir-path>` is malformed.** When `keydir` does not
    contain `object=`, mkimage synthesises
    `pkcs11:<keydir>;object=<hint>;type=private` — a non-RFC-7512 URI
-   that `engine_pkcs11` rejects. Both upstream `kernel-fitimage.bbclass`
-   and this project's `iotgw-fit-custom-its.bbclass` hardcode `-k`
-   with a filesystem path, hitting this case.
+   that `engine_pkcs11` rejects. The upstream `kernel-fit-image.bbclass`
+   FIT signing (`FIT_KERNEL_SIGN_KEYDIR`) uses a bare filesystem keydir,
+   hitting this case.
 3. **`-k <URI-containing-object=>` is the only working form.** mkimage
    takes the `keydir` verbatim and appends `;type=private`, producing
    a clean RFC-7512 URI. `scripts/sign-fit.sh` uses this form with the

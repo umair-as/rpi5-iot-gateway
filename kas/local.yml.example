@@ -163,17 +163,6 @@ local_conf_header:
     # IOTGW_FIT_SOFTHSM_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/softhsm/fit"
     # IOTGW_FIT_SOFTHSM_KEYNAME:fitflow = "iotgw-fit-softhsm-dev"
 
-  fit_custom_its_strategy_a: |
-    # Optional: Strategy A for FIT recovery kernel.
-    # Uses an independent kernel payload for kernel-2/conf-recovery.
-    # Keep this disabled unless the artifact path is valid on your host.
-    # IOTGW_FIT_CUSTOM_ITS:fitflow = "1"
-    # IOTGW_FIT_STRATEGY_A_RECOVERY_KERNEL:fitflow = "1"
-    # IOTGW_FIT_RECOVERY_KERNEL_RECIPE:fitflow = "linux-iotgw-mainline-recovery"
-    # IOTGW_FIT_RECOVERY_KERNEL_PATH:fitflow = "${DEPLOY_DIR_IMAGE}/linux-recovery.bin"
-    # Compression of the payload above: none|gzip|lzo
-    # IOTGW_FIT_CUSTOM_ITS_KERNEL2_PATH_COMP_ALG:fitflow = "none"
-
   buildhistory_downgrade_notes: |
     # Developer note: for intentional downgrade/maintenance tests (for example
     # switching kernel line 6.18 -> 6.12), package-history QA can trigger:
