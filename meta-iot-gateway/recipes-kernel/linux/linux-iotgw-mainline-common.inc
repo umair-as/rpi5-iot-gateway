@@ -14,8 +14,8 @@ LINUX_VERSION_EXTENSION = ""
 PV = "${LINUX_VERSION}+git${SRCPV}"
 
 # Pinned revisions for reproducible CI/release builds. Kept in the shared
-# .inc so the three providers (mainline, mainline-fit, mainline-recovery)
-# cannot drift apart. SRCREV_machine tracks the tip of linux-6.18.y at
+# .inc so the two providers (mainline, mainline-fit) cannot drift apart.
+# SRCREV_machine tracks the tip of linux-6.18.y at
 # the time of the bump.
 SRCREV_machine = "d31a849ff5011dad5c271b53819a0b279e367d68"
 SRCREV_meta = "307ef96123620278563ff5b1c9fb8b7b4da26970"
