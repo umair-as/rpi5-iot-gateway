@@ -6,9 +6,9 @@ This document describes the kernel configuration system and available feature se
 
 The distribution uses **modular kernel configuration** based on feature fragments.
 
-**Default kernel provider:** `linux-iotgw-mainline` (Linux 6.18 series)
-
-**FIT flow provider:** `linux-iotgw-mainline-fit` (Linux 6.18 series)
+**Kernel provider:** `linux-iotgw-mainline-fit` (Linux 6.18 series) — the only
+provider. FIT signed boot is mandatory (see `docs/FIT_BOOT_SIGNING.md`); there is
+no non-FIT / `linux-raspberrypi` option.
 
 **Always Enabled:**
 - `branding.cfg` — Kernel version suffix (`-v8-16k-igw`)

@@ -31,13 +31,14 @@ WKS_FILE = "iot-gw-rauc-128g.wks.in"
 #      DEPLOY_DIR_IMAGE before the bootimg-partition plugin copies it.
 # The plain Image stays in IMAGE_BOOT_FILES (harmless; mirrors the RAUC
 # bootfiles archive, which stages both).
-IMAGE_BOOT_FILES:append:fitflow = " fitImage"
+IMAGE_BOOT_FILES:append = " fitImage"
 # Drop the upstream-staged boot.scr: the boot flow runs the compiled-in U-Boot
 # env (iotgw_load_boot/iotgw_exec_fit), and the surface_reduce hardening sets
 # CONFIG_CMD_SOURCE=n so a bootscript can never be sourced. Carrying boot.scr
 # onto /boot is dead weight and misleads readers about the boot path.
 IMAGE_BOOT_FILES:remove = "boot.scr"
-do_image_wic[depends] += "${@bb.utils.contains('IOTGW_BOOT_FLOW', 'fit', 'linux-iotgw-fit:do_deploy', '', d)}"
+# FIT is the only boot flow; linux-iotgw-fit always assembles the signed fitImage.
+do_image_wic[depends] += " linux-iotgw-fit:do_deploy"
 
 # Keep stock /etc/fstab from base-files intact.
 # WIC's imager-level fstab update appends mount lines globally and can create

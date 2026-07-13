@@ -4,7 +4,8 @@ How to backport a driver from a downstream kernel (e.g. RPi rpi-6.12.y) into a
 mainline kernel carried in a Yocto layer, without devtool.
 
 **Example used:** RPi VCIO mailbox char driver (`/dev/vcio`) from
-`github.com/raspberrypi/linux` into mainline 6.18 carried by `linux-iotgw-mainline`.
+`github.com/raspberrypi/linux` into mainline 6.18 carried by
+`linux-iotgw-mainline-fit` (via the shared `linux-iotgw-mainline-common.inc`).
 
 ---
 

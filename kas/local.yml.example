@@ -97,6 +97,15 @@ local_conf_header:
     # Keep this aligned with simple-ota-server CA used to sign server/device certs.
     RAUC_OTA_CA_DIR = "${IOTGW_RAUC_KEY_DIR}/ota-dev-ca"
 
+  fit_signing: |
+    # === FIT signing (REQUIRED) — the build FAILS without a usable key ===
+    # FIT signed boot is the ONLY supported flow (enforced by
+    # iotgw-fit-signed-or-fail.bbclass; there is no unsigned build). Point these
+    # at YOUR operator-generated, gitignored file key (never committed).
+    # Generate one per docs/FIT_BOOT_SIGNING.md ("Generate a dev signing key").
+    UBOOT_SIGN_KEYDIR  = "${IOTGW_RAUC_KEY_DIR}/fit"
+    UBOOT_SIGN_KEYNAME = "iotgw-fit-dev"
+
   fit_dtb_yk_pubkey_trust: |
     # Optional: U-Boot control-FDT trust rotation for FIT signing keys.
     #
@@ -130,10 +139,10 @@ local_conf_header:
     # `ykman piv certificates export 9a ${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt`.
     #
     # Setting both gates to 0 is a build-time error.
-    # IOTGW_FIT_TRUST_FILE_KEY:fitflow = "1"
-    # IOTGW_FIT_TRUST_YK_KEY:fitflow = "1"
-    # IOTGW_FIT_YK_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
-    # IOTGW_FIT_YK_KEYNAME:fitflow = "iotgw-fit-yk-2026"
+    # IOTGW_FIT_TRUST_FILE_KEY = "1"
+    # IOTGW_FIT_TRUST_YK_KEY = "1"
+    # IOTGW_FIT_YK_KEYDIR = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
+    # IOTGW_FIT_YK_KEYNAME = "iotgw-fit-yk-2026"
 
   fit_dtb_softhsm_dev_trust: |
     # DEV-ONLY: optional SoftHSM-based FIT-signing trust root for engineers
@@ -160,9 +169,9 @@ local_conf_header:
     # the device's runtime trust store contains only YubiKey-backed
     # roots.
     #
-    # IOTGW_FIT_TRUST_SOFTHSM_KEY:fitflow = "1"
-    # IOTGW_FIT_SOFTHSM_KEYDIR:fitflow = "${IOTGW_RAUC_KEY_DIR}/softhsm/fit"
-    # IOTGW_FIT_SOFTHSM_KEYNAME:fitflow = "iotgw-fit-softhsm-dev"
+    # IOTGW_FIT_TRUST_SOFTHSM_KEY = "1"
+    # IOTGW_FIT_SOFTHSM_KEYDIR = "${IOTGW_RAUC_KEY_DIR}/softhsm/fit"
+    # IOTGW_FIT_SOFTHSM_KEYNAME = "iotgw-fit-softhsm-dev"
 
   buildhistory_downgrade_notes: |
     # Developer note: for intentional downgrade/maintenance tests (for example

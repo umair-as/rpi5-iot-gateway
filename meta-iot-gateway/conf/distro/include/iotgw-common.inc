@@ -66,6 +66,29 @@ INHERIT += "insane"
 QA_LOG ?= "1"
 ERROR_TO_WARN_QA ?= "version-going-backwards"
 
+# ── FIT signed-boot policy (mandatory; the ONLY supported boot flow) ──────────
+# Historically gated behind IOTGW_BOOT_FLOW / a ':fitflow' override that lived
+# only in the gitignored kas/local.yml — so a clean checkout silently built the
+# stock linux-raspberrypi kernel, unsigned. FIT is now unconditional and tracked;
+# there is no non-FIT flow. Operator key *paths* stay in kas/local.yml.
+PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline-fit"
+PREFERRED_VERSION_linux-iotgw-mainline-fit = "6.18%"
+KERNEL_BOOTCMD = "bootm"
+
+# Keep the FIT flow isolated from meta-raspberrypi's stock kernel recipes.
+BBMASK:append = " .*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi.*\\.(bb|bbappend)"
+BBMASK:append = " .*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi-v7.*\\.(bb|bbappend)"
+
+# FIT signing algorithms (control-DTB pubkey injection + FIT config signature).
+FIT_HASH_ALG = "sha256"
+FIT_SIGN_ALG = "rsa2048"
+FIT_GENERATE_KEYS = "0"
+
+# Signing is REQUIRED. Default ON; iotgw-fit-signed-or-fail.bbclass hard-fails
+# the build if this is off or no operator signing key is usable.
+IOTGW_FIT_SIGNING ?= "1"
+UBOOT_SIGN_ENABLE = "${@bb.utils.contains('IOTGW_FIT_SIGNING','1','1','0',d)}"
+
 
 # Init system and features (single source of truth)
 INIT_MANAGER ?= "systemd"
@@ -389,16 +412,7 @@ IOTGW_RPI5_KERNEL_DTBS_DEFAULT ?= "broadcom/bcm2712-rpi-5-b.dtb"
 IOTGW_RPI5_KERNEL_DTBS_DEFAULT:append = "${@bb.utils.contains('IOTGW_RPI5_INCLUDE_CM5_DTBS', '1', ' broadcom/bcm2712-rpi-cm5-cm5io.dtb broadcom/bcm2712-rpi-cm5-cm4io.dtb broadcom/bcm2712-rpi-cm5l-cm5io.dtb broadcom/bcm2712-rpi-cm5l-cm4io.dtb', '', d)}"
 IOTGW_RPI5_KERNEL_DTBS_MAINLINE ?= "broadcom/bcm2712-rpi-5-b.dtb"
 
-RPI_KERNEL_DEVICETREE:raspberrypi5 = "${@bb.utils.contains_any('PREFERRED_PROVIDER_virtual/kernel', \
-    'linux-iotgw-mainline linux-iotgw-mainline-fit', \
-    '${IOTGW_RPI5_KERNEL_DTBS_MAINLINE}', '${IOTGW_RPI5_KERNEL_DTBS_DEFAULT}', d)}"
-
-# Mainline providers currently do not ship the Raspberry Pi overlay dtbo set
-# used by meta-raspberrypi's raspberrypi5 machine config.
-python () {
-    if d.getVar("MACHINE") != "raspberrypi5":
-        return
-    provider = (d.getVar("PREFERRED_PROVIDER_virtual/kernel") or "").strip()
-    if provider in ("linux-iotgw-mainline", "linux-iotgw-mainline-fit"):
-        d.setVar("RPI_KERNEL_DEVICETREE_OVERLAYS", "")
-}
+# linux-iotgw-mainline-fit is the only kernel provider; it ships only the
+# rpi-5-b DTB and none of meta-raspberrypi's overlay dtbo set.
+RPI_KERNEL_DEVICETREE:raspberrypi5 = "${IOTGW_RPI5_KERNEL_DTBS_MAINLINE}"
+RPI_KERNEL_DEVICETREE_OVERLAYS:raspberrypi5 = ""

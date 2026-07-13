@@ -53,7 +53,7 @@ python do_iotgw_uboot_key_guard() {
             'Fix: build via a prod target (make prod / bundle-prod-full /\n'
             'bundle-prod-full-fit) so the Makefile composes kas/fit-release-trust.yml,\n'
             'and ensure kas/local.yml enables the YubiKey trust root\n'
-            '(IOTGW_FIT_TRUST_YK_KEY:fitflow = "1" plus IOTGW_FIT_YK_KEYDIR / KEYNAME).\n'
+            '(IOTGW_FIT_TRUST_YK_KEY = "1" plus IOTGW_FIT_YK_KEYDIR / KEYNAME).\n'
             'See docs/FIT_BOOT_SIGNING.md, section "Release vs dev KAS trust profiles".'
         )
 

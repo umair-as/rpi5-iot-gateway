@@ -27,7 +27,11 @@ SRC_URI:append = "${@' file://iotgw-uboot-prod.cfg' \
 SRC_URI:append = "${@' file://0005-rpi-iotgw-prod-env-flags-list-static.patch' \
     if 'appliance_lockdown' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
 
-# ── Production key guard ─────────────────────────────────────────────────────
+# ── Signing guards ───────────────────────────────────────────────────────────
+# Signed-or-fail (all images): fail the build early unless an operator signing
+# key is usable. Prod key guard (prod-intent only): fail unless the release DTB
+# trusts ONLY the YubiKey root.
+inherit iotgw-fit-signed-or-fail
 inherit iotgw-uboot-prod-key-guard
 
 # ── Boot delay override ──────────────────────────────────────────────────────
