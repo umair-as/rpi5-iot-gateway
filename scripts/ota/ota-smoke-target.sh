@@ -52,7 +52,10 @@ if command -v rauc >/dev/null 2>&1; then
     # pre-planted symlink (truncate an arbitrary file) or source attacker-seeded
     # shell. mktemp creates a fresh, unpredictable, private file.
     _rauc_env=$(mktemp)
-    rauc status --output-format=shell > "$_rauc_env" 2>/dev/null && . "$_rauc_env" || true
+    rauc status --output-format=shell > "$_rauc_env" 2>/dev/null
+    # Sourcing a runtime rauc-status dump — nothing static for shellcheck to follow.
+    # shellcheck source=/dev/null
+    . "$_rauc_env" 2>/dev/null || true
     rm -f "$_rauc_env"
     rauc status 2>&1 | sed 's/^/    /' | head -25
 
