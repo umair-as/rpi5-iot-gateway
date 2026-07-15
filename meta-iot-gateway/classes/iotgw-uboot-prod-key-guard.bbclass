@@ -3,8 +3,8 @@
 # deployed U-Boot control FDT must trust ONLY the YubiKey-resident pubkey.
 #
 # This guard deliberately does NOT inspect UBOOT_SIGN_KEYNAME. Under the
-# detached-signing model (PRs #70-#74), the build-time file key signs only a
-# Stage-1 placeholder FIT that is re-signed against the YubiKey post-build; it
+# detached-signing model, the build-time file key signs only a Stage-1
+# placeholder FIT that is re-signed against the YubiKey post-build; it
 # is never a trust root in a release DTB (IOTGW_FIT_TRUST_FILE_KEY=0). The
 # build-time key name is therefore irrelevant to release security — what
 # matters is the trust-gate set baked into the control FDT.
@@ -50,8 +50,8 @@ python do_iotgw_uboot_key_guard() {
             'iot-gw-image-prod must be built with the release FIT trust profile —\n'
             'the deployed U-Boot control FDT must trust ONLY the YubiKey root:\n\n'
             '  - ' + '\n  - '.join(bad) + '\n\n'
-            'Fix: build via a prod target (make prod / bundle-prod-full /\n'
-            'bundle-prod-full-fit) so the Makefile composes kas/fit-release-trust.yml,\n'
+            'Fix: build via a prod target (make prod / make bundle-prod-full-fit)\n'
+            'so the Makefile composes kas/fit-release-trust.yml,\n'
             'and ensure kas/local.yml enables the YubiKey trust root\n'
             '(IOTGW_FIT_TRUST_YK_KEY = "1" plus IOTGW_FIT_YK_KEYDIR / KEYNAME).\n'
             'See docs/FIT_BOOT_SIGNING.md, section "Release vs dev KAS trust profiles".'

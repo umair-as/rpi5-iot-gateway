@@ -1,7 +1,7 @@
-.PHONY: help base dev prod desktop \
-        bundle-dev bundle-dev-full bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-base-full-fit-fast bundle-prod-full bundle-prod-full-fit bundle-prod-full-fit-resign bundle-desktop-full bundle-desktop \
+.PHONY: help base dev prod \
+        bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
         tools-venv test-sign-fit test-sign-fit-softhsm \
-        layers parse clean-lock
+        sbom-cve layers parse clean-lock
 
 KAS ?= kas
 
@@ -24,14 +24,14 @@ export KAS_WORK_DIR KAS_BUILD_DIR
 ifneq ($(strip $(KAS_REPO_REF_DIR)),)
 export KAS_REPO_REF_DIR
 endif
-# kas refuses to start if KAS_WORK_DIR is absent (it does not mkdir it). Create
-# it at parse time so every target is covered without a per-target prereq.
-$(shell mkdir -p $(KAS_WORK_DIR))
 
 RAUC ?= kas/rauc.yml
 LOCAL ?= kas/local.yml
 UBOOT_PROD_HARDENING_KAS ?= kas/uboot-prod-hardening.yml
 FIT_RELEASE_TRUST_KAS ?= kas/fit-release-trust.yml
+# SBOM/CVE reporting overlay + the image it scans (see the `sbom-cve` target)
+CVE_KAS ?= kas/cve.yml
+SBOM_CVE_IMAGE ?= iot-gw-image-dev
 # Default to RAUC builds always; prefer local RAUC config if present
 BASE ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
 
@@ -42,83 +42,67 @@ export IOTGW_ENABLE_CONTAINERS
 export IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS
 export IOTGW_ENABLE_BTF_CORE_DEV
 
+# kas refuses to run if KAS_WORK_DIR is absent (it does not mkdir it). Order-only
+# prereq so every kas-invoking target creates .kas/ on demand, while
+# help / tools-venv / test / clean-lock touch nothing on a fresh tree.
+$(KAS_WORK_DIR):
+	@mkdir -p $@
+
 help:
 	@echo "Targets (RAUC-enabled by default):"
-	@echo "  make dev                  # Build developer image"
-	@echo "  make prod                 # Build production image (WIC is intermediate under release-trust; see bundle-prod-full-fit-resign)"
-	@echo "  make base                 # Build base image"
-	@echo "  make desktop              # Build desktop image (Wayland/Weston)"
-	@echo "  -- Bundles (rootfs + kernel/DTBs) --"
-	@echo "  make bundle-dev-full      # Bundle from dev image"
-	@echo "  make bundle-dev-full-fit  # FIT bundle from dev image"
-	@echo "  -- HSM-signing flow (detached; CI-friendly) --"
-	@echo "  make sign-bootfiles-fit-yk    # Re-sign FIT in deploy tarball on YubiKey (interactive)"
-	@echo "  make sign-bootfiles-fit-softhsm # Re-sign FIT in deploy tarball via SoftHSM (dev only)"
-	@echo "  -- Host-side test environment (uv-based, reproducible) --"
-	@echo "  make tools-venv              # Sync .venv via uv (run once or after dep bumps)"
-	@echo "  make test-sign-fit           # Run signing-tool tests (no SoftHSM required)"
-	@echo "  make test-sign-fit-softhsm   # Run full suite incl. SoftHSM integration tests"
-	@echo "  make bundle-dev-full-fit-resign  # Re-assemble bundle with HSM-signed FIT (unattended)"
-	@echo "  make bundle-base-full-fit-fast # FIT bundle from base image (OTBR off, faster)"
-	@echo "  make bundle-prod-full     # Bundle from prod image"
-	@echo "  make bundle-prod-full-fit # FIT bundle from prod image (release trust)"
-	@echo "  make bundle-prod-full-fit-resign # Reassemble prod FIT bundle around YK-signed FIT [FINAL RELEASE ARTIFACT]"
-	@echo "  make bundle-desktop-full  # Bundle from desktop image"
-	@echo "  -- Bundles (rootfs-only) --"
-	@echo "  make bundle-dev           # Rootfs-only bundle from dev image"
-	@echo "  make bundle-desktop       # Rootfs-only bundle from desktop image"
+	@echo "  -- Images --"
+	@echo "  make dev                          # Developer image"
+	@echo "  make prod                         # Production image (WIC intermediate under release-trust)"
+	@echo "  make base                         # Base image"
+	@echo "  -- Bundles (rootfs + signed FIT boot assets) --"
+	@echo "  make bundle-dev-full-fit          # FIT bundle from dev image"
+	@echo "  make bundle-dev-full-fit-resign   # Re-assemble dev bundle around HSM-signed FIT (unattended)"
+	@echo "  make bundle-prod-full-fit         # FIT bundle from prod image (release trust)"
+	@echo "  make bundle-prod-full-fit-resign  # Re-assemble prod bundle around YK-signed FIT [FINAL RELEASE ARTIFACT]"
+	@echo "  -- HSM detached signing (operator; PIN/touch) --"
+	@echo "  make sign-bootfiles-fit-yk        # Re-sign FIT in deploy tarball on YubiKey (interactive)"
+	@echo "  make sign-bootfiles-fit-softhsm   # Re-sign FIT in deploy tarball via SoftHSM (dev only)"
+	@echo "  -- Host-side signing env (uv-based) --"
+	@echo "  make tools-venv                   # Sync .venv via uv (run once or after dep bumps)"
+	@echo "  make test-sign-fit                # Run signing-tool tests (no SoftHSM required)"
+	@echo "  make test-sign-fit-softhsm        # Run full suite incl. SoftHSM integration tests"
+	@echo "  -- SBOM/CVE --"
+	@echo "  make sbom-cve                     # Build dev image with wrynose SBOM+CVE reports"
 	@echo "  -- Utilities --"
-	@echo "  make layers               # Show layers for RAUC stack"
-	@echo "  make parse                # Parse-only for RAUC stack"
-	@echo "  make clean-lock           # Remove stale bitbake.lock"
+	@echo "  make layers                       # Show layers for RAUC stack"
+	@echo "  make parse                        # Parse-only for RAUC stack"
+	@echo "  make clean-lock                   # Remove stale bitbake.lock"
 
-define image_cmd
-  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-                   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
+# One kas + bitbake invocation for every image / bundle / report target.
+# Forwards the IOTGW_ENABLE_* feature toggles into the kas shell env (and
+# whitelists them — plus BUNDLE_IMAGE_NAME for bundle targets — for bitbake
+# passthrough), then composes the kas overlay chain.
+#   $(1) = bitbake invocation       (e.g. "bitbake iot-gw-image-dev",
+#                                     "bitbake -C do_configure iot-gw-bundle-full-fit")
+#   $(2) = kas overlay chain        (e.g. $(BASE), $(PROD_KAS_OVERLAYS), $(BASE):$(CVE_KAS))
+#   $(3) = BUNDLE_IMAGE_NAME value  (optional; empty for plain image / report builds)
+define iotgw_bitbake
+  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS$(if $(3), BUNDLE_IMAGE_NAME) IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
+                   $(if $(3),BUNDLE_IMAGE_NAME=$(3)) IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
                    IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
                    IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
                    IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-                   bitbake $(1)' $(BASE)
+                   $(1)' $(2)
 endef
-
-base:
-	$(call image_cmd,iot-gw-image-base)
-
-dev:
-	$(call image_cmd,iot-gw-image-dev)
 
 PROD_KAS_OVERLAYS = $(BASE)$(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),:$(UBOOT_PROD_HARDENING_KAS))$(if $(wildcard $(FIT_RELEASE_TRUST_KAS)),:$(FIT_RELEASE_TRUST_KAS))
 
-prod:
-	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-			   bitbake iot-gw-image-prod' $(PROD_KAS_OVERLAYS)
+base: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake iot-gw-image-base,$(BASE))
 
-desktop:
-	# Prefer dedicated desktop KAS config; include local.yml if present for keys
-	$(KAS) build $(if $(wildcard kas/desktop.yml),$(if $(wildcard $(LOCAL)),kas/desktop.yml:$(LOCAL),kas/desktop.yml),$(BASE)) --target iot-gw-image-desktop
+dev: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake iot-gw-image-dev,$(BASE))
 
-define bundle_cmd
-  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-                   BUNDLE_IMAGE_NAME=$(1) \
-                   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-                   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-                   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-                   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-                   bitbake $(2)' $(BASE)
-endef
+prod: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake iot-gw-image-prod,$(PROD_KAS_OVERLAYS))
 
-bundle-dev:
-	$(call bundle_cmd,iot-gw-image-dev,iot-gw-bundle)
-
-bundle-dev-full:
-	$(call bundle_cmd,iot-gw-image-dev,iot-gw-bundle-full)
-
-bundle-dev-full-fit:
-	$(call bundle_cmd,iot-gw-image-dev,iot-gw-bundle-full-fit)
+bundle-dev-full-fit: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake iot-gw-bundle-full-fit,$(BASE),iot-gw-image-dev)
 
 # Detached HSM signing flow. The build and the HSM-signing step run in
 # separate processes — possibly on separate machines — so CI runners
@@ -161,99 +145,64 @@ bundle-dev-full-fit:
 #                       which now accepts them inline (no '--' separator).
 SIGN_BOOTFILES_ARGS ?=
 SIGN_FIT_ARGS ?= --verify
+UV ?= uv
 sign-bootfiles-fit-yk:
-	python3 scripts/sign_fit.py sign-bootfiles --profile yubikey-9a $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
+	$(UV) run python scripts/fit-signing/sign_fit.py sign-bootfiles --profile yubikey-9a $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
 
 # Dev signing variant for engineers without a YubiKey. Requires a
 # provisioned SoftHSM token holding the iotgw-fit-softhsm-dev keypair;
 # see docs/FIT_BOOT_SIGNING.md for the provisioning runbook. Only
 # usable against an image that enables IOTGW_FIT_TRUST_SOFTHSM_KEY in
 # kas/local.yml — never against a production Image C build.
+#
+# libsofthsm2 locates its token store via SOFTHSM2_CONF. Default it to the
+# in-repo dev token so the target works without a sourced shell env; an
+# operator SOFTHSM2_CONF already in the environment still wins.
+sign-bootfiles-fit-softhsm: export SOFTHSM2_CONF ?= $(CURDIR)/keys/dev/softhsm/softhsm2.conf
 sign-bootfiles-fit-softhsm:
-	python3 scripts/sign_fit.py sign-bootfiles --profile softhsm-dev $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
+	$(UV) run python scripts/fit-signing/sign_fit.py sign-bootfiles --profile softhsm-dev $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
 
-# Host-side Python test environment (uv-based). Not used by Yocto
-# builds or by the operator signing targets above; those keep running
-# against the system Python with a distro-installed `python3-yaml`.
-UV ?= uv
+# Host-side Python environment (uv-based). Used by the operator signing
+# tools and tests; Yocto/BitBake builds do not depend on this venv.
 tools-venv:
 	$(UV) sync
 
 test-sign-fit:
-	$(UV) run pytest scripts/tests/
+	$(UV) run pytest scripts/fit-signing/tests/
 
 test-sign-fit-softhsm:
-	SOFTHSM_AVAILABLE=1 $(UV) run pytest scripts/tests/
+	SOFTHSM_AVAILABLE=1 $(UV) run pytest scripts/fit-signing/tests/
 
-bundle-dev-full-fit-resign:
-	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-			   BUNDLE_IMAGE_NAME=iot-gw-image-dev \
-			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-			   bitbake -C do_configure iot-gw-bundle-full-fit' $(BASE)
-
-bundle-base-full-fit-fast:
-	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-			   BUNDLE_IMAGE_NAME=iot-gw-image-base \
-			   IOTGW_ENABLE_OTBR=0 \
-			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-			   bitbake iot-gw-bundle-full-fit' $(BASE)
-
-define prod_bundle_cmd
-  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-                   BUNDLE_IMAGE_NAME=iot-gw-image-prod \
-                   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-                   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-                   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-                   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-                   bitbake $(1)' $(PROD_KAS_OVERLAYS)
-endef
+bundle-dev-full-fit-resign: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(BASE),iot-gw-image-dev)
 
 # Release bundles. PROD_KAS_OVERLAYS composes kas/fit-release-trust.yml,
-# so both build iot-gw-image-prod with the release FIT trust profile
+# so iot-gw-image-prod builds with the release FIT trust profile
 # (YubiKey-only DTB). bundle-prod-full-fit is the release FIT artifact —
 # the prod-image equivalent of bundle-dev-full-fit, and the bundle to
 # flash for issue #73 on-target validation.
-bundle-prod-full:
-	$(call prod_bundle_cmd,iot-gw-bundle-full)
-
-bundle-prod-full-fit:
-	$(call prod_bundle_cmd,iot-gw-bundle-full-fit)
+bundle-prod-full-fit: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake iot-gw-bundle-full-fit,$(PROD_KAS_OVERLAYS),iot-gw-image-prod)
 
 # Reassemble the release FIT bundle around an already YubiKey-signed
 # bootfiles-fit.tar.gz. Run after `make sign-bootfiles-fit-yk`; re-runs the
 # bundle recipe from do_configure so the .raucb picks up the HSM-signed FIT.
 # Prod equivalent of bundle-dev-full-fit-resign; keeps PROD_KAS_OVERLAYS so
 # kas/fit-release-trust.yml stays active.
-bundle-prod-full-fit-resign:
-	$(call prod_bundle_cmd,-C do_configure iot-gw-bundle-full-fit)
+bundle-prod-full-fit-resign: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(PROD_KAS_OVERLAYS),iot-gw-image-prod)
 
-bundle-desktop-full:
-	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-			   BUNDLE_IMAGE_NAME=iot-gw-image-desktop \
-			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-			   bitbake iot-gw-bundle-full' $(if $(wildcard kas/desktop.yml),$(if $(wildcard $(LOCAL)),kas/desktop.yml:$(LOCAL),kas/desktop.yml),$(BASE))
+# SBOM + CVE reporting. Builds SBOM_CVE_IMAGE with the kas/cve.yml overlay
+# composed onto BASE, emitting wrynose SPDX SBOM + cve-check reports into the
+# deploy dir. Split out from the image/bundle targets because CVE/SBOM report
+# generation is slow and should be opt-in, not on every build.
+sbom-cve: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake $(SBOM_CVE_IMAGE),$(BASE):$(CVE_KAS))
 
-bundle-desktop:
-	$(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS BUNDLE_IMAGE_NAME IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV" \
-			   BUNDLE_IMAGE_NAME=iot-gw-image-desktop \
-			   IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-			   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
-			   IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-			   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
-			   bitbake iot-gw-bundle' $(if $(wildcard kas/desktop.yml),$(if $(wildcard $(LOCAL)),kas/desktop.yml:$(LOCAL),kas/desktop.yml),$(BASE))
-
-layers:
+layers: | $(KAS_WORK_DIR)
 	$(KAS) shell -c 'bitbake-layers show-layers' $(BASE)
 
-parse:
+parse: | $(KAS_WORK_DIR)
 	$(KAS) shell -c 'bitbake -p' $(BASE)
 
 clean-lock:
