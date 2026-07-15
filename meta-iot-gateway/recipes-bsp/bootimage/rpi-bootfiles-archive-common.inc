@@ -14,6 +14,12 @@ IOTGW_BOOTFILES_ARCHIVE_NAME ?= "bootfiles.tar.gz"
 IOTGW_BOOTFILES_STAGE_FILES ?= "u-boot.bin config.txt cmdline.txt splash.bmp Image kernel_2712.img"
 IOTGW_KERNEL_CONSOLE ?= "ttyAMA10,115200"
 
+# Boot-critical U-Boot env vars shipped in uboot-env.txt so the RAUC
+# post-install hook can self-heal a stale saved env (see the hook and
+# docs/RAUC_UPDATE.md). ONLY firmware-logic vars belong here — never
+# runtime state (BOOT_ORDER, BOOT_*_LEFT, bootcount, rauc_slot, EXTRA_KERNEL_ARGS).
+IOTGW_SELFHEAL_ENV_KEYS ?= "iotgw_load_boot iotgw_exec_fit iotgw_rauc_select iotgw_try_a iotgw_try_b iotgw_set_bootargs iotgw_halt bootcmd"
+
 do_deploy() {
     install -d ${DEPLOYDIR}
     workdir=${WORKDIR}/bootfiles-stage
@@ -110,6 +116,38 @@ do_deploy() {
         if [ -n "$rel" ]; then
             echo "$rel" > "$workdir/kernel.release"
         fi
+    fi
+
+    # Emit uboot-env.txt: the boot-critical U-Boot env vars with the exact values
+    # compiled into u-boot.bin, so the RAUC post-install hook can self-heal a
+    # stale saved env. On dev builds the whole saved env is imported, so a device
+    # flashed before a boot-script change keeps its old scripts (e.g. a pre-fix
+    # iotgw_load_boot that loads plain fitImage, stranding an OTA'd per-slot
+    # kernel). Source of truth is U-Boot's own initial-env dump (zero drift by
+    # construction). The dump can carry a duplicated key (e.g. bootcmd); compiled
+    # precedence is last-wins, so keep the last occurrence per key.
+    initial_env="${DEPLOY_DIR_IMAGE}/u-boot-initial-env-${MACHINE}"
+    if [ ! -f "$initial_env" ]; then
+        initial_env="${DEPLOY_DIR_IMAGE}/u-boot-initial-env"
+    fi
+    if [ -f "$initial_env" ]; then
+        rm -f "$workdir/uboot-env.txt"
+        env_any=0
+        for key in ${IOTGW_SELFHEAL_ENV_KEYS}; do
+            line=$(grep "^${key}=" "$initial_env" | tail -n 1)
+            if [ -n "$line" ]; then
+                printf '%s\n' "$line" >> "$workdir/uboot-env.txt"
+                env_any=1
+            else
+                bbwarn "uboot-env.txt: boot-critical key '${key}' not found in $initial_env"
+            fi
+        done
+        if [ "$env_any" = "0" ]; then
+            bbwarn "uboot-env.txt: no boot-critical keys extracted from $initial_env; omitting self-heal file"
+            rm -f "$workdir/uboot-env.txt"
+        fi
+    else
+        bbwarn "u-boot initial-env not found in ${DEPLOY_DIR_IMAGE}; uboot-env.txt (env self-heal) will be absent from ${IOTGW_BOOTFILES_ARCHIVE_NAME}"
     fi
 
     # Validate required baseline artifacts.

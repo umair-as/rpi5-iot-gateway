@@ -142,6 +142,47 @@ journalctl -b -t rauc | grep overlay-reconcile
 The overlay reconciler removes these via the `absent` policy in
 `managed-paths.conf`.
 
+### OTA'd kernel not booting (kernel ↔ module mismatch)
+
+Symptom after a bundle OTA: the slot boots, but `uname -r` shows the
+*old* kernel while the rootfs carries the new modules — so `lsmod` is
+empty, network/Bluetooth never come up, and `/lib/modules/$(uname -r)/`
+is missing.
+
+Cause: U-Boot loaded the stale shared `/boot/fitImage` instead of the
+per-slot `fitImage-<a|b>` the post-install hook wrote. On **dev** builds
+the full saved U-Boot env is imported, so a device whose saved env
+predates the per-slot `iotgw_load_boot` keeps the old script (which always
+loads plain `fitImage`), and `bootcmd`'s `saveenv` re-persists it every
+boot. This stays invisible until an OTA ships a *different* kernel version
+to one slot. **Prod is immune** — `CONFIG_ENV_WRITEABLE_LIST` makes the
+boot scripts read-only, so the compiled-in per-slot logic always wins.
+
+A bundle OTA repairs this automatically: the post-install hook reconciles
+the boot-critical env against the canonical `uboot-env.txt` shipped in the
+bundle, correcting a stale `iotgw_load_boot` without touching runtime state
+(`BOOT_ORDER`, slot counters). The manual remediation below is only for a
+device that cannot take such a bundle.
+
+Diagnose (on target):
+
+```bash
+uname -r                                    # running kernel
+sha256sum /boot/fitImage /boot/fitImage-b   # per-slot FIT vs stale shared one
+fw_printenv iotgw_load_boot                 # stale = plain fitImage, no per-slot ${_fit}
+scripts/ota/ota-fit-slot-check.sh           # asserts active-slot FIT == running kernel
+```
+
+Manual remediation (dev builds): repoint the stale var to the per-slot loader, reboot:
+
+```bash
+fw_setenv iotgw_load_boot 'if test "x${rauc_slot}" = "xA"; then setenv _fit fitImage-a; elif test "x${rauc_slot}" = "xB"; then setenv _fit fitImage-b; else setenv _fit fitImage; fi; if fatload mmc 0:1 ${iotgw_fit_addr_r} ${_fit}; then echo [IOTGW] FIT ${_fit} loaded; elif fatload mmc 0:1 ${iotgw_fit_addr_r} fitImage; then echo [IOTGW] FIT fallback fitImage loaded; else echo [IOTGW] FIT load failed; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset; fi'
+reboot
+```
+
+Or, at the U-Boot prompt, `env default -a; saveenv` to drop all stale
+vars, then re-set `BOOT_ORDER` as needed.
+
 ### mTLS CA mismatch
 
 If streaming installs fail with TLS chain errors:
