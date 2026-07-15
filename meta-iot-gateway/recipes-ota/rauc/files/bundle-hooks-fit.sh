@@ -350,14 +350,49 @@ if command -v fw_setenv >/dev/null 2>&1; then
   # stale pinned name fails bootm on every slot and exhausts all boot
   # counters. Clearing here self-heals devices that installed a bundle
   # from a build with a different config name.
-  # Dev-posture caveat: a device whose SAVED env carries an older
-  # iotgw_exec_fit script that dereferences iotgw_fit_conf_default (dev
-  # builds import the whole saved env; prod's ENV_WRITEABLE_LIST ignores
-  # unlisted vars) needs a one-time env reset (delete uboot.env from the
-  # ubootenv vfat / reflash) so the binary default scripts take effect.
+  # Dev-posture caveat: on dev builds the whole SAVED env is imported (prod's
+  # ENV_WRITEABLE_LIST keeps boot scripts read-only), so a device flashed before
+  # a boot-script change keeps its old scripts. The boot-critical self-heal below
+  # corrects that automatically from the bundle's uboot-env.txt; clearing
+  # iotgw_fit_conf* here remains, since those keys are intentionally absent from
+  # the default env (operator override only).
   fw_setenv iotgw_fit_conf || log_warn "failed to clear iotgw_fit_conf"
   fw_setenv iotgw_fit_conf_default || log_warn "failed to clear iotgw_fit_conf_default"
-  log_info "Updated U-Boot env (iotgw_last_slot/iotgw_last_update; cleared iotgw_fit_conf*)"
+
+  # Self-heal boot-critical U-Boot env from the bundle's canonical uboot-env.txt
+  # (built from u-boot.bin's own initial-env dump). Corrects a stale saved env —
+  # e.g. an older iotgw_load_boot that loads plain fitImage instead of the
+  # per-slot fitImage-<a|b>, which otherwise strands an OTA'd kernel on dev
+  # builds. Only vars present in the (build-time pre-filtered) file are touched,
+  # so runtime state (BOOT_ORDER, BOOT_*_LEFT, bootcount) is never modified. Each
+  # var is written only when it differs → a no-op on an already-current device.
+  healed=0
+  env_file="$tmpdir/uboot-env.txt"
+  if [ -r "$env_file" ]; then
+    while IFS= read -r kv || [ -n "$kv" ]; do
+      case "$kv" in ''|'#'*) continue ;; esac
+      key=${kv%%=*}
+      val=${kv#*=}
+      if [ "$key" = "$kv" ]; then continue; fi   # no '=' → malformed, skip
+      cur=$(fw_printenv -n "$key" 2>/dev/null || true)
+      if [ "$cur" != "$val" ]; then
+        if fw_setenv "$key" "$val"; then
+          log_info "Self-healed boot-critical env var: $key"
+          healed=$((healed + 1))
+        else
+          log_warn "failed to self-heal env var: $key"
+        fi
+      fi
+    done < "$env_file"
+  else
+    log_skip "No uboot-env.txt in bundle; skipping boot-critical env self-heal"
+  fi
+
+  if [ "$healed" -gt 0 ]; then
+    log_info "Updated U-Boot env (metadata; cleared iotgw_fit_conf*; self-healed ${healed} boot-critical var(s))"
+  else
+    log_info "Updated U-Boot env (metadata; cleared iotgw_fit_conf*; boot-critical env already current)"
+  fi
 else
   log_warn "fw_setenv not available; skipping U-Boot env update"
 fi
