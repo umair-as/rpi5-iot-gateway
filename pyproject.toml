@@ -1,14 +1,12 @@
-# Host-side Python test environment for the rpi5-iot-gw project.
+# Host-side Python environment for the rpi5-iot-gw project.
 #
-# This file does NOT define a pip-installable package. Its only purpose
-# is to give `uv` a reproducible runtime + dev environment for running
-# the FIT-signing test suite under scripts/tests/. Yocto/BitBake builds
-# do not depend on uv or on this venv.
+# This file does NOT define a pip-installable package. Its purpose is
+# to give `uv` a reproducible runtime + dev environment for the FIT
+# signing tool and its test suite under scripts/fit-signing/. Yocto/BitBake
+# builds do not depend on uv or on this venv.
 #
-# Operator usage of scripts/sign_fit.py continues to work with the
-# system Python plus a distro-installed `python3-yaml` (see
-# docs/FIT_BOOT_SIGNING.md). The Makefile signing targets do NOT run
-# through `uv run`.
+# Operator signing targets run through `uv run`; direct invocations of
+# scripts/fit-signing/sign_fit.py re-exec under .venv when needed.
 #
 # Refresh the lockfile with `make tools-venv` (or `uv sync`). Bump deps
 # via `uv lock --upgrade` then re-run `uv sync`.
@@ -16,7 +14,7 @@
 [project]
 name = "rpi5-iot-gw-host-tools"
 version = "0.1.0"
-description = "Host-side tooling test environment (FIT signing). Not pip-installable."
+description = "Host-side FIT signing tooling environment. Not pip-installable."
 requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0",
@@ -28,7 +26,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["scripts/tests"]
+testpaths = ["scripts/fit-signing/tests"]
 addopts = ["-ra"]
 
 [tool.uv]
