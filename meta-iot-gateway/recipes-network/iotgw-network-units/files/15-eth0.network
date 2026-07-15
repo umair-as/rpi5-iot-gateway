@@ -4,3 +4,8 @@ Name=eth0
 
 [Network]
 Bridge=br0
+# networkd defaults LinkLocalAddressing=ipv6 even on an enslaved port, which
+# would expose an fe80:: L3 endpoint directly on the wire below the bridge.
+# Keep all L3 on br0 (which carries these same settings).
+LinkLocalAddressing=no
+IPv6AcceptRA=no
