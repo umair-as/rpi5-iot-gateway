@@ -48,7 +48,12 @@ section "RAUC slot accounting"
 # rauc status should show the slot booted and its state. After a successful OTA
 # the booted slot is "good" and the other slot is "good" or "inactive".
 if command -v rauc >/dev/null 2>&1; then
-    rauc status --output-format=shell > /tmp/rauc.env 2>/dev/null && . /tmp/rauc.env || true
+    # mktemp, not a fixed /tmp path: as root a predictable name can follow a
+    # pre-planted symlink (truncate an arbitrary file) or source attacker-seeded
+    # shell. mktemp creates a fresh, unpredictable, private file.
+    _rauc_env=$(mktemp)
+    rauc status --output-format=shell > "$_rauc_env" 2>/dev/null && . "$_rauc_env" || true
+    rm -f "$_rauc_env"
     rauc status 2>&1 | sed 's/^/    /' | head -25
 
     # Find booted slot by scanning RAUC_SLOT_STATE_N (actual shell-format names

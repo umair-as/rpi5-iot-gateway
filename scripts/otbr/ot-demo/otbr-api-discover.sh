@@ -6,7 +6,7 @@ set -euo pipefail
 # Usage:
 #   scripts/otbr/ot-demo/otbr-api-discover.sh
 #   scripts/otbr/ot-demo/otbr-api-discover.sh --device-count 25 --timeout 60
-#   BASE_URL=http://192.168.0.82:8081 scripts/otbr/ot-demo/otbr-api-discover.sh
+#   BASE_URL=http://<otbr-host>:8081 scripts/otbr/ot-demo/otbr-api-discover.sh
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8081}"
 JQ="${JQ:-jq}"
