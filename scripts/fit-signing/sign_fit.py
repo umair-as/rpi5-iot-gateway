@@ -7,7 +7,7 @@ Subcommands:
     verify           fit_check_sign cryptographic verify against a DTB.
     print-profile    Print a resolved profile (diagnostic; no signing).
 
-Profiles live in `scripts/fit-signing-profiles.yml` (or the file pointed
+Profiles live in `scripts/fit-signing/fit-signing-profiles.yml` (or the file pointed
 at by --profile-config / IOTGW_FIT_SIGNING_PROFILES). Each profile maps a
 short name (yubikey-9a, softhsm-dev) to a (key-name-hint, URI, engine
 config) tuple. Explicit --key-name-hint / --uri / --engine-conf flags
@@ -30,42 +30,94 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import datetime
+import json
 import logging
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
 import urllib.parse
-from typing import Iterable, Optional, Sequence
+from typing import Optional, Sequence
 
-try:
-    import yaml
-except ImportError as e:
-    sys.stderr.write(
-        "sign_fit: PyYAML is required (Debian/Ubuntu: apt install python3-yaml; "
-        "Fedora: dnf install python3-pyyaml; pip: pip install pyyaml)\n"
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+# sign_fit.py lives at scripts/fit-signing/; the repo root (and the uv .venv)
+# is two levels up.
+REPO_ROOT = SCRIPT_DIR.parents[1]
+REPO_VENV_PYTHON = REPO_ROOT / ".venv/bin/python3"
+
+
+def _running_under_repo_venv() -> bool:
+    try:
+        return pathlib.Path(sys.prefix).resolve() == (REPO_ROOT / ".venv").resolve()
+    except OSError:
+        return False
+
+
+def _reexec_under_repo_venv() -> None:
+    if _running_under_repo_venv():
+        return
+    if not REPO_VENV_PYTHON.is_file():
+        sys.stderr.write(
+            "sign_fit: missing repo venv at .venv/bin/python3.\n"
+            "The FIT signing tool runs from the uv-managed environment for "
+            "reproducibility. From the repo root, run:\n"
+            "    make tools-venv\n"
+        )
+        sys.exit(1)
+    if os.environ.get("_IOTGW_SIGN_FIT_REEXEC") == "1":
+        sys.stderr.write(
+            "sign_fit: re-exec under .venv still failed; check the uv environment.\n"
+        )
+        sys.exit(1)
+    os.environ["_IOTGW_SIGN_FIT_REEXEC"] = "1"
+    os.execv(
+        str(REPO_VENV_PYTHON),
+        [str(REPO_VENV_PYTHON), __file__, *sys.argv[1:]],
     )
-    raise
+
 
 log = logging.getLogger("sign_fit")
 
-SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 DEFAULT_PROFILE_CONFIG = SCRIPT_DIR / "fit-signing-profiles.yml"
 DEFAULT_BOOTFILES_ARCHIVE = pathlib.Path(
-    "build/tmp-glibc/deploy/images/raspberrypi5/bootfiles-fit.tar.gz"
+    "build/tmp/deploy/images/raspberrypi5/bootfiles-fit.tar.gz"
 )
+
+
+def resolve_bootfiles_archive() -> pathlib.Path:
+    """Locate the deploy bootfiles archive, tolerant of the TMPDIR name
+    (`tmp` vs `tmp-glibc`) and the machine subdir. Falls back to the literal
+    default when nothing matches (so the error message names a concrete path)."""
+    matches = sorted(
+        pathlib.Path("build").glob("tmp*/deploy/images/*/bootfiles-fit.tar.gz")
+    )
+    return matches[0] if matches else DEFAULT_BOOTFILES_ARCHIVE
 
 
 class SignFitError(Exception):
     """Raised for any user-visible failure."""
 
 
-def die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    log.error(msg)
-    sys.exit(1)
+def _import_yaml():
+    """Import PyYAML lazily so plain `import sign_fit` stays side-effect free.
+
+    The dependency is only needed when a profile config is actually read;
+    importing it at module scope would make importing this module fail
+    outside the uv-managed venv (where PyYAML lives).
+    """
+    try:
+        import yaml
+    except ImportError as e:
+        raise SignFitError(
+            "PyYAML is missing from the repo venv. From the repo root, run:\n"
+            "    make tools-venv"
+        ) from e
+    return yaml
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +131,16 @@ class Profile:
     key_name_hint: str
     uri: str
     engine_conf: pathlib.Path
+    pkcs11_module: Optional[str] = None
+    signer_alias: Optional[str] = None
+
+    @property
+    def redacted_uri(self) -> str:
+        """The URI with inline PIN material scrubbed — the ONLY form that
+        should ever be emitted to a log, stdout, an error message, or a
+        provenance document. The raw ``uri`` is reserved for building the
+        mkimage argv."""
+        return redact_pkcs11_uri(self.uri)
 
     @classmethod
     def from_dict(cls, name: str, d: dict, *, engine_conf_override: Optional[pathlib.Path] = None) -> "Profile":
@@ -91,6 +153,8 @@ class Profile:
                 key_name_hint=d["key_name_hint"],
                 uri=d["uri"],
                 engine_conf=engine_conf,
+                pkcs11_module=d.get("pkcs11_module"),
+                signer_alias=d.get("signer_alias"),
             )
         except KeyError as e:
             raise SignFitError(
@@ -110,6 +174,7 @@ def resolve_profile_config(cli_path: Optional[str]) -> pathlib.Path:
 def load_profiles(config_path: pathlib.Path) -> dict[str, dict]:
     if not config_path.is_file():
         raise SignFitError(f"profile config not found: {config_path}")
+    yaml = _import_yaml()
     with config_path.open("r") as f:
         try:
             data = yaml.safe_load(f) or {}
@@ -130,6 +195,8 @@ def build_profile(
     key_name_hint_override: Optional[str],
     uri_override: Optional[str],
     engine_conf_override: Optional[str],
+    pkcs11_module_override: Optional[str],
+    signer_alias_override: Optional[str],
     key_label_legacy: Optional[str] = None,
 ) -> Profile:
     """Resolve a profile from config + per-flag overrides.
@@ -189,6 +256,8 @@ def build_profile(
             key_name_hint=key_name_hint_override,
             uri=uri_override,
             engine_conf=pathlib.Path(os.path.expanduser(engine_conf_override)),
+            pkcs11_module=pkcs11_module_override,
+            signer_alias=signer_alias_override,
         )
 
     # Per-flag overrides on top of profile values
@@ -201,18 +270,34 @@ def build_profile(
             if engine_conf_override
             else base.engine_conf
         ),
+        pkcs11_module=pkcs11_module_override or base.pkcs11_module,
+        signer_alias=signer_alias_override or base.signer_alias,
     )
 
 
 def validate_profile(profile: Profile, *, require_engine_conf: bool = True) -> None:
+    # Discourage inline PIN material loudly. engine_pkcs11 prompts for the PIN
+    # interactively on /dev/tty, so an inline pin-value=/pin-source= is not
+    # needed for operator signing — the strongest posture is to keep it out of
+    # the configured URI. We warn rather than hard-error because the SoftHSM
+    # test harness legitimately runs non-interactively and must supply the PIN
+    # inline; the redaction choke point (Profile.redacted_uri) is the
+    # defense-in-depth that keeps such a PIN out of every log/summary/provenance
+    # emission.
+    if _INLINE_PIN_RE.search(profile.uri):
+        log.warning(
+            "PKCS#11 URI carries an inline PIN (pin-value=/pin-source=); this "
+            "is redacted from all output but is discouraged. Prefer omitting it "
+            "and entering the PIN interactively when engine_pkcs11 prompts."
+        )
     if "object=" not in profile.uri:
         raise SignFitError(
             f"URI must contain 'object=<libykcs11-label>' "
             f"(mkimage 2025.04's -N pkcs11 path rewrites URIs without object= "
-            f"into a non-matching synthesized URI). got: {profile.uri}"
+            f"into a non-matching synthesized URI). got: {profile.redacted_uri}"
         )
     if not profile.uri.startswith("pkcs11:"):
-        raise SignFitError(f"URI must start with 'pkcs11:': {profile.uri}")
+        raise SignFitError(f"URI must start with 'pkcs11:': {profile.redacted_uri}")
     if require_engine_conf and not profile.engine_conf.is_file():
         raise SignFitError(f"engine conf not found: {profile.engine_conf}")
 
@@ -227,6 +312,75 @@ def require_tool(name: str) -> str:
     if not path:
         raise SignFitError(f"required tool missing on PATH: {name}")
     return path
+
+
+# PKCS#11 URIs (RFC 7512) separate path attributes with `;` and query
+# attributes with `&`. Stop the value class at both so redaction never
+# swallows a following attribute (e.g. module-path) from the query
+# component. IGNORECASE because attribute names are not guaranteed to be
+# typed in canonical lowercase — `PIN-VALUE=` must still be caught.
+_PIN_VALUE_RE = re.compile(r"(?P<prefix>[:;?&])pin-value=[^;&]*", re.IGNORECASE)
+_PIN_SOURCE_RE = re.compile(r"(?P<prefix>[:;?&])pin-source=[^;&]*", re.IGNORECASE)
+
+
+def redact_pkcs11_uri(uri: str) -> str:
+    """Remove inline PIN material from a PKCS#11 URI before logs/provenance."""
+    redacted = _PIN_VALUE_RE.sub(r"\g<prefix>pin-value=<redacted>", uri)
+    return _PIN_SOURCE_RE.sub(r"\g<prefix>pin-source=<redacted>", redacted)
+
+
+_INLINE_PIN_RE = re.compile(r"[:;?&]pin-(?:value|source)=", re.IGNORECASE)
+
+
+PKCS11_PREFLIGHT_TIMEOUT_DEFAULT = 15.0
+
+
+def preflight_pkcs11(profile: Profile, *, timeout: float = PKCS11_PREFLIGHT_TIMEOUT_DEFAULT) -> dict:
+    """Check that pkcs11-tool can enumerate a token for the configured module.
+
+    Enumerates the token separately from the mkimage/engine_pkcs11 signing
+    path so a missing/wrong module or an absent token is caught early with a
+    clear error. The module is passed explicitly to avoid guessing it from
+    host-specific OpenSSL engine config files.
+    """
+    if not profile.pkcs11_module:
+        raise SignFitError(
+            "PKCS#11 preflight requires --pkcs11-module or profile.pkcs11_module"
+        )
+    tool = require_tool("pkcs11-tool")
+    try:
+        result = subprocess.run(
+            [tool, "--module", profile.pkcs11_module, "--list-slots"],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise SignFitError(
+            f"pkcs11-tool --list-slots timed out after {timeout:g}s "
+            f"enumerating {profile.pkcs11_module} "
+            "(slow reader or PIN-pad token? raise --pkcs11-timeout)"
+        ) from e
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "<no output>").strip()
+        raise SignFitError(
+            f"pkcs11-tool --list-slots failed (exit {result.returncode}): {detail}"
+        )
+
+    token_count = sum(1 for line in result.stdout.splitlines() if "token label" in line.lower())
+    if token_count == 0:
+        raise SignFitError(
+            f"no PKCS#11 token detected via {profile.pkcs11_module}"
+        )
+    log.info(
+        "PKCS#11 preflight ok: module=%s token(s)=%d",
+        profile.pkcs11_module,
+        token_count,
+    )
+    return {
+        "pkcs11_module": profile.pkcs11_module,
+        "tokens_enumerated": token_count,
+    }
 
 
 def find_fit_check_sign(cli_path: Optional[str]) -> str:
@@ -255,7 +409,7 @@ def find_fit_check_sign(cli_path: Optional[str]) -> str:
     candidates.extend(
         sorted(
             project_root.glob(
-                "build/tmp-glibc/work/x86_64-linux/u-boot-tools-native/*/"
+                "build/tmp*/work/x86_64-linux/u-boot-tools-native/*/"
                 "recipe-sysroot-native/usr/bin/fit_check_sign"
             )
         )
@@ -263,7 +417,7 @@ def find_fit_check_sign(cli_path: Optional[str]) -> str:
     candidates.extend(
         sorted(
             project_root.glob(
-                "build/tmp-glibc/sysroots-components/x86_64/u-boot-tools-native/"
+                "build/tmp*/sysroots-components/x86_64/u-boot-tools-native/"
                 "usr/bin/fit_check_sign"
             )
         )
@@ -341,7 +495,7 @@ def _run_mkimage_sign(fit: pathlib.Path, profile: Profile, *, verbose: bool) -> 
     """Invoke mkimage -F -N pkcs11 -k <URI> <fit>. Returns number of `Signature written` lines."""
     mkimage = require_tool("mkimage")
     log.info("signing FIT via engine_pkcs11 (PIN/touch may be required)")
-    log.info("  URI: %s", profile.uri)
+    log.info("  URI: %s", profile.redacted_uri)
 
     env = os.environ.copy()
     env["OPENSSL_CONF"] = str(profile.engine_conf)
@@ -391,7 +545,7 @@ def _run_mkimage_sign(fit: pathlib.Path, profile: Profile, *, verbose: bool) -> 
 
 
 def _structural_verify(fit: pathlib.Path, profile: Profile, total_sigs: int) -> str:
-    """Replicate sign-fit.sh's --verify check: dumpimage -l audit on each sig node."""
+    """The --verify structural check: dumpimage -l audit on each sig node."""
     dumpimage = require_tool("dumpimage")
     expected_algo = f"sha256,rsa2048:{profile.key_name_hint}"
     result = subprocess.run(
@@ -471,8 +625,10 @@ def sign_fit_file(
         return {
             "fit": str(fit),
             "key_name_hint": profile.key_name_hint,
-            "uri": profile.uri,
+            "uri": redact_pkcs11_uri(profile.uri),
             "engine_conf": str(profile.engine_conf),
+            "signer_alias": profile.signer_alias or "",
+            "pkcs11_module": profile.pkcs11_module or "",
             "configurations": len(_list_subnodes(fit, "/configurations")),
             "signature_nodes": total_sigs,
             "mode": mode,
@@ -620,6 +776,8 @@ def sign_bootfiles_archive(
                 "inner_fit_algo": expected_algo,
                 "inner_fit_total": total,
                 "mode": "skipped (already labelled)",
+                "profile": profile.name,
+                "signer_alias": profile.signer_alias or "",
             }
         if total > 0 and 0 < match < total:
             log.info(
@@ -653,7 +811,7 @@ def sign_bootfiles_archive(
         # ran sign-bootfiles-fit-yk on whatever bootfiles tarball is in
         # DEPLOY_DIR_IMAGE; if the alternate kas profile's resign target is
         # used the bundle assembly picks up the wrong sstate and overwrites
-        # the just-signed tarball (see issue #73 validation 2026-05-25).
+        # the just-signed tarball.
         dtbs = list(pathlib.Path(tmpdir).glob("*.dtb"))
         trust_profile = _detect_trust_profile_from_dtb(dtbs[0]) if dtbs else None
 
@@ -689,6 +847,11 @@ def sign_bootfiles_archive(
             "inner_fit_algo": expected_algo,
             "mode": "signed",
             "trust_profile": trust_profile,
+            "profile": profile.name,
+            "key_name_hint": profile.key_name_hint,
+            "uri": redact_pkcs11_uri(profile.uri),
+            "signer_alias": profile.signer_alias or "",
+            "pkcs11_module": profile.pkcs11_module or "",
         }
     except Exception:
         if mutated and backup.is_file():
@@ -754,6 +917,45 @@ def _print_summary(title: str, fields: dict) -> None:
     sys.stdout.write("=" * (len(title) + 34) + "\n")
 
 
+def _write_provenance(path: Optional[str], *, command: str, profile: Profile, summary: dict) -> None:
+    if not path:
+        return
+    out = pathlib.Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    doc = {
+        "schema": "iotgw.fit-signing-result.v1",
+        "created_utc": datetime.datetime.now(datetime.timezone.utc)
+        .replace(microsecond=0)
+        .isoformat(),
+        "command": command,
+        "profile": profile.name,
+        "signer": {
+            "alias": profile.signer_alias or "",
+        },
+        "key": {
+            "key_name_hint": profile.key_name_hint,
+            "uri": redact_pkcs11_uri(profile.uri),
+            "engine_conf": str(profile.engine_conf),
+            "pkcs11_module": profile.pkcs11_module or "",
+        },
+        "result": summary,
+    }
+    tmp = out.with_suffix(out.suffix + ".tmp")
+    tmp.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n")
+    # The URI is redacted, but treat signing artifacts as sensitive:
+    # restrict to owner before the atomic replace so the final file is 0600.
+    os.chmod(tmp, 0o600)
+    tmp.replace(out)
+    log.info("wrote provenance: %s", out)
+
+
+def _maybe_preflight(args: argparse.Namespace, profile: Profile) -> Optional[dict]:
+    if not getattr(args, "pkcs11_preflight", False):
+        return None
+    timeout = getattr(args, "pkcs11_timeout", None) or PKCS11_PREFLIGHT_TIMEOUT_DEFAULT
+    return preflight_pkcs11(profile, timeout=timeout)
+
+
 def cmd_sign_fit(args: argparse.Namespace) -> int:
     config_path = resolve_profile_config(args.profile_config)
     profile = build_profile(
@@ -762,9 +964,12 @@ def cmd_sign_fit(args: argparse.Namespace) -> int:
         key_name_hint_override=args.key_name_hint,
         uri_override=args.uri,
         engine_conf_override=args.engine_conf,
+        pkcs11_module_override=args.pkcs11_module,
+        signer_alias_override=args.signer_alias,
         key_label_legacy=args.key_label,
     )
     validate_profile(profile, require_engine_conf=not args.rewrite_only)
+    preflight = _maybe_preflight(args, profile)
     summary = sign_fit_file(
         pathlib.Path(args.fit),
         profile,
@@ -772,6 +977,9 @@ def cmd_sign_fit(args: argparse.Namespace) -> int:
         rewrite_only=args.rewrite_only,
         verbose=args.verbose,
     )
+    if preflight:
+        summary["pkcs11_preflight"] = preflight
+    _write_provenance(args.provenance, command="sign-fit", profile=profile, summary=summary)
     _print_summary("sign-fit summary", summary)
     return 0
 
@@ -784,10 +992,13 @@ def cmd_sign_bootfiles(args: argparse.Namespace) -> int:
         key_name_hint_override=args.key_name_hint,
         uri_override=args.uri,
         engine_conf_override=args.engine_conf,
+        pkcs11_module_override=args.pkcs11_module,
+        signer_alias_override=args.signer_alias,
         key_label_legacy=args.key_label,
     )
     validate_profile(profile, require_engine_conf=True)
-    archive = pathlib.Path(args.archive) if args.archive else DEFAULT_BOOTFILES_ARCHIVE
+    preflight = _maybe_preflight(args, profile)
+    archive = pathlib.Path(args.archive) if args.archive else resolve_bootfiles_archive()
     summary = sign_bootfiles_archive(
         archive,
         profile,
@@ -795,6 +1006,9 @@ def cmd_sign_bootfiles(args: argparse.Namespace) -> int:
         verify=args.verify,
         verbose=args.verbose,
     )
+    if preflight:
+        summary["pkcs11_preflight"] = preflight
+    _write_provenance(args.provenance, command="sign-bootfiles", profile=profile, summary=summary)
     _print_summary("sign-bootfiles summary", summary)
     if "post_sha" in summary and summary["post_sha"] != summary["pre_sha"]:
         trust = summary.get("trust_profile")
@@ -838,6 +1052,8 @@ def cmd_print_profile(args: argparse.Namespace) -> int:
         key_name_hint_override=args.key_name_hint,
         uri_override=args.uri,
         engine_conf_override=args.engine_conf,
+        pkcs11_module_override=args.pkcs11_module,
+        signer_alias_override=args.signer_alias,
         key_label_legacy=args.key_label,
     )
     # Don't validate engine_conf existence here; --print-profile is a
@@ -845,8 +1061,10 @@ def cmd_print_profile(args: argparse.Namespace) -> int:
     # not yet on disk.
     sys.stdout.write(f"profile        : {profile.name}\n")
     sys.stdout.write(f"key_name_hint  : {profile.key_name_hint}\n")
-    sys.stdout.write(f"uri            : {profile.uri}\n")
+    sys.stdout.write(f"uri            : {profile.redacted_uri}\n")
     sys.stdout.write(f"engine_conf    : {profile.engine_conf}\n")
+    sys.stdout.write(f"pkcs11_module  : {profile.pkcs11_module or ''}\n")
+    sys.stdout.write(f"signer_alias   : {profile.signer_alias or ''}\n")
     sys.stdout.write(f"config_source  : {config_path}\n")
     return 0
 
@@ -864,7 +1082,7 @@ def _add_profile_args(sp: argparse.ArgumentParser) -> None:
     sp.add_argument(
         "--profile-config",
         help=(
-            "Path to a YAML profile file. Defaults to scripts/fit-signing-profiles.yml "
+            "Path to a YAML profile file. Defaults to scripts/fit-signing/fit-signing-profiles.yml "
             "or $IOTGW_FIT_SIGNING_PROFILES if set."
         ),
     )
@@ -886,6 +1104,20 @@ def _add_profile_args(sp: argparse.ArgumentParser) -> None:
             "DEPRECATED alias: sets --key-name-hint and, if --uri is not given, "
             "derives uri=pkcs11:object=<urlencoded NAME>. Mutually exclusive "
             "with --key-name-hint."
+        ),
+    )
+    sp.add_argument(
+        "--pkcs11-module",
+        help=(
+            "PKCS#11 module path used by --pkcs11-preflight. May also be set "
+            "as pkcs11_module in the profile."
+        ),
+    )
+    sp.add_argument(
+        "--signer-alias",
+        help=(
+            "Operator-facing signer alias to record in summaries/provenance "
+            "(for example YK-PRIMARY or SOFTHSM-DEV)."
         ),
     )
 
@@ -914,7 +1146,22 @@ def build_parser() -> argparse.ArgumentParser:
     sp_sign.add_argument(
         "--verbose",
         action="store_true",
-        help="Forward mkimage's full stdout to the terminal (disables silent no-op detection).",
+        help="Tee mkimage's full stdout/stderr to the terminal. The silent-no-op guard always runs regardless.",
+    )
+    sp_sign.add_argument(
+        "--pkcs11-preflight",
+        action="store_true",
+        help="Run pkcs11-tool --list-slots for the configured --pkcs11-module before signing.",
+    )
+    sp_sign.add_argument(
+        "--pkcs11-timeout",
+        type=float,
+        default=PKCS11_PREFLIGHT_TIMEOUT_DEFAULT,
+        help=f"Timeout (seconds) for the --pkcs11-preflight slot enumeration. Default: {PKCS11_PREFLIGHT_TIMEOUT_DEFAULT:g}.",
+    )
+    sp_sign.add_argument(
+        "--provenance",
+        help="Write a redacted JSON signing-result document to this path.",
     )
     sp_sign.set_defaults(func=cmd_sign_fit)
 
@@ -934,6 +1181,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp_arch.add_argument("--verify", action="store_true", help="Structural verify after signing.")
     sp_arch.add_argument("--verbose", action="store_true", help="Forward mkimage stdout.")
+    sp_arch.add_argument(
+        "--pkcs11-preflight",
+        action="store_true",
+        help="Run pkcs11-tool --list-slots for the configured --pkcs11-module before signing.",
+    )
+    sp_arch.add_argument(
+        "--pkcs11-timeout",
+        type=float,
+        default=PKCS11_PREFLIGHT_TIMEOUT_DEFAULT,
+        help=f"Timeout (seconds) for the --pkcs11-preflight slot enumeration. Default: {PKCS11_PREFLIGHT_TIMEOUT_DEFAULT:g}.",
+    )
+    sp_arch.add_argument(
+        "--provenance",
+        help="Write a redacted JSON signing-result document to this path.",
+    )
     sp_arch.set_defaults(func=cmd_sign_bootfiles)
 
     sp_verify = sub.add_parser(
@@ -959,6 +1221,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    _reexec_under_repo_venv()
     parser = build_parser()
     args = parser.parse_args(argv)
     logging.basicConfig(

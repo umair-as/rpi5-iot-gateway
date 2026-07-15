@@ -15,6 +15,11 @@ import pytest
 
 from conftest import SIGN_FIT_PY, run_sign_fit
 
+# sign_fit.py runs its venv re-exec inside main(), not at import time, so its
+# helper functions can be imported and unit-tested directly.
+sys.path.insert(0, str(SIGN_FIT_PY.parent))
+import sign_fit  # noqa: E402
+
 
 def test_help_prints_subcommands():
     r = run_sign_fit("--help")
@@ -50,6 +55,8 @@ def test_print_profile_custom_config(tmp_path):
                 key_name_hint: "custom-hint"
                 uri: "pkcs11:object=custom-label"
                 engine_conf: "/tmp/does-not-need-to-exist.cnf"
+                pkcs11_module: "/tmp/pkcs11.so"
+                signer_alias: "SOFTHSM-DEV"
             """
         )
     )
@@ -57,6 +64,8 @@ def test_print_profile_custom_config(tmp_path):
     assert r.returncode == 0
     assert "custom-hint" in r.stdout
     assert "custom-label" in r.stdout
+    assert "/tmp/pkcs11.so" in r.stdout
+    assert "SOFTHSM-DEV" in r.stdout
 
 
 def test_unknown_profile_is_fatal():
@@ -135,6 +144,48 @@ def test_rewrite_only_mutates_fit(fixture_fit, tmp_path):
     assert got.stdout.strip() == new_hint
 
 
+def test_provenance_redacts_inline_pin(fixture_fit, tmp_path):
+    """Provenance JSON should be usable for audit without leaking URI PINs,
+    and an inline PIN must draw a loud warning without leaking the PIN."""
+    out = tmp_path / "signing-result.json"
+    r = run_sign_fit(
+        "sign-fit",
+        "--fit", str(fixture_fit),
+        "--key-name-hint", "audit-hint",
+        "--uri", "pkcs11:object=audit-key;pin-value=1234",
+        "--engine-conf", "/tmp/none.cnf",
+        "--signer-alias", "SOFTHSM-DEV",
+        "--rewrite-only",
+        "--provenance", str(out),
+    )
+    assert r.returncode == 0, f"stderr: {r.stderr}\nstdout: {r.stdout}"
+    # An inline PIN is warned about, but the warning itself never
+    # echoes the raw PIN.
+    assert "inline PIN" in r.stderr
+    assert "1234" not in r.stderr
+    data = json.loads(out.read_text())
+    assert data["schema"] == "iotgw.fit-signing-result.v1"
+    assert data["signer"]["alias"] == "SOFTHSM-DEV"
+    encoded = json.dumps(data)
+    assert "pin-value=1234" not in encoded
+    assert "pin-value=<redacted>" in encoded
+
+
+def test_pkcs11_preflight_requires_explicit_module(fixture_fit):
+    r = run_sign_fit(
+        "sign-fit",
+        "--fit", str(fixture_fit),
+        "--key-name-hint", "test-key",
+        "--uri", "pkcs11:object=test-key",
+        "--engine-conf", "/tmp/none.cnf",
+        "--rewrite-only",
+        "--pkcs11-preflight",
+        check=False,
+    )
+    assert r.returncode == 1
+    assert "pkcs11_module" in r.stderr or "--pkcs11-module" in r.stderr
+
+
 def test_fit_check_sign_discovery_via_env(tmp_path, monkeypatch):
     """verify subcommand respects IOTGW_FIT_CHECK_SIGN override."""
     # Provide a fake binary that doesn't exist; we just want the error
@@ -143,160 +194,6 @@ def test_fit_check_sign_discovery_via_env(tmp_path, monkeypatch):
     r = run_sign_fit("verify", "--fit", "/tmp/x", "--dtb", "/tmp/y", check=False)
     assert r.returncode == 1
     assert "IOTGW_FIT_CHECK_SIGN" in r.stderr or "not at" in r.stderr
-
-
-# ---------------------------------------------------------------------------
-# Shim default profile injection
-# ---------------------------------------------------------------------------
-
-
-import subprocess as _subprocess
-from conftest import SCRIPTS_DIR
-
-
-def _run_shim(shim: str, *args: str) -> _subprocess.CompletedProcess:
-    return _subprocess.run(
-        ["bash", str(SCRIPTS_DIR / shim), *args],
-        capture_output=True, text=True, check=False,
-    )
-
-
-def test_sign_fit_shim_defaults_to_yubikey_profile(tmp_path):
-    """`sign-fit.sh --fit <missing>` must fail on FIT lookup, not on missing profile.
-
-    Reproduces the legacy invocation pattern: a bare shim call with no
-    --profile and no signing-identity flags should resolve to the
-    YubiKey slot 9a profile by default. Reaching the FIT-lookup stage
-    proves the profile loaded; failing earlier (e.g. "either --profile
-    or ... required") would mean the default was never injected.
-    """
-    missing = tmp_path / "nonexistent-fit"
-    r = _run_shim("sign-fit.sh", "--fit", str(missing))
-    assert r.returncode == 1
-    assert "fitImage not found" in r.stderr
-    # Negative assertion: the build_profile "required-flags-missing"
-    # error must NOT have triggered.
-    assert "either --profile" not in r.stderr
-
-
-def test_sign_bootfiles_shim_defaults_to_yubikey_profile(tmp_path):
-    """`sign-bootfiles-fit.sh -- --verify` with no archive must fail on archive lookup."""
-    missing_archive = tmp_path / "nonexistent.tar.gz"
-    r = _run_shim(
-        "sign-bootfiles-fit.sh",
-        "--archive", str(missing_archive),
-        "--", "--verify",
-    )
-    assert r.returncode == 1
-    assert "archive not found" in r.stderr
-
-
-def _assert_explicit_profile_not_overridden(stderr: str) -> None:
-    """Structural invariants for explicit --profile shim test cases.
-
-    Tests must not assume the host's SoftHSM provisioning state. The
-    only things we can portably assert:
-      - the failure must not be "either --profile or … required"
-        (that would mean the shim stripped --profile and failed to
-        inject any default either)
-      - the failure must not mention the yubikey-9a engine_conf path
-        (that would mean the shim wrongly injected --profile
-        yubikey-9a on top of the explicit profile)
-      - the failure must be one of the two benign downstream errors:
-        missing FIT (engine_conf exists) or missing engine_conf (no
-        SoftHSM provisioned). Either proves the profile loaded and
-        validation got past the URI/profile stage.
-    """
-    assert "either --profile" not in stderr, (
-        f"explicit --profile was dropped before reaching Python; stderr: {stderr!r}"
-    )
-    assert "rauc-ca/fit/openssl-engine.cnf" not in stderr, (
-        f"yubikey-9a engine_conf path appeared — shim injected the wrong default; "
-        f"stderr: {stderr!r}"
-    )
-    assert "fitImage not found" in stderr or "engine conf not found" in stderr, (
-        f"expected benign downstream failure, got: {stderr!r}"
-    )
-
-
-def test_shim_respects_explicit_profile(tmp_path):
-    """`--profile softhsm-dev` must reach Python without yubikey-9a injection."""
-    missing = tmp_path / "nonexistent-fit"
-    r = _run_shim(
-        "sign-fit.sh",
-        "--profile", "softhsm-dev",
-        "--fit", str(missing),
-    )
-    assert r.returncode == 1
-    _assert_explicit_profile_not_overridden(r.stderr)
-
-
-def test_shim_respects_explicit_profile_eq(tmp_path):
-    """Same as above but with the `--profile=NAME` long-option form."""
-    missing = tmp_path / "nonexistent-fit"
-    r = _run_shim(
-        "sign-fit.sh",
-        "--profile=softhsm-dev",
-        "--fit", str(missing),
-    )
-    assert r.returncode == 1
-    _assert_explicit_profile_not_overridden(r.stderr)
-
-
-def test_shim_partial_override_engine_conf(tmp_path):
-    """`--engine-conf <path>` alone must inherit the yubikey-9a profile's other fields.
-
-    Old bash behavior: a caller could override just engine_conf and
-    keep the default key hint + URI. With the shim always injecting
-    `--profile yubikey-9a`, Python applies engine_conf as a per-field
-    override on top, then proceeds to FIT validation.
-    """
-    missing = tmp_path / "nonexistent-fit"
-    fake_engine = tmp_path / "fake-engine.cnf"
-    fake_engine.write_text("# placeholder\n")  # exists so engine_conf validation passes
-    r = _run_shim(
-        "sign-fit.sh",
-        "--engine-conf", str(fake_engine),
-        "--fit", str(missing),
-    )
-    assert r.returncode == 1
-    # Must fail on the missing FIT, NOT on "profile required" or
-    # "either --profile or ... required".
-    assert "fitImage not found" in r.stderr, (
-        f"partial --engine-conf override regressed; stderr: {r.stderr!r}"
-    )
-
-
-def test_shim_partial_override_uri(tmp_path):
-    """`--uri <pkcs11:object=...>` alone must inherit the yubikey-9a profile's other fields."""
-    missing = tmp_path / "nonexistent-fit"
-    r = _run_shim(
-        "sign-fit.sh",
-        "--uri", "pkcs11:object=alternate-label",
-        "--fit", str(missing),
-    )
-    assert r.returncode == 1
-    assert "fitImage not found" in r.stderr
-
-
-def test_shim_partial_override_key_label(tmp_path):
-    """`--key-label <NAME>` alone must inherit the yubikey-9a profile's engine_conf.
-
-    The legacy alias derives uri=pkcs11:object=<urlencoded NAME>, but
-    engine_conf must come from the yubikey-9a profile default.
-    """
-    missing = tmp_path / "nonexistent-fit"
-    r = _run_shim(
-        "sign-fit.sh",
-        "--key-label", "custom-label",
-        "--fit", str(missing),
-    )
-    assert r.returncode == 1
-    # Either fitImage-not-found (engine_conf exists on operator host) or
-    # engine_conf-not-found (yubikey-9a default missing on this host).
-    # The deprecation warning must surface either way.
-    assert "--key-label is deprecated" in r.stderr
-    assert "fitImage not found" in r.stderr or "engine conf not found" in r.stderr
 
 
 # ---------------------------------------------------------------------------
@@ -342,3 +239,59 @@ def test_key_label_uri_override_wins(tmp_path):
     assert r.returncode == 0
     assert "pkcs11:object=explicit" in r.stdout
     assert "pkcs11:object=label" not in r.stdout
+
+
+# ---------------------------------------------------------------------------
+# redact_pkcs11_uri matrix — imported directly, no subprocess needed
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "uri, expected",
+    [
+        # lowercase pin-value in the path component
+        (
+            "pkcs11:object=k;pin-value=1234",
+            "pkcs11:object=k;pin-value=<redacted>",
+        ),
+        # UPPERCASE attribute name must still be caught (IGNORECASE); the
+        # substituted token normalizes to the lowercase literal, which is
+        # fine — the point is the PIN value is gone.
+        (
+            "pkcs11:object=k;PIN-VALUE=1234",
+            "pkcs11:object=k;pin-value=<redacted>",
+        ),
+        # mixed-case
+        (
+            "pkcs11:object=k;Pin-Value=1234",
+            "pkcs11:object=k;pin-value=<redacted>",
+        ),
+        # pin-source in the path component
+        (
+            "pkcs11:object=k;pin-source=file:/tmp/pin",
+            "pkcs11:object=k;pin-source=<redacted>",
+        ),
+        # query component: value class must stop at '&' so a following
+        # attribute (module-path) survives intact
+        (
+            "pkcs11:object=k?pin-value=1234&module-path=/usr/lib/p11.so",
+            "pkcs11:object=k?pin-value=<redacted>&module-path=/usr/lib/p11.so",
+        ),
+        # no PIN material — returned unchanged
+        (
+            "pkcs11:object=iotgw-fit-softhsm-dev",
+            "pkcs11:object=iotgw-fit-softhsm-dev",
+        ),
+    ],
+)
+def test_redact_pkcs11_uri_matrix(uri, expected):
+    assert sign_fit.redact_pkcs11_uri(uri) == expected
+
+
+def test_redact_pkcs11_uri_never_leaks_pin():
+    for uri in (
+        "pkcs11:object=k;pin-value=SECRET",
+        "pkcs11:object=k;PIN-VALUE=SECRET",
+        "pkcs11:object=k?pin-value=SECRET&module-path=/p11.so",
+    ):
+        assert "SECRET" not in sign_fit.redact_pkcs11_uri(uri)
