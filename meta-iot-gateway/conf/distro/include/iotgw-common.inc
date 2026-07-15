@@ -245,15 +245,11 @@ IOTGW_ENABLE_PANIC_ON_OOPS ?= "1"
 # build-time path is signed.
 IOTGW_UBOOT_EXTRA_KERNEL_ARGS ?= "${@('panic=%s oops=panic sysrq_always_enabled=1' % (d.getVar('IOTGW_CRASH_PANIC_TIMEOUT') or '5')) if d.getVar('IOTGW_ENABLE_CRASH_DEBUG_DEV') == '1' else ''}"
 
-# BCM2712 hardware watchdog kernel-side enablement (default on).
-# Pulls in three kernel patches that backport the BCM2712 PM/power/DT
-# stack from raspberrypi/linux rpi-6.12.y so /dev/watchdog0 is exposed on
-# RPi5: bcm2835-pm MFD match (0008), bcm2712.dtsi PM node (0009), and
-# bcm2835-power probe NULL-deref guard (0010 — companion required when
-# bcm2835-pm registers the power cell on a BCM2712 with no asb window).
-# Disable for stripped builds that don't need a hardware watchdog at all.
-# Independent of the systemd PID1 ping below — kernel-side enablement is
-# harmless on its own (an unopened /dev/watchdog0 does not trigger reboot).
+# BCM2712 hardware watchdog (default on). Mainline 6.18.37 carries BCM2712 PM
+# support and exposes /dev/watchdog0 on RPi5 unconditionally, so this flag no
+# longer gates a kernel patch — it is retained as the intent/dependency toggle
+# for the systemd PID1 ping below. Independent of that ping, an unopened
+# /dev/watchdog0 does not reboot.
 IOTGW_ENABLE_HW_WATCHDOG ?= "1"
 
 # Optional: systemd hardware watchdog integration (disabled by default).

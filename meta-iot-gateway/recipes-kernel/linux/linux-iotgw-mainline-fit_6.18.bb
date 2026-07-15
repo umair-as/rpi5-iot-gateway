@@ -1,6 +1,10 @@
 require recipes-kernel/linux/linux-iotgw-mainline-common.inc
 
-LINUX_VERSION ?= "6.18+"
+# CVE exclusions
+include recipes-kernel/linux/cve-exclusion.inc
+include recipes-kernel/linux/cve-exclusion_6.18.inc
+
+LINUX_VERSION ?= "6.18.37"
 KERNEL_VERSION_SANITY_SKIP = "1"
 PV = "${LINUX_VERSION}+git${SRCPV}"
 
