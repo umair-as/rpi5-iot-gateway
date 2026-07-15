@@ -11,8 +11,8 @@
 #
 # Usage:
 #   scripts/run-target-checks.sh <device-host-or-ip> [check ...]
-#   IOTGW_TARGET=192.168.0.89 scripts/run-target-checks.sh
-#   scripts/run-target-checks.sh 192.168.0.89 ota-fit-slot ota-smoke
+#   IOTGW_TARGET=<device-ip> scripts/run-target-checks.sh
+#   scripts/run-target-checks.sh <device-ip> ota-fit-slot ota-smoke
 #   scripts/run-target-checks.sh --list
 #
 # With no check names, runs the default smoke set (ota-fit-slot ota-smoke

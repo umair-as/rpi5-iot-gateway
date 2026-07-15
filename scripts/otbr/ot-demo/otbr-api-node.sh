@@ -5,7 +5,7 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/otbr/ot-demo/otbr-api-node.sh
-#   BASE_URL=http://192.168.0.82:8081 scripts/otbr/ot-demo/otbr-api-node.sh
+#   BASE_URL=http://<otbr-host>:8081 scripts/otbr/ot-demo/otbr-api-node.sh
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8081}"
 JQ="${JQ:-jq}"

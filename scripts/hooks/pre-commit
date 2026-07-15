@@ -8,13 +8,18 @@ while IFS= read -r f; do
     [ -z "$f" ] && continue
     case "$f" in
         keys/*)                       blocked+="  $f  (under keys/)"$'\n' ;;
-        *.key|*-key.pem|*.p12|*.pfx|*.jks|*/id_rsa|*/id_ed25519)
+        *.key|*-key.pem|*.p12|*.pfx|*.jks|id_rsa|*/id_rsa|id_ed25519|*/id_ed25519)
                                       blocked+="  $f  (key-like name)"$'\n' ;;
     esac
     if git show ":$f" 2>/dev/null | grep -qaE 'PRIVATE KEY|BEGIN OPENSSH PRIVATE'; then
         blocked+="  $f  (contains a PRIVATE KEY block)"$'\n'
     fi
-done < <(git diff --cached --name-only --diff-filter=AM)
+    # ACMR (not AM): include rename/copy targets, so `git mv notes keys/ca.key`
+    # (classified R by rename detection) can't slip a key past the path guard.
+    # Note: a DER/binary private key under an innocuous name still evades the
+    # content grep — the /keys/ gitignore + this path guard are the primary
+    # controls for that.
+done < <(git diff --cached --name-only --diff-filter=ACMR)
 if [ -n "$blocked" ]; then
     printf '\nCOMMIT BLOCKED — private-key / keys/ material is staged:\n%s\n' "$blocked" >&2
     printf 'Unstage it (git restore --staged <file>). Override only if certain: git commit --no-verify\n\n' >&2
