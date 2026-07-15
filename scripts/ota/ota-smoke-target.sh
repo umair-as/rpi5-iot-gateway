@@ -12,11 +12,11 @@
 #   sudo ./ota-smoke-target.sh
 #
 #   # From host over SSH (no copy needed):
-#   ssh <gw> 'sudo bash -s' < scripts/ota-smoke-target.sh
+#   ssh <gw> 'sudo bash -s' < scripts/ota/ota-smoke-target.sh
 #
 # Pairs with:
-#   scripts/ota-certs-sync.sh    — operator workflow to provision OTA certs
-#   scripts/ota-bench-target.sh  — OTA throughput / install-time benchmark
+#   scripts/ota/ota-certs-sync.sh    — operator workflow to provision OTA certs
+#   scripts/ota/ota-bench-target.sh  — OTA throughput / install-time benchmark
 
 set -u
 PASS=0
@@ -186,9 +186,9 @@ else
     say_fail "failed units present:"
     printf '%s\n' "$failed" | sed 's/^/      /'
     # Hint for the known "cert source missing" condition — operator workflow is
-    # `scripts/ota-certs-sync.sh` from the host (see docs/OTA_UPDATE.md).
+    # `scripts/ota/ota-certs-sync.sh` from the host (see docs/OTA_UPDATE.md).
     if printf '%s' "$failed" | grep -q 'ota-certs-provision'; then
-        printf '      hint: run scripts/ota-certs-sync.sh on the host to provision certs\n'
+        printf '      hint: run scripts/ota/ota-certs-sync.sh on the host to provision certs\n'
     fi
 fi
 

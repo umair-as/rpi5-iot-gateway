@@ -4,11 +4,11 @@ set -euo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/release-build.sh --version X.Y.Z --build-id ID [--image dev|prod|base|desktop] [--bundle none|rootfs|full|full-fit]
+  scripts/release/release-build.sh --version X.Y.Z --build-id ID [--image dev|prod|base] [--bundle none|full|full-fit]
 
 Examples:
-  scripts/release-build.sh --version 0.4.0 --build-id 202605091930 --image dev --bundle full-fit
-  scripts/release-build.sh --version 0.4.0 --build-id 202605091930 --image prod --bundle full
+  scripts/release/release-build.sh --version 0.4.0 --build-id 202605091930 --image dev --bundle full-fit
+  scripts/release/release-build.sh --version 0.4.0 --build-id 202605091930 --image prod --bundle full
 EOF
 }
 
@@ -47,12 +47,12 @@ if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 case "$image" in
-    dev|prod|base|desktop) ;;
+    dev|prod|base) ;;
     *) echo "error: invalid --image: $image" >&2; exit 1 ;;
 esac
 
 case "$bundle" in
-    none|rootfs|full|full-fit) ;;
+    none|full|full-fit) ;;
     *) echo "error: invalid --bundle: $bundle" >&2; exit 1 ;;
 esac
 
@@ -72,7 +72,6 @@ case "$image" in
     dev) make_target="dev" ;;
     prod) make_target="prod" ;;
     base) make_target="base" ;;
-    desktop) make_target="desktop" ;;
 esac
 
 echo "[release-build] building image target: make ${make_target}"
@@ -81,13 +80,10 @@ make "${make_target}"
 if [[ "$bundle" != "none" ]]; then
     bundle_target=""
     case "$bundle:$image" in
-        rootfs:dev) bundle_target="bundle-dev" ;;
-        rootfs:desktop) bundle_target="bundle-desktop" ;;
-        full:dev) bundle_target="bundle-dev-full" ;;
-        full:prod) bundle_target="bundle-prod-full" ;;
-        full:desktop) bundle_target="bundle-desktop-full" ;;
+        full:dev) bundle_target="bundle-dev-full-fit" ;;
+        full:prod) bundle_target="bundle-prod-full-fit" ;;
         full-fit:dev) bundle_target="bundle-dev-full-fit" ;;
-        full-fit:base) bundle_target="bundle-base-full-fit-fast" ;;
+        full-fit:prod) bundle_target="bundle-prod-full-fit" ;;
         *)
             echo "error: unsupported image/bundle combination: image=${image}, bundle=${bundle}" >&2
             exit 1

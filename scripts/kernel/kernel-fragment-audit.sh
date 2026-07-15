@@ -16,7 +16,7 @@
 # kernel build (reads work-shared artifacts; survives rm_work).
 #
 # Usage:
-#   ./scripts/kernel-fragment-audit.sh [fragment.cfg ...]
+#   ./scripts/kernel/kernel-fragment-audit.sh [fragment.cfg ...]
 #   (no args: audits the fragment set applied by the current dev build)
 #
 # Exits non-zero if any MISMATCH/UNMET/REMOVED is found.

@@ -5,7 +5,7 @@ set -euo pipefail
 # Uses a file-backed LUKS2 container under /data and removes artifacts by default.
 #
 # Usage:
-#   scp scripts/tpm-cryptenroll-selftest.sh root@iotgw:/tmp/
+#   scp scripts/tpm/tpm-cryptenroll-selftest.sh root@iotgw:/tmp/
 #   ssh root@iotgw 'bash /tmp/tpm-cryptenroll-selftest.sh'
 #
 # Optional env vars:

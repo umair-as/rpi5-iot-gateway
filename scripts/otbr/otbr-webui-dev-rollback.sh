@@ -7,7 +7,7 @@ RESTART_SERVICE=1
 
 usage() {
     cat <<'EOF'
-Usage: scripts/otbr-webui-dev-rollback.sh [options]
+Usage: scripts/otbr/otbr-webui-dev-rollback.sh [options]
 
 Rollback otbr-webui dev override and return to packaged artifacts under
 /usr/share/otbr-webui.

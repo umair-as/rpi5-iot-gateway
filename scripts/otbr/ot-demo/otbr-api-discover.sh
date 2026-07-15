@@ -4,9 +4,9 @@ set -euo pipefail
 # Run updateDeviceCollectionTask and poll action status.
 #
 # Usage:
-#   scripts/ot-demo/otbr-api-discover.sh
-#   scripts/ot-demo/otbr-api-discover.sh --device-count 25 --timeout 60
-#   BASE_URL=http://192.168.0.82:8081 scripts/ot-demo/otbr-api-discover.sh
+#   scripts/otbr/ot-demo/otbr-api-discover.sh
+#   scripts/otbr/ot-demo/otbr-api-discover.sh --device-count 25 --timeout 60
+#   BASE_URL=http://192.168.0.82:8081 scripts/otbr/ot-demo/otbr-api-discover.sh
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8081}"
 JQ="${JQ:-jq}"
@@ -20,7 +20,7 @@ POLL_SEC=1
 
 usage() {
     cat <<'EOF'
-Usage: scripts/ot-demo/otbr-api-discover.sh [options]
+Usage: scripts/otbr/ot-demo/otbr-api-discover.sh [options]
 
 Options:
   --device-count <n>   Device count target (default: 10)
