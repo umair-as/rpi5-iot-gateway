@@ -75,7 +75,7 @@ space on first boot by `rauc-grow-data-partition`.
 - Device tree overlays (`overlays/`)
 - RPi firmware config (`config.txt`, `cmdline.txt`)
 
-**RAUC Updates:** This partition is updated by RAUC bundle post-install hooks using the configured bootfiles archive (`bootfiles.tar.gz` or `bootfiles-fit.tar.gz` depending on bundle type).
+**RAUC Updates:** This partition is updated by the RAUC bundle post-install hook (`bundle-hooks-fit.sh`) from the `bootfiles-fit.tar.gz` archive packed into the bundle.
 
 ---
 

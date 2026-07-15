@@ -17,15 +17,14 @@ Everything goes through the `Makefile`, which wraps `kas shell -c bitbake ...` a
 
 ```bash
 make help                # authoritative target catalogue — check before raw bitbake
-make dev|prod|base|desktop   # image variants
-make bundle-dev-full     # RAUC bundle (rootfs + kernel/DTBs)
+make dev|prod|base       # image variants (desktop: kas build kas/desktop.yml)
 make bundle-dev-full-fit # FIT-format RAUC bundle (file-key signed)
 make parse               # bitbake -p (parse-only sanity — cheapest validation)
 make layers              # bitbake-layers show-layers
 make clean-lock          # remove stale build/bitbake.lock
 ```
 
-`make help` is the source of truth for the full catalogue (prod/desktop bundles, HSM re-signing, signing-tool tests, uv venv). FIT/HSM signing is **operator-driven** (YubiKey PIN+touch, or SoftHSM for YK-less devs) — profiles, tooling (`scripts/sign_fit.py`), and the resign flow are documented in `docs/FIT_BOOT_SIGNING.md`; do not run HSM signing targets unattended. **FIT signed boot is the only flow and is mandatory:** the distro selects the FIT kernel unconditionally and image builds hard-fail (at u-boot `do_configure`, via `iotgw-fit-signing-guard.bbclass`) unless an operator signing key is configured in `kas/local.yml` (file-key, YubiKey, or SoftHSM). Metadata inspection (`make parse`, `bitbake -e`) is not blocked.
+`make help` is the source of truth for the full catalogue (prod bundles, HSM re-signing, signing-tool tests, uv venv). FIT/HSM signing is **operator-driven** (YubiKey PIN+touch, or SoftHSM for YK-less devs) — profiles, tooling (`scripts/fit-signing/sign_fit.py`), and the resign flow are documented in `docs/FIT_BOOT_SIGNING.md`; do not run HSM signing targets unattended. **FIT signed boot is the only flow and is mandatory:** the distro selects the FIT kernel unconditionally and image builds hard-fail (at u-boot `do_configure`, via `iotgw-fit-signing-guard.bbclass`) unless an operator signing key is configured in `kas/local.yml` (file-key, YubiKey, or SoftHSM). Metadata inspection (`make parse`, `bitbake -e`) is not blocked.
 
 Feature toggles (env vars; default off unless an overlay sets them):
 
@@ -37,7 +36,7 @@ IOTGW_ENABLE_OBSERVABILITY
 IOTGW_ENABLE_BTF_CORE_DEV
 ```
 
-Example: `IOTGW_ENABLE_OTBR=1 make bundle-dev-full`.
+Example: `IOTGW_ENABLE_OTBR=1 make bundle-dev-full-fit`.
 
 ### KAS composition
 
@@ -46,7 +45,7 @@ The Makefile picks `BASE = kas/local.yml` if present, else `kas/rauc.yml` (RAUC 
 - `kas/local.yml` — developer-local secrets/WiFi/RAUC keys and shared cache paths (gitignored; copy from `local.yml.example`)
 - `kas/rauc.yml` — RAUC OTA stack
 - `kas/otbr.yml`, `kas/containers.yml`, `kas/tpm.yml`, `kas/watchdog.yml`, `kas/cve.yml`, `kas/spdx.yml` — feature overlays
-- `kas/uboot-prod-hardening.yml` — applied to `prod` and `bundle-prod-full` automatically when present
+- `kas/uboot-prod-hardening.yml` — applied to `prod` and `bundle-prod-full-fit` automatically when present
 - `kas/desktop.yml` — desktop image variant
 
 Shared layers are not cloned manually: kas checks them out into the gitignored `.kas/` (`KAS_WORK_DIR`) using bare-mirror alternates from `KAS_REPO_REF_DIR` (an operator-local layer cache set by `scripts/env.sh`), preserving the SHA pins in `rpi5.yml`. `kas/local.yml` supplies the shared `DL_DIR`/`SSTATE_DIR`.
@@ -78,7 +77,7 @@ Build artifacts land in `build/tmp/deploy/images/raspberrypi5/`. Flash the `.wic
 
 ### Releases & CI
 
-- Release helper: `scripts/release-build.sh` + `scripts/release-manifest.sh` — process in `docs/RELEASE.md`
+- Release helper: `scripts/release/release-build.sh` + `scripts/release/release-manifest.sh` — process in `docs/RELEASE.md`
 - CI: `.github/workflows/release-hygiene.yml` (release-hygiene lint only — no Yocto builds in CI)
 - Changelog assembled in batches before release — do not add an entry for every trivial bump
 

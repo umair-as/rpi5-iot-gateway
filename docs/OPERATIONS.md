@@ -14,9 +14,9 @@ Audience: operators, integrators, and maintainers.
 | `make dev` | `iot-gw-image-dev` |
 | `make prod` | `iot-gw-image-prod` |
 | `make base` | `iot-gw-image-base` |
-| `make desktop` | `iot-gw-image-desktop` |
-| `make bundle-dev-full` | dev full bundle (rootfs + boot assets) |
-| `make bundle-prod-full` | prod full bundle (rootfs + boot assets) |
+| `kas build kas/desktop.yml:kas/local.yml --target iot-gw-image-desktop` | `iot-gw-image-desktop` (no make target) |
+| `make bundle-dev-full-fit` | dev full bundle (rootfs + signed FIT boot assets) |
+| `make bundle-prod-full-fit` | prod full bundle (rootfs + signed FIT boot assets) |
 
 Initial setup:
 
@@ -42,7 +42,7 @@ IOTGW_VERSION_MAJOR=0 \
 IOTGW_VERSION_MINOR=4 \
 IOTGW_VERSION_PATCH=0 \
 IOTGW_BUILD_ID=20260509 \
-make bundle-prod-full
+make bundle-prod-full-fit
 ```
 
 When Makefile abstraction is not enough:

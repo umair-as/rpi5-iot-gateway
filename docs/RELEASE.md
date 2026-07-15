@@ -57,7 +57,7 @@ GITHUB_REPO=umair-as/rpi5-iot-gateway git-cliff --config cliff.toml --unreleased
 Use release wrapper from clean tree:
 
 ```bash
-scripts/release-build.sh \
+scripts/release/release-build.sh \
   --version X.Y.Z \
   --build-id YYYYMMDDHHMM \
   --image dev \
@@ -67,7 +67,7 @@ scripts/release-build.sh \
 For production profile:
 
 ```bash
-scripts/release-build.sh \
+scripts/release/release-build.sh \
   --version X.Y.Z \
   --build-id YYYYMMDDHHMM \
   --image prod \
@@ -79,7 +79,7 @@ scripts/release-build.sh \
 Generate manifest and checksums:
 
 ```bash
-scripts/release-manifest.sh \
+scripts/release/release-manifest.sh \
   --tag vX.Y.Z \
   --version X.Y.Z \
   --build-id YYYYMMDDHHMM
@@ -91,10 +91,10 @@ Output directory:
 - `release/vX.Y.Z/checksums.sha256`
 
 The deploy directory is auto-detected (`build/tmp/deploy` or
-`build/tmp-glibc/deploy`). Override for non-standard layouts:
+`build/tmp/deploy`). Override for non-standard layouts:
 
 ```bash
-IOTGW_DEPLOY_ROOT=/path/to/deploy scripts/release-manifest.sh ...
+IOTGW_DEPLOY_ROOT=/path/to/deploy scripts/release/release-manifest.sh ...
 ```
 
 ## 6. Device Verification (Minimum)

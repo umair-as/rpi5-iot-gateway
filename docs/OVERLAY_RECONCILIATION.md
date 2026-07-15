@@ -19,8 +19,7 @@ security metadata, default configs).
 Reconciliation runs only during RAUC bundle install hooks (not as a perpetual
 boot-time daemon).
 
-- hook scripts:
-  - `meta-iot-gateway/recipes-ota/rauc/files/bundle-hooks.sh`
+- hook script (FIT is the only boot flow):
   - `meta-iot-gateway/recipes-ota/rauc/files/bundle-hooks-fit.sh`
 - reconciliation tool:
   - `meta-iot-gateway/recipes-ota/rauc/files/overlay-reconcile.py`

@@ -12,7 +12,7 @@ Before cross-compiling outside Yocto:
 
 ```bash
 # Source SDK environment (adjust path)
-source /opt/poky/4.0/environment-setup-cortexa76-poky-linux
+source /opt/poky/<version>/environment-setup-cortexa76-poky-linux  # <version> = wrynose (6.0) SDK
 
 # Verify
 echo $CC  # Should show aarch64-poky-linux-gcc

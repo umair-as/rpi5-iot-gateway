@@ -3,9 +3,12 @@
 How to turn a Linux kernel CVE into a backport patch carried in this
 Yocto layer, when the upstream fix isn't yet in your pinned `SRCREV`.
 
-**Worked example:** CVE-2026-31431 (`crypto: algif_aead` write-to-page-cache,
-CISA KEV). Stable backport `fafe0fa2` for `linux-6.18.y`, applied against
-our pinned `v6.18.13`.
+**Worked example (illustrative):** CVE-2026-31431 (`crypto: algif_aead`
+write-to-page-cache, CISA KEV), stable backport `fafe0fa2` for `linux-6.18.y`,
+applied against an example pin of `v6.18.13`. The commands and workflow are
+real; the specific CVE, SRCREV, and the `0011-…` patch are a teaching example,
+not shipped in the tree. Substitute the current pin (see
+`linux-iotgw-mainline-common.inc`) and your actual CVE.
 
 ---
 
@@ -163,9 +166,8 @@ Valid `Upstream-Status:` values: `Backport`, `Pending`, `Inappropriate`,
 
 ## 6. Wire it into the recipe
 
-For this layer, both kernel variants (mainline, mainline-fit) share
-`linux-iotgw-mainline-common.inc`. Add the
-patch there once:
+The `linux-iotgw-mainline-fit` provider consumes patches via the shared
+`linux-iotgw-mainline-common.inc`. Add the patch there once:
 
 ```bitbake
 # Security: CVE-2026-31431 (algif_aead in-place write-to-page-cache; CISA KEV).
@@ -189,7 +191,7 @@ bitbake -c cleansstate virtual/kernel
 bitbake -c patch virtual/kernel    # stops after do_patch; faster than full build
 
 grep -E "Applying patch|FAILED|Hunk" \
-  build/tmp-glibc/work/*-poky-linux/linux-iotgw-mainline*/*/temp/log.do_patch
+  build/tmp/work/*-poky-linux/linux-iotgw-mainline*/*/temp/log.do_patch
 ```
 
 A clean `Applying patch 0011-...` with **no** `FAILED` / `Hunk` lines
@@ -200,7 +202,7 @@ string unique to the fix:
 
 ```bash
 grep -l "operating out-of-place" \
-  build/tmp-glibc/work/*-poky-linux/linux-iotgw-mainline*/*/git/crypto/algif_aead.c
+  build/tmp/work/*-poky-linux/linux-iotgw-mainline*/*/git/crypto/algif_aead.c
 ```
 
 For CVE-2026-31431 specifically, the AEAD path isn't compiled into our
@@ -242,15 +244,15 @@ If you see the cherry-pick in the log, delete the patch file and the
   CVE manifest.
 - **Don't combine multiple CVEs into one patch.** The "drop when SRCREV
   passes vX.Y.Z" tracking only works if each patch closes exactly one CVE.
-- **Don't forget the recovery and FIT kernel variants.** Put the
-  `SRC_URI:append` in `linux-iotgw-mainline-common.inc`, not in one
-  variant `.bb`.
+- **Put the patch in the shared include.** Put the
+  `SRC_URI:append` in `linux-iotgw-mainline-common.inc`, not in the
+  provider `.bb`.
 
 ## Cheat-sheet
 
 | Task | Command |
 |---|---|
-| What CVEs affect me? | `INHERIT += "cve-check"`; `bitbake -c cve_check <image>`; inspect `tmp-glibc/log/cve/<image>.cve` |
+| What CVEs affect me? | `INHERIT += "cve-check"`; `bitbake -c cve_check <image>`; inspect `tmp/log/cve/<image>.cve` |
 | Is the fix in my `SRCREV`? | `git log <SRCREV>.. -- <affected-file>` — if you see the commit, you're patched |
 | Which stable branch a SHA is on | `git.kernel.org/.../log/<file>?h=<branch>` and grep for the SHA |
 | Raw patch in `git am` form | append `/patch/?id=<sha>` to the kernel.org repo URL |

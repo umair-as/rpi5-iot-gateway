@@ -102,7 +102,7 @@ SRC_URI:append = " file://0001-...patch"
 Keep the leading space before `file://` in `SRC_URI:append`; it prevents malformed concatenation when appending.
 
 Use overrides where needed:
-- `SRC_URI:append:rpi5 = " file://...patch"`
+- `SRC_URI:append:raspberrypi5 = " file://...patch"`
 
 8. Build and validate
 
