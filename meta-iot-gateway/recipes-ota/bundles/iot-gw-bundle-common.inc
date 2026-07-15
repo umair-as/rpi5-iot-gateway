@@ -8,12 +8,14 @@ inherit bundle iotgw-rauc-adaptive-guard
 # Bundle identity (matches device system.conf via rauc-conf)
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 
-# Control whether to update /boot (kernel/DTBs) via bundle hook
+# Control whether to update /boot (kernel/DTBs) via bundle hook. FIT is the only
+# boot flow, so the bootfiles archive/hook default to the FIT-aware variants
+# (there is no non-FIT bundle).
 IOTGW_RAUC_UPDATE_BOOTFILES ?= "0"
-IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE ?= "rpi-bootfiles-archive"
-IOTGW_RAUC_BOOTFILES_HOOK_FILE ?= "bundle-hooks.sh"
-IOTGW_RAUC_BOOTFILES_SOURCE_FILE ?= "bootfiles.tar.gz"
-IOTGW_RAUC_BOOTFILES_BUNDLE_FILE ?= "bootfiles.tar.gz"
+IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE ?= "rpi-bootfiles-archive-fit"
+IOTGW_RAUC_BOOTFILES_HOOK_FILE ?= "bundle-hooks-fit.sh"
+IOTGW_RAUC_BOOTFILES_SOURCE_FILE ?= "bootfiles-fit.tar.gz"
+IOTGW_RAUC_BOOTFILES_BUNDLE_FILE ?= "bootfiles-fit.tar.gz"
 
 # Slots included in the bundle
 RAUC_BUNDLE_SLOTS = "rootfs"

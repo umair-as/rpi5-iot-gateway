@@ -7,7 +7,13 @@ SRC_URI:append = " file://0003-defconfig-iotgw-base.patch file://0004-configs-rp
 
 # ── U-Boot feature gating (mirrors IOTGW_KERNEL_FEATURES / iotgw-kernel-fragments.bbclass) ──
 
-IOTGW_UBOOT_FEATURES ?= "surface_reduce"
+# FIT signed boot is mandatory (distro policy), so fit_enforce
+# (CONFIG_FIT_SIGNATURE + legacy-image-format off) is a default for ALL images,
+# not just prod — otherwise dev U-Boot would boot an unsigned/tampered FIT. This
+# is the u-boot-recipe default; image-recipe IOTGW_UBOOT_FEATURES does not reach
+# this separate recipe. appliance_lockdown is still added on top only for prod
+# (kas/uboot-prod-hardening.yml / iot-gw-image-prod).
+IOTGW_UBOOT_FEATURES ?= "surface_reduce fit_enforce"
 
 # surface_reduce: disable unused commands (safe for dev and prod)
 SRC_URI:append = "${@' file://iotgw-uboot-hardening.cfg' \
