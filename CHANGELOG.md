@@ -7,13 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-15
+
+Migration from scarthgap to wrynose (Yocto 6.0 LTS). This is a reflash, not an
+OTA — the RAUC compatible string does not guard the release-track jump.
+
+### Added
+- Yocto 6.0 LTS (wrynose) base: U-Boot 2026.01, mainline kernel 6.18.37,
+  systemd 259, GCC 15.2. Layers are SHA-pinned and checked out by kas into a
+  gitignored `.kas/` via bare-mirror alternates.
+- Signed FIT-only boot (split model): a plain kernel image plus a separate FIT
+  assembly/signing recipe; U-Boot boots the FIT's signed `default` config, and
+  the config name is removed from the environment and OTA hooks. Three signing
+  paths validated end-to-end — build-time file key, SoftHSM, and YubiKey
+  (PIN+touch), including on-target boot of a YubiKey-signed FIT.
+- OTA U-Boot env self-heal: a bundle install reconciles the boot-critical env
+  vars from a canonical `uboot-env.txt` it ships, so an OTA that changes the
+  kernel boots the correct per-slot FIT without a manual env reset (production
+  is already immune via `CONFIG_ENV_WRITEABLE_LIST`).
+- Host-side target-checks runner (`scripts/run-target-checks.sh`) that drives
+  the on-target smoke/check scripts over SSH.
+- Additive SBOM/CVE overlay (`kas/cve.yml`) gated by `IOTGW_CREATE_SPDX_DISABLE`.
+
+### Changed
+- systemd-networkd replaces NetworkManager (br0 bridge + wlan0 via
+  `wpa_supplicant@`, systemd-resolved); provisioning drop-ins move to
+  `/data/iotgw/{network,wpa}`.
+- Containers enabled: podman/crun/netavark/aardvark-dns from
+  meta-virtualization, nftables firewall driver, persistent graphroot on `/data`.
+- Host tooling reorganized under `scripts/` by subsystem; FIT signing is driven
+  by `scripts/fit-signing/sign_fit.py`.
+- Wi-Fi association MAC defaults to the permanent hardware MAC (stable across
+  reboots for a fixed appliance) instead of per-association randomization.
+- `IOTGW_WIFI_IFACE` is now a single source of truth in `iotgw-common.inc`,
+  consumed by network-units, hardening, and the RAUC managed-path.
+- `scripts/release/release-manifest.sh` auto-detects the Yocto deploy directory
+  instead of hardcoding it, and records `deploy_root` for traceability
+  (override with `IOTGW_DEPLOY_ROOT`).
+
 ### Fixed
-- `scripts/release/release-manifest.sh` now auto-detects the Yocto deploy directory
-  (`build/tmp/deploy` or `build/tmp-glibc/deploy`) instead of hardcoding
-  `build/tmp/deploy`. The v0.4.0 script silently produced an empty
-  `checksums.sha256` on `iotgw` (which renames `TMPDIR` to `tmp-glibc`).
-  Override with `IOTGW_DEPLOY_ROOT` for non-standard layouts. Manifest now
-  records `deploy_root` for traceability.
+- U-Boot A/B failover: a slot whose partition-UUID lookup fails now marks itself
+  non-bootable and fails over to the other slot instead of looping forever (the
+  attempt-counter decrement is persisted before reset).
+- FIT signing: every configuration signature node must be signed, not just one;
+  verification and the already-signed check match by key-name-hint so non-default
+  hash/signature algorithms are not rejected.
+
+### Removed
+- The non-FIT bundle path (bundle recipes, hook, and bootfiles archive) and the
+  corresponding Make targets — FIT signed boot is the only flow.
+- Layers meta-security, meta-lts-mixins, and meta-rust-bin; meta-rauc-community
+  is absorbed into meta-iot-gateway.
 
 ## [0.4.0] - 2026-05-09
 
