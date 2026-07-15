@@ -547,7 +547,10 @@ def _run_mkimage_sign(fit: pathlib.Path, profile: Profile, *, verbose: bool) -> 
 def _structural_verify(fit: pathlib.Path, profile: Profile, total_sigs: int) -> str:
     """The --verify structural check: dumpimage -l audit on each sig node."""
     dumpimage = require_tool("dumpimage")
-    expected_algo = f"sha256,rsa2048:{profile.key_name_hint}"
+    # Identify signed nodes by our key-name-hint suffix, not a hardcoded
+    # sha256,rsa2048 prefix: the hash/sign algo is whatever the FIT/key declares
+    # (e.g. rsa4096 / a different hash), and U-Boot enforces the algo via the DTB.
+    expected_key = f":{profile.key_name_hint}"
     result = subprocess.run(
         [dumpimage, "-l", str(fit)],
         capture_output=True,
@@ -559,12 +562,12 @@ def _structural_verify(fit: pathlib.Path, profile: Profile, total_sigs: int) -> 
         )
     out = result.stdout
     algo_lines = [l for l in out.splitlines() if "Sign algo:" in l]
-    match_count = sum(1 for l in algo_lines if expected_algo in l)
+    match_count = sum(1 for l in algo_lines if l.rstrip().endswith(expected_key))
     if len(algo_lines) < total_sigs or match_count < total_sigs:
         sys.stderr.write(out)
         raise SignFitError(
-            f"verify failed: expected {total_sigs} signature(s) with algo "
-            f"{expected_algo!r}, found {match_count}"
+            f"verify failed: expected {total_sigs} signature(s) for key "
+            f"{profile.key_name_hint!r}, found {match_count}"
         )
     bad_sigs = 0
     for line in out.splitlines():
@@ -577,7 +580,7 @@ def _structural_verify(fit: pathlib.Path, profile: Profile, total_sigs: int) -> 
         raise SignFitError(
             f"verify failed: {bad_sigs} signature node(s) have empty or 'unavailable' Sign value"
         )
-    msg = f"PASS ({match_count} signature(s) matched {expected_algo!r})"
+    msg = f"PASS ({match_count} signature(s) matched key {profile.key_name_hint!r})"
     log.info("verify: %s", msg)
     return msg
 
@@ -617,7 +620,17 @@ def sign_fit_file(
             log.info("rewrite-only: FIT key-name-hint rewritten in place; skipping mkimage")
             mode = "rewrite-only (FIT mutated, mkimage skipped)"
         else:
-            _run_mkimage_sign(fit, profile, verbose=verbose)
+            sig_written = _run_mkimage_sign(fit, profile, verbose=verbose)
+            # Always require every signature node to be signed, not just one.
+            # mkimage can sign a subset of a multi-configuration FIT and still
+            # exit 0; without this check a partially-signed FIT ships and fails
+            # U-Boot verification on the unsigned config(s). (--verify adds a
+            # structural re-parse on top; this count invariant is unconditional.)
+            if sig_written != total_sigs:
+                raise SignFitError(
+                    f"mkimage signed {sig_written} of {total_sigs} configuration "
+                    f"signature node(s) — FIT is only partially signed"
+                )
             mode = "signed via engine_pkcs11"
             if verify:
                 verify_result = _structural_verify(fit, profile, total_sigs)
@@ -704,9 +717,13 @@ def _detect_trust_profile_from_dtb(dtb_path: pathlib.Path) -> Optional[str]:
 
 
 def _peek_inner_fit_algo_status(
-    archive: pathlib.Path, expected_algo: str
+    archive: pathlib.Path, key_name_hint: str
 ) -> tuple[int, int]:
-    """Return (total_algo_lines, matching_count) without mutating the archive."""
+    """Return (total_algo_lines, matching_count) without mutating the archive.
+
+    Matches signature nodes by the key-name-hint suffix, not a hardcoded algo,
+    so a non-sha256/non-rsa2048 profile still detects an already-signed FIT.
+    """
     dumpimage = require_tool("dumpimage")
     with tempfile.TemporaryDirectory(prefix="sign-bootfiles-peek-") as td:
         try:
@@ -731,7 +748,8 @@ def _peek_inner_fit_algo_status(
         if result.returncode != 0:
             return (0, 0)
         algo_lines = [l for l in result.stdout.splitlines() if "Sign algo:" in l]
-        return (len(algo_lines), sum(1 for l in algo_lines if expected_algo in l))
+        expected_key = f":{key_name_hint}"
+        return (len(algo_lines), sum(1 for l in algo_lines if l.rstrip().endswith(expected_key)))
 
 
 def sign_bootfiles_archive(
@@ -755,25 +773,24 @@ def sign_bootfiles_archive(
     require_tool("tar")
     require_tool("dumpimage")
 
-    expected_algo = f"sha256,rsa2048:{profile.key_name_hint}"
     pre_sha = _sha256(archive)
     log.info("archive: %s", archive)
     log.info("pre  sha256: %s", pre_sha)
 
     if not force:
-        total, match = _peek_inner_fit_algo_status(archive, expected_algo)
+        total, match = _peek_inner_fit_algo_status(archive, profile.key_name_hint)
         if total > 0 and match == total:
             log.info(
-                "all %d signature node(s) in inner FIT already labelled %r; "
+                "all %d signature node(s) in inner FIT already signed by key %r; "
                 "skipping (use --force to re-sign)",
                 total,
-                expected_algo,
+                profile.key_name_hint,
             )
             return {
                 "archive": str(archive),
                 "pre_sha": pre_sha,
                 "post_sha": pre_sha,
-                "inner_fit_algo": expected_algo,
+                "inner_fit_key": profile.key_name_hint,
                 "inner_fit_total": total,
                 "mode": "skipped (already labelled)",
                 "profile": profile.name,
@@ -781,11 +798,11 @@ def sign_bootfiles_archive(
             }
         if total > 0 and 0 < match < total:
             log.info(
-                "inner FIT is partially labelled (%d of %d match %r); "
+                "inner FIT is partially signed (%d of %d match key %r); "
                 "proceeding to re-sign all",
                 match,
                 total,
-                expected_algo,
+                profile.key_name_hint,
             )
 
     backup = archive.with_suffix(archive.suffix + ".bak")
@@ -844,7 +861,7 @@ def sign_bootfiles_archive(
             "archive": str(archive),
             "pre_sha": pre_sha,
             "post_sha": post_sha,
-            "inner_fit_algo": expected_algo,
+            "inner_fit_key": profile.key_name_hint,
             "mode": "signed",
             "trust_profile": trust_profile,
             "profile": profile.name,
