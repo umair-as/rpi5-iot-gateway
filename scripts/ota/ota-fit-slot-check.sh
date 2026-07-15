@@ -1,7 +1,7 @@
 #!/bin/bash
-# Regression assertion for the "OTA-delivered kernel is never booted" bug
-# (wrynose migration review finding #1): confirms the kernel actually
-# running on target was loaded from the *active RAUC slot's* per-slot FIT
+# Regression assertion for the "OTA-delivered kernel is never booted" bug:
+# confirms the kernel actually running on target was loaded from the
+# *active RAUC slot's* per-slot FIT
 # (/boot/fitImage-a or /boot/fitImage-b), not a stale plain /boot/fitImage
 # left over from before U-Boot's iotgw_load_boot selected FIT files by
 # ${rauc_slot}.
@@ -10,7 +10,7 @@
 #       FIT matches the running kernel (uname). The booted kernel came
 #       from that slot's FIT, as intended.
 # FAIL: they differ — U-Boot loaded the wrong/stale FIT for this slot,
-#       i.e. exactly the finding-#1 regression.
+#       i.e. the wrong-FIT-per-slot regression this guards against.
 # WARN (still exits non-zero via FAIL count if the file is flat-out
 #       missing on a device that has completed at least one OTA): the
 #       active slot's per-slot FIT is absent from /boot.
@@ -20,13 +20,10 @@
 #   sudo ./ota-fit-slot-check.sh
 #
 #   # From host over SSH (no copy needed):
-#   ssh <gw> 'sudo bash -s' < scripts/ota-fit-slot-check.sh
+#   ssh <gw> 'sudo bash -s' < scripts/ota/ota-fit-slot-check.sh
 #
 # Pairs with:
-#   scripts/ota-smoke-target.sh — general post-OTA / BSP smoke suite
-#   scratch/fit-ab-boot-design.md §5 — the T0/T1/T2 proof ladder this
-#     script encodes as T1 (on-target, no rebuild needed to see PASS/FAIL;
-#     a visible kernel-version bump per T2 makes the FAIL case undeniable)
+#   scripts/ota/ota-smoke-target.sh — general post-OTA / BSP smoke suite
 
 set -u
 PASS=0
@@ -75,7 +72,7 @@ elif [ -z "$active_slot" ]; then
 fi
 
 if [ -z "$active_slot" ]; then
-    say_fail "could not determine active RAUC slot from /proc/cmdline or 'rauc status'"
+    say_fail "could not determine active RAUC slot from /proc/cmdline or 'rauc status' — this is a target-side check; run it ON the gateway, or from the host via: scripts/run-target-checks.sh <device-ip> ota-fit-slot"
     printf '\n== summary ==\n  PASS: %d\n  FAIL: %d\n  SKIP: %d\n' "$PASS" "$FAIL" "$SKIP"
     exit 1
 fi
@@ -103,7 +100,30 @@ fi
 say_pass "$fit_path present"
 
 # ---------------------------------------------------------------------------
-section "Kernel version: FIT vs running"
+section "Kernel ↔ module coherence (tool-free)"
+
+# Primary, tool-free assertion. If U-Boot booted the wrong/stale FIT for this
+# slot, the running kernel release won't match the modules shipped in the
+# slot's rootfs — so /lib/modules/$(uname -r) is absent and nothing loads,
+# the wrong-FIT-per-slot symptom. Needs no u-boot-tools/strings, so it works
+# on the minimal target image (unlike the FIT-version comparison below).
+krel=$(uname -r 2>/dev/null || true)
+if [ -n "$krel" ] && [ -d "/lib/modules/${krel}" ]; then
+    say_pass "modules present for running kernel: /lib/modules/${krel} (booted kernel matches this slot's rootfs)"
+else
+    say_fail "no /lib/modules/${krel} for the running kernel — kernel↔module mismatch: U-Boot booted a stale/wrong FIT for slot ${active_slot}"
+fi
+if command -v lsmod >/dev/null 2>&1; then
+    nmod=$(lsmod 2>/dev/null | tail -n +2 | grep -c . || true)
+    if [ "${nmod:-0}" -gt 0 ]; then
+        say_pass "loaded kernel modules: ${nmod}"
+    else
+        say_warn "no kernel modules loaded (lsmod empty) — corroborates a kernel↔module mismatch"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+section "Kernel version: FIT vs running (best-effort; needs u-boot-tools/strings)"
 
 # Extract the embedded kernel version string from the on-disk FIT. Prefer
 # dumpimage/mkimage -l (structured FIT metadata; u-boot-tools), fall back to
@@ -128,25 +148,29 @@ if [ -z "$fit_kernel_desc" ] && command -v strings >/dev/null 2>&1; then
 fi
 
 if [ -z "$fit_kernel_desc" ]; then
-    say_fail "could not extract a kernel version string from $fit_path (no dumpimage/mkimage/strings usable)"
-    printf '\n== summary ==\n  PASS: %d\n  FAIL: %d\n  SKIP: %d\n' "$PASS" "$FAIL" "$SKIP"
-    exit 1
-fi
-say_pass "extracted FIT kernel string via ${extraction_method}: ${fit_kernel_desc}"
-
-running_uname_r=$(uname -r 2>/dev/null || true)
-running_uname_v=$(uname -v 2>/dev/null || true)
-say_pass "running kernel: uname -r='${running_uname_r}' uname -v='${running_uname_v}'"
-
-# The FIT description / "Linux version" banner both embed the same release
-# string uname -r reports (e.g. "6.18.29-...-iotgwR2"). Match on that
-# substring rather than requiring an exact whole-string match, since
-# dumpimage/mkimage descriptions and the raw "Linux version" banner differ
-# in surrounding text.
-if [ -n "$running_uname_r" ] && printf '%s' "$fit_kernel_desc" | grep -qF "$running_uname_r"; then
-    say_pass "booted kernel (${running_uname_r}) matches ${fit_name} — slot's FIT was actually loaded"
+    # Not fatal: u-boot-tools (dumpimage/mkimage) and binutils `strings` are not
+    # on the minimal target image, and the FIT kernel is compressed so `strings`
+    # can't see the banner anyway. The tool-free kernel↔module coherence check
+    # above is the authoritative on-target assertion; this comparison is an
+    # extra cross-check only when the tools happen to be present.
+    say_skip "FIT kernel version comparison" "no usable dumpimage/mkimage/strings on target — covered by kernel↔module coherence above"
 else
-    say_fail "booted kernel (${running_uname_r}) NOT found in ${fit_name}'s embedded version string (${fit_kernel_desc}) — wrong/stale FIT booted for slot ${active_slot}"
+    say_pass "extracted FIT kernel string via ${extraction_method}: ${fit_kernel_desc}"
+
+    running_uname_r=$(uname -r 2>/dev/null || true)
+    running_uname_v=$(uname -v 2>/dev/null || true)
+    say_pass "running kernel: uname -r='${running_uname_r}' uname -v='${running_uname_v}'"
+
+    # The FIT description / "Linux version" banner both embed the same release
+    # string uname -r reports (e.g. "6.18.29-...-iotgwR2"). Match on that
+    # substring rather than requiring an exact whole-string match, since
+    # dumpimage/mkimage descriptions and the raw "Linux version" banner differ
+    # in surrounding text.
+    if [ -n "$running_uname_r" ] && printf '%s' "$fit_kernel_desc" | grep -qF "$running_uname_r"; then
+        say_pass "booted kernel (${running_uname_r}) matches ${fit_name} — slot's FIT was actually loaded"
+    else
+        say_fail "booted kernel (${running_uname_r}) NOT found in ${fit_name}'s embedded version string (${fit_kernel_desc}) — wrong/stale FIT booted for slot ${active_slot}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
