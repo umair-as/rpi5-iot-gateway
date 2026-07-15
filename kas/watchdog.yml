@@ -5,13 +5,14 @@ header:
 
 local_conf_header:
   systemd_hw_watchdog: |
-    # Watchdog profile. Kernel-side BSP enablement (IOTGW_ENABLE_HW_WATCHDOG)
-    # defaults to "1" in iotgw-common.inc; that ships /dev/watchdog0 via the
-    # BCM2712 backport. Userspace use of the watchdog (systemd PID1 feeding,
-    # per-image RuntimeWatchdogSec/ShutdownWatchdogSec) is currently held
-    # off pending fix for the systemd PID1 ping path on BCM2712 — pings
-    # opening /dev/watchdog0 announce a timeout but the hardware fires at
-    # the first interval rather than being kept alive. See follow-up issue.
+    # Watchdog profile. /dev/watchdog0 ships via mainline BCM2712 PM support
+    # (kernel 6.18.37+). IOTGW_ENABLE_HW_WATCHDOG (default "1" in
+    # iotgw-common.inc) gates only the userspace/systemd wiring, not the kernel
+    # device. Userspace use of the watchdog (systemd PID1 feeding,
+    # per-image RuntimeWatchdogSec/ShutdownWatchdogSec) is held off pending a
+    # fix for the systemd PID1 ping path on BCM2712 — pings opening
+    # /dev/watchdog0 announce a timeout but the hardware fires at the first
+    # interval rather than being kept alive.
     #
     # Defaults below are weak so kas/local.yml can hard-override after the
     # PID1 bug is fixed (set to "1" + adjust RUNTIME/SHUTDOWN seconds).
