@@ -52,11 +52,12 @@ CORE_IMAGE_EXTRA_INSTALL += " \
 "
 
 # systemd 259's `systemctl preset-all` emits a "Failed to preset all unit:
-# Unit <X> is masked" line for any intentionally-masked unit, which the rootfs
-# log_check counts as an error. This image masks exactly one unit on purpose —
-# systemd-networkd-wait-online (lean boot; see iotgw-rootfs.bbclass) — so filter
-# that benign notice. NB: IMAGE_LOG_CHECK_EXCLUDES splits on literal spaces, so
-# the regex uses \s, never a literal space.
+# Unit <X> is masked" line for a masked unit that carries a preset directive,
+# which the rootfs log_check counts as an error. Of the units this image masks
+# (see iotgw-rootfs.bbclass), only systemd-networkd-wait-online trips this — the
+# others are masked by mechanisms that don't run through preset-all — so the log
+# carries exactly one such notice; filter it. NB: IMAGE_LOG_CHECK_EXCLUDES splits
+# on literal spaces, so the regex uses \s, never a literal space.
 IMAGE_LOG_CHECK_EXCLUDES += "Failed\sto\spreset\sall\sunit.*is\smasked"
 
 iotgw_write_uboot_policy () {
