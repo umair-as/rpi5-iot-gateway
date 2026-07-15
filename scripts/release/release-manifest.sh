@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/release-manifest.sh --tag vX.Y.Z --version X.Y.Z --build-id ID [--outdir release/vX.Y.Z]
+  scripts/release/release-manifest.sh --tag vX.Y.Z --version X.Y.Z --build-id ID [--outdir release/vX.Y.Z]
 EOF
 }
 

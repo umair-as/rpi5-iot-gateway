@@ -9,7 +9,7 @@ RESTART_SERVICE=1
 
 usage() {
     cat <<'EOF'
-Usage: scripts/otbr-webui-dev-deploy.sh [options]
+Usage: scripts/otbr/otbr-webui-dev-deploy.sh [options]
 
 Push local otbr-webui dist artifacts to target /data and switch otbr-webui.service
 to run from /data for fast iteration.

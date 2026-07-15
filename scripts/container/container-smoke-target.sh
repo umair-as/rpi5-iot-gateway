@@ -23,10 +23,10 @@
 #   sudo ./container-smoke-target.sh
 #
 #   # From host over SSH (no copy needed):
-#   ssh <gw> 'sudo bash -s' < scripts/container-smoke-target.sh
+#   ssh <gw> 'sudo bash -s' < scripts/container/container-smoke-target.sh
 #
 # Pairs with:
-#   scripts/ota-smoke-target.sh — post-OTA / BSP smoke
+#   scripts/ota/ota-smoke-target.sh — post-OTA / BSP smoke
 
 set -u
 PASS=0

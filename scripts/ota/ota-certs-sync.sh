@@ -14,7 +14,7 @@ CA_DIR="${CA_DIR:-$HOME/rauc-keys/ota-dev-ca}"
 DEVICE_BASENAME="${DEVICE_BASENAME:-device-filekey}"
 DAYS="${DAYS:-3650}"
 
-# DN defaults requested for project consistency.
+# DN defaults for project cert consistency; override via the CERT_* env below.
 CERT_COUNTRY="${CERT_COUNTRY:-DE}"
 CERT_STATE="${CERT_STATE:-NRW}"
 CERT_CITY="${CERT_CITY:-Leverkusen}"

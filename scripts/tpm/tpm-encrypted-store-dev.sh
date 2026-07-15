@@ -9,9 +9,9 @@ set -euo pipefail
 # unenforced until measured-boot policy is finalized.
 #
 # Example:
-#   sudo bash scripts/tpm-encrypted-store-dev.sh
-#   sudo bash scripts/tpm-encrypted-store-dev.sh --size-mib 512
-#   sudo TPM2_PCRS="7" bash scripts/tpm-encrypted-store-dev.sh
+#   sudo bash scripts/tpm/tpm-encrypted-store-dev.sh
+#   sudo bash scripts/tpm/tpm-encrypted-store-dev.sh --size-mib 512
+#   sudo TPM2_PCRS="7" bash scripts/tpm/tpm-encrypted-store-dev.sh
 
 STORE_DIR="${STORE_DIR:-/data/encrypted-store}"
 IMAGE_PATH="${IMAGE_PATH:-$STORE_DIR/store.luks2.img}"

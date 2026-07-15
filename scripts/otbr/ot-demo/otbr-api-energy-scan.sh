@@ -4,9 +4,9 @@ set -euo pipefail
 # Run getEnergyScanTask and poll action status.
 #
 # Usage:
-#   scripts/ot-demo/otbr-api-energy-scan.sh
-#   scripts/ot-demo/otbr-api-energy-scan.sh --channels 11,12,13,14 --count 1 --period 32
-#   BASE_URL=http://192.168.0.82:8081 scripts/ot-demo/otbr-api-energy-scan.sh
+#   scripts/otbr/ot-demo/otbr-api-energy-scan.sh
+#   scripts/otbr/ot-demo/otbr-api-energy-scan.sh --channels 11,12,13,14 --count 1 --period 32
+#   BASE_URL=http://192.168.0.82:8081 scripts/otbr/ot-demo/otbr-api-energy-scan.sh
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8081}"
 JQ="${JQ:-jq}"
@@ -23,7 +23,7 @@ POLL_SEC="${POLL_SEC:-1}"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/ot-demo/otbr-api-energy-scan.sh [options]
+Usage: scripts/otbr/ot-demo/otbr-api-energy-scan.sh [options]
 
 Options:
   --channels <csv>      Channel list, e.g. 11,12,13 (default: 11..26)

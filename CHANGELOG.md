@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- `scripts/release-manifest.sh` now auto-detects the Yocto deploy directory
+- `scripts/release/release-manifest.sh` now auto-detects the Yocto deploy directory
   (`build/tmp/deploy` or `build/tmp-glibc/deploy`) instead of hardcoding
   `build/tmp/deploy`. The v0.4.0 script silently produced an empty
   `checksums.sha256` on `iotgw` (which renames `TMPDIR` to `tmp-glibc`).
@@ -33,8 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   FIT kernel decompression envelopes.
 - LSM/IMA feature gates and RPi EEPROM/VCIO integration switches.
 - OTA/RAUC PKCS#11 and encrypted-bundle feature-gated plumbing.
-- Release tooling: `docs/RELEASE.md`, `scripts/release-build.sh`,
-  `scripts/release-manifest.sh`, and a `release-hygiene` GitHub Actions
+- Release tooling: `docs/RELEASE.md`, `scripts/release/release-build.sh`,
+  `scripts/release/release-manifest.sh`, and a `release-hygiene` GitHub Actions
   workflow running `shellcheck` on tracked scripts and `yamllint`
   (config: `.yamllint`) on tracked kas configs and workflows, plus
   changelog/version-variable sanity gates.
