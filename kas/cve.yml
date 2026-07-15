@@ -1,13 +1,37 @@
 header:
   version: 18
-  includes:
-    - "rpi5.yml"
 
-# CVE check overlay. Wrynose removed the cve-check class; CVE scanning is now
-# the sbom-cve-check recipe/class, wired via the yocto/sbom-cve-check fragment.
-# IMAGE_CLASSES is the load-bearing wiring; OE_FRAGMENTS carries the
-# fragment's CVE-DB fetch defaults.
+# Pure additive SBOM/CVE overlay. Compose on top of the normal stack:
+#   kas/local.yml:kas/cve.yml
+#
+# Wrynose removed the old cve-check image flow; CVE scanning now runs through
+# sbom-cve-check over the SPDX 3.0 image SBOM.
 local_conf_header:
   sbom_cve_check: |
-    OE_FRAGMENTS  += "yocto/sbom-cve-check"
-    IMAGE_CLASSES += "sbom-cve-check"
+    # rpi5.yml disables the default wrynose create-spdx inherit through this
+    # project toggle for normal builds. Clear it here before enabling the
+    # SBOM/CVE flow.
+    IOTGW_CREATE_SPDX_DISABLE = ""
+
+    # Self-contained wiring equivalent to the wrynose
+    # core/yocto/sbom-cve-check fragment, but pinned/reproducible and not
+    # dependent on fragment lookup naming.
+    INHERIT       += "create-spdx"
+    IMAGE_CLASSES:append = " sbom-cve-check"
+    SPDX_INCLUDE_VEX = "all"
+
+    # The upstream fragment defaults the CVE DB recipes to AUTOREV. Pin back
+    # to the wrynose recipe SRCREVs so a release SBOM/CVE run is reproducible.
+    SRCREV:pn-sbom-cve-check-update-nvd-native     = "49f8bbe1b0b0884e16bdc37ab68db997085570a7"
+    SRCREV:pn-sbom-cve-check-update-cvelist-native = "ada54ee3cc8380820aa45e4996910bdc9dcb94e7"
+
+    # create-spdx/sbom-cve-check attach image post-build tasks whose sstate
+    # output lives in DEPLOY_DIR_IMAGE. Keep image WORKDIRs around so rm_work
+    # does not race artifact promotion and leave missing *.spdx.json /
+    # *.sbom-cve-check.*.json files.
+    RM_WORK_EXCLUDE += "iot-gw-image-base iot-gw-image-dev iot-gw-image-prod"
+
+    # The upstream fragment only enables compiled-source SPDX metadata for
+    # pn-linux-yocto. This distro uses a custom mainline FIT kernel provider,
+    # so apply the same CVE/SBOM treatment to that recipe.
+    SPDX_INCLUDE_COMPILED_SOURCES:pn-linux-iotgw-mainline-fit = "1"

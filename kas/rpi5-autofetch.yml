@@ -88,8 +88,11 @@ local_conf_header:
     INHERIT += "buildhistory"
     BUILDHISTORY_COMMIT = "1"
   spdx_disable: |
-    # Disable SPDX doc generation to avoid rm_work conflict and save disk
-    INHERIT:remove = "create-spdx"
+    # Keep SBOM/CVE generation opt-in via kas/cve.yml to save disk/time on
+    # normal image builds. kas/cve.yml clears this toggle before explicitly
+    # enabling the wrynose create-spdx + sbom-cve-check flow.
+    IOTGW_CREATE_SPDX_DISABLE ?= "create-spdx"
+    INHERIT:remove = "${IOTGW_CREATE_SPDX_DISABLE}"
 
   optimize: |
     USER_CLASSES = "buildstats"
