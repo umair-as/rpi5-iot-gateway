@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Refuse to commit private-key material or anything under keys/.
+# Defense-in-depth over .gitignore — catches `git add -f` and `git add -A`.
+# Override (only if you are certain) with: git commit --no-verify
+set -euo pipefail
+blocked=""
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in
+        keys/*)                       blocked+="  $f  (under keys/)"$'\n' ;;
+        *.key|*-key.pem|*.p12|*.pfx|*.jks|*/id_rsa|*/id_ed25519)
+                                      blocked+="  $f  (key-like name)"$'\n' ;;
+    esac
+    if git show ":$f" 2>/dev/null | grep -qaE 'PRIVATE KEY|BEGIN OPENSSH PRIVATE'; then
+        blocked+="  $f  (contains a PRIVATE KEY block)"$'\n'
+    fi
+done < <(git diff --cached --name-only --diff-filter=AM)
+if [ -n "$blocked" ]; then
+    printf '\nCOMMIT BLOCKED — private-key / keys/ material is staged:\n%s\n' "$blocked" >&2
+    printf 'Unstage it (git restore --staged <file>). Override only if certain: git commit --no-verify\n\n' >&2
+    exit 1
+fi

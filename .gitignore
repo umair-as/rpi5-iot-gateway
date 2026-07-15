@@ -61,7 +61,6 @@ scratch/
 docs/kernel-config-reference/
 dev/
 docs/signature.rst
-scripts/kernel-hardening-check-build.sh
-scripts/kernel-hardening-check-target.sh
-scripts/generate-splash.py
-scripts/tpm-validate.sh
+
+# Operator-local signing/PKI material (dev). NEVER committed — see scripts/hooks/pre-commit.
+/keys/

@@ -17,15 +17,15 @@ jobs:
       - name: Ensure release docs/scripts exist
         run: |
           test -f docs/RELEASE.md
-          test -f scripts/release-build.sh
-          test -f scripts/release-manifest.sh
+          test -f scripts/release/release-build.sh
+          test -f scripts/release/release-manifest.sh
           test -f cliff.toml
           test -f .github/workflows/release-notes.yml
 
       - name: Shell syntax checks
         run: |
-          bash -n scripts/release-build.sh
-          bash -n scripts/release-manifest.sh
+          bash -n scripts/release/release-build.sh
+          bash -n scripts/release/release-manifest.sh
 
       - name: shellcheck (all tracked scripts)
         run: |

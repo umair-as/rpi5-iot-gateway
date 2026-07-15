@@ -120,7 +120,7 @@ local_conf_header:
     #   - YubiKey (off by default): public certificate exported from
     #     PIV slot 9a, located at ${IOTGW_FIT_YK_KEYDIR}/${IOTGW_FIT_YK_KEYNAME}.crt.
     #     No private key required on the build host. The FIT itself is
-    #     post-build resigned via scripts/sign-fit.sh against the
+    #     post-build resigned via scripts/fit-signing/sign_fit.py against the
     #     hardware-resident private key.
     #
     # Rotation window (both gates ON): DTB carries both pubkeys and

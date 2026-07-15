@@ -393,7 +393,7 @@ main() {
             log_warn "but RAUC streaming requires a provisioned TPM token."
             log_warn ""
             log_warn "To bootstrap the TPM PKCS#11 store, run on the host:"
-            log_warn "  ./scripts/ota-pkcs11-provision-check.sh"
+            log_warn "  ./scripts/ota/ota-pkcs11-provision-check.sh"
             log_warn "then follow the provisioning steps printed on target."
             log_warn "──────────────────────────────────────────────────────"
         fi
