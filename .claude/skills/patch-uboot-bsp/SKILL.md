@@ -76,7 +76,7 @@ SRC_URI:append = " file://0001-...patch"
 Keep the leading space before `file://` in `SRC_URI:append`; without it, appended entries can concatenate into an invalid URI token.
 
 Use machine or distro overrides when needed:
-- `SRC_URI:append:rpi5 = " file://...patch"`
+- `SRC_URI:append:raspberrypi5 = " file://...patch"`
 
 5. Handle defconfig and config fragments correctly
 

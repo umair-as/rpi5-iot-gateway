@@ -264,19 +264,19 @@ For quick API diagnostics against the local OTBR REST server (`127.0.0.1:8081`):
 
 ```bash
 # Node snapshot
-scripts/ot-demo/otbr-api-node.sh
+scripts/otbr/ot-demo/otbr-api-node.sh
 
 # Device discovery action + polling + device summary
-scripts/ot-demo/otbr-api-discover.sh --device-count 10 --timeout 30
+scripts/otbr/ot-demo/otbr-api-discover.sh --device-count 10 --timeout 30
 
 # Energy scan action + polling + report
-scripts/ot-demo/otbr-api-energy-scan.sh --channels 11,12,13,14 --count 1 --period 32
+scripts/otbr/ot-demo/otbr-api-energy-scan.sh --channels 11,12,13,14 --count 1 --period 32
 ```
 
 You can target a remote endpoint via `BASE_URL`:
 
 ```bash
-BASE_URL=http://192.168.0.82:8081 scripts/ot-demo/otbr-api-node.sh
+BASE_URL=http://<otbr-host>:8081 scripts/otbr/ot-demo/otbr-api-node.sh
 ```
 
 **Notes:**

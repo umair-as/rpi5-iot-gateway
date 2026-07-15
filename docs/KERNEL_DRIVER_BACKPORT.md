@@ -59,7 +59,7 @@ git --git-dir=$RPIGIT show HEAD:drivers/char/Makefile | grep "broadcom"
 Before writing a line, verify every dependency is already in the target mainline tree:
 
 ```bash
-KSRC=build/tmp-glibc/work-shared/raspberrypi5/kernel-source
+KSRC=build/tmp/work-shared/raspberrypi5/kernel-source
 
 # Headers the driver includes
 grep "#include" drivers/char/broadcom/vcio.c
@@ -99,11 +99,11 @@ fewer future conflicts on kernel bumps.
 
 ## 4. Apply changes in the work-shared kernel source tree
 
-The kernel source at `build/tmp-glibc/work-shared/<machine>/kernel-source/` is a
+The kernel source at `build/tmp/work-shared/<machine>/kernel-source/` is a
 live git repo with all prior patches applied as commits. Work directly there:
 
 ```bash
-cd build/tmp-glibc/work-shared/raspberrypi5/kernel-source
+cd build/tmp/work-shared/raspberrypi5/kernel-source
 
 # Confirm state — prior patches should be committed
 git log --oneline -5
@@ -151,7 +151,7 @@ $EDITOR arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
 ## 5. Generate the patch with git
 
 ```bash
-cd build/tmp-glibc/work-shared/raspberrypi5/kernel-source
+cd build/tmp/work-shared/raspberrypi5/kernel-source
 
 git add drivers/char/broadcom/
 git add drivers/char/Kconfig
@@ -225,7 +225,7 @@ kas shell kas/local.yml -c "bitbake virtual/kernel -c patch -f"
 kas shell kas/local.yml -c "bitbake virtual/kernel -c compile -f"
 
 # Full bundle when kernel build passes
-make bundle-dev-full
+make bundle-dev-full-fit
 ```
 
 On target after OTA:

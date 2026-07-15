@@ -141,7 +141,7 @@ build-time files (CA cert, `openssl-tpm2.cnf`, `updater.conf`).
 
 1. **Sync device certs** (from host):
    ```bash
-   ./scripts/ota-certs-sync.sh
+   ./scripts/ota/ota-certs-sync.sh
    ```
 2. **Reboot** so the `/etc` overlay mounts cleanly with new files.
 3. **Verify** cert chain on target:
@@ -150,7 +150,7 @@ build-time files (CA cert, `openssl-tpm2.cnf`, `updater.conf`).
    ```
 4. **(If TPM/PKCS#11 enabled)** Re-provision the TPM2 PKCS#11 token:
    ```bash
-   ./scripts/ota-pkcs11-provision-check.sh
+   ./scripts/ota/ota-pkcs11-provision-check.sh
    ```
 
 Until step 2 completes, `ota-certs-provision.service` will log a
@@ -242,10 +242,6 @@ remain. Maintain kernel ABI compatibility across releases.
 which manages `/etc` overlay entries according to policy (`enforce`,
 `replace_if_unmodified`, `preserve`, `absent`). See
 [Overlay Reconciliation](OVERLAY_RECONCILIATION.md).
-
-**Future: transactional boot updates** — stage boot assets in rootfs,
-copy to `/boot` only after successful boot and health check, enabling
-fully atomic kernel updates.
 
 ---
 

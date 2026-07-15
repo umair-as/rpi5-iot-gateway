@@ -45,12 +45,12 @@ cp kas/local.yml.example kas/local.yml
 # Build images (using Makefile - recommended)
 make dev         # Development image
 make prod        # Production image
-make bundle-dev-full   # OTA bundle with kernel
+make bundle-dev-full-fit   # OTA bundle with signed FIT boot assets
 
 # OR using KAS directly
 kas build kas/local.yml --target iot-gw-image-dev
 kas build kas/local.yml --target iot-gw-image-prod
-kas build kas/local.yml --target iot-gw-bundle-full
+kas build kas/local.yml --target iot-gw-bundle-full-fit
 ```
 
 ### Flash to SD Card
@@ -96,10 +96,10 @@ RAUC is **enabled by default** in this distribution.
 
 ```bash
 # 1. Copy bundle to device
-scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full.raucb root@<device-ip>:/tmp/
+scp build/tmp/deploy/images/raspberrypi5/iot-gw-bundle-full-fit.raucb root@<device-ip>:/tmp/
 
 # 2. Install via project wrapper (handles preflight/cert checks)
-iotgw-rauc-install /tmp/iot-gw-bundle-full.raucb
+iotgw-rauc-install /tmp/iot-gw-bundle-full-fit.raucb
 reboot
 
 # 3. Verify after reboot
@@ -133,6 +133,7 @@ See `kas/local.yml.example` for configuration template.
 | `iot-gw-image-base` | Minimal production | Core system, RAUC | Small |
 | `iot-gw-image-dev` | Development | +Debug tools, compilers | Medium |
 | `iot-gw-image-prod` | Production | Lean runtime, hardened | Minimal |
+| `iot-gw-image-desktop` | Desktop variant | +Weston/graphical stack | Large |
 
 Build commands:
 ```bash
