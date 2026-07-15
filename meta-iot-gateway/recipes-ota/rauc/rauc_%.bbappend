@@ -1,5 +1,9 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
+# Single source of truth is iotgw-common.inc; fall back for a standalone parse
+# so the managed-path template (@WIFI_IFACE@) never resolves to an empty iface.
+IOTGW_WIFI_IFACE ??= "wlan0"
+
 # The U-Boot bootloader backend needs fw_printenv/fw_setenv and the compiled
 # environment at runtime.
 RDEPENDS:${PN} += "u-boot-fw-utils u-boot-env"
@@ -53,6 +57,10 @@ do_install:append() {
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.conf
     install -d ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d
     install -m 0644 ${UNPACKDIR}/managed-paths.d/network.conf \
+        ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf
+    # Template the Wi-Fi interface so the managed-path tracks the same iface as
+    # iotgw-network-units / iotgw-hardening (single source: IOTGW_WIFI_IFACE).
+    sed -i "s/@WIFI_IFACE@/${IOTGW_WIFI_IFACE}/g" \
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf
     install -m 0644 ${UNPACKDIR}/managed-paths.d/observability.conf \
         ${D}${datadir}/iotgw/overlay-reconcile/managed-paths.d/observability.conf

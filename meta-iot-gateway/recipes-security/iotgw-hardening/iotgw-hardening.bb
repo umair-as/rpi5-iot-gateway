@@ -4,6 +4,9 @@ HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
+# Single source of truth is iotgw-common.inc; fall back for a standalone parse.
+IOTGW_WIFI_IFACE ??= "wlan0"
+
 SRC_URI = " \
     file://99-iotgw-hardening.conf \
     file://blacklist.conf \
@@ -57,13 +60,11 @@ do_install() {
     install -d ${D}${sysconfdir}/systemd/system/systemd-networkd.service.d
     install -m 0644 ${UNPACKDIR}/service-hardening-net.conf ${D}${sysconfdir}/systemd/system/systemd-networkd.service.d/override.conf
 
-    # wlan0 runs its own wpa_supplicant@wlan0 instance (not the singleton
-    # wpa_supplicant.service). Keep a dedicated profile so its control socket
-    # remains usable with wpa_cli.
-    for unit in wpa_supplicant@wlan0.service; do
-        install -d ${D}${sysconfdir}/systemd/system/${unit}.d
-        install -m 0644 ${UNPACKDIR}/service-hardening-wpa-supplicant.conf ${D}${sysconfdir}/systemd/system/${unit}.d/override.conf
-    done
+    # The Wi-Fi interface runs its own wpa_supplicant@${IOTGW_WIFI_IFACE}
+    # instance (not the singleton wpa_supplicant.service). Keep a dedicated
+    # hardening profile so its control socket remains usable with wpa_cli.
+    install -d ${D}${sysconfdir}/systemd/system/wpa_supplicant@${IOTGW_WIFI_IFACE}.service.d
+    install -m 0644 ${UNPACKDIR}/service-hardening-wpa-supplicant.conf ${D}${sysconfdir}/systemd/system/wpa_supplicant@${IOTGW_WIFI_IFACE}.service.d/override.conf
 
     install -d ${D}${sysconfdir}/systemd/system/mosquitto.service.d
     install -m 0644 ${UNPACKDIR}/service-hardening-mosquitto.conf ${D}${sysconfdir}/systemd/system/mosquitto.service.d/override.conf
@@ -88,7 +89,7 @@ FILES:${PN} = " \
     ${sysconfdir}/systemd/system/tmp.mount.d/override.conf \
     ${sysconfdir}/systemd/system/dev-shm.mount.d/override.conf \
     ${sysconfdir}/systemd/system/systemd-networkd.service.d/override.conf \
-    ${sysconfdir}/systemd/system/wpa_supplicant@wlan0.service.d/override.conf \
+    ${sysconfdir}/systemd/system/wpa_supplicant@${IOTGW_WIFI_IFACE}.service.d/override.conf \
     ${sysconfdir}/systemd/system/dnsmasq.service.d/override.conf \
     ${sysconfdir}/systemd/system/mosquitto.service.d/override.conf \
     ${sysconfdir}/systemd/system/avahi-daemon.service.d/override.conf \

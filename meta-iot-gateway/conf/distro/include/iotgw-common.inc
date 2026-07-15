@@ -139,9 +139,14 @@ ROOT_HOME ?= "/root"
 
 # Note: DEFAULTTUNE overrides for multiple SoCs can be added when needed.
 
+# Wi-Fi interface — single source of truth. iotgw-network-units, iotgw-hardening
+# (wpa_supplicant@<iface> drop-in) and the RAUC managed-path all derive from this,
+# so overriding it in kas/local.yml keeps hardening + OTA management aligned.
+IOTGW_WIFI_IFACE ?= "wlan0"
+
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_ENABLE_OTBR"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_WIFI_IFACE IOTGW_ENABLE_OTBR"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OTA_TPM_MTLS IOTGW_OTA_TPM_KEY_URI IOTGW_OTA_TPM_KEY_ENGINE IOTGW_OTA_OPENSSL_CONF"
