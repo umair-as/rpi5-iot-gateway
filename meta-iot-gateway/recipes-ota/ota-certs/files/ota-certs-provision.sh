@@ -15,12 +15,15 @@ readonly CERT_DIR="/etc/ota"
 readonly BOOT_SRC="/boot/iotgw/ota"
 readonly BOOT_META="${BOOT_SRC}/meta.json"
 readonly DATA_SRC="/data/ota/certs"
-readonly STATE_FILE="/var/lib/ota-certs-provision.state"
+# State + stamp on persistent /data (/var/lib is volatile on this image): keeps
+# the provision_id replay/stale-material history and avoids re-provisioning every
+# boot.
+readonly STATE_FILE="/data/ota-certs-provision.state"
 readonly ALLOW_KEYLESS_DEVICE_CERTS="${OTA_CERTS_ALLOW_KEYLESS_DEVICE_CERTS:-0}"
 readonly REQUIRE_PKCS11_PIN="${OTA_CERTS_REQUIRE_PKCS11_PIN:-0}"
 readonly PKCS11_PIN_FILE="${CERT_DIR}/pkcs11-pin"
 readonly PKCS11_MODULE="${OTA_CERTS_PKCS11_MODULE:-/usr/lib/pkcs11/libtpm2_pkcs11.so}"
-readonly PKCS11_STORE="${OTA_CERTS_PKCS11_STORE:-/var/lib/tpm2_pkcs11}"
+readonly PKCS11_STORE="${OTA_CERTS_PKCS11_STORE:-/data/tpm2_pkcs11}"
 readonly PKCS11_TOKEN_LABEL="${OTA_CERTS_PKCS11_TOKEN_LABEL:-iotgw}"
 readonly PKCS11_KEY_LABEL="${OTA_CERTS_PKCS11_KEY_LABEL:-rauc-client-key}"
 
@@ -48,7 +51,7 @@ get_device_id() {
     printf 'unknown'
     return 0
 }
-readonly STAMP="/var/lib/ota-certs-provision.done"
+readonly STAMP="/data/ota-certs-provision.done"
 
 log_info()  { echo "[$(date -Iseconds)] [INFO]  $*"; }
 log_warn()  { echo "[$(date -Iseconds)] [WARN]  $*" >&2; }

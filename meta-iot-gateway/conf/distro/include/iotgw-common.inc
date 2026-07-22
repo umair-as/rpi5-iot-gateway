@@ -332,7 +332,9 @@ IOTGW_RAUC_PKCS11_TLS_KEY_TPM2 ?= "pkcs11:token=iotgw;object=rauc-client-key;typ
 IOTGW_RAUC_PKCS11_MODULE_TPM2 ?= "/usr/lib/pkcs11/libtpm2_pkcs11.so"
 IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES_TPM2 ?= "tpm2-pkcs11"
 # TPM2 PKCS#11 token DB location used by sandboxed RAUC streaming helper.
-IOTGW_TPM2_PKCS11_STORE ?= "/var/lib/tpm2_pkcs11"
+# On persistent /data (not volatile /var/lib) so the device OTA identity
+# survives reboot and A/B updates.
+IOTGW_TPM2_PKCS11_STORE ?= "/data/tpm2_pkcs11"
 
 # Custom profile preset: override these in kas/local.yml for other backends.
 IOTGW_RAUC_PKCS11_TLS_KEY_CUSTOM ?= ""

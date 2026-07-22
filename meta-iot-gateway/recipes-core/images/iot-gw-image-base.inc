@@ -46,6 +46,8 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     iotgw-network-units \
     iotgw-sysctl \
     iotgw-journald \
+    iotgw-log-persist \
+    ${@bb.utils.contains('DISTRO_FEATURES', 'bluetooth', 'iotgw-bluetooth-persist', '', d)} \
     iotgw-firewall \
     iotgw-systemd-presets \
     iotgw-provision \

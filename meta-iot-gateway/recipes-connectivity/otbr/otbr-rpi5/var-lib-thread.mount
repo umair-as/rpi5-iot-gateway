@@ -1,18 +1,17 @@
 [Unit]
-Description=Bind /data-backed pstore archive over /var/lib/systemd/pstore
-Documentation=man:systemd-pstore.service(8)
+Description=Bind /data-backed Thread dataset over /var/lib/thread
 DefaultDependencies=no
 After=data.mount var-volatile-lib.service systemd-tmpfiles-setup.service
 Wants=data.mount
 RequiresMountsFor=/data
 ConditionPathIsMountPoint=/data
-ConditionPathIsDirectory=/data/crash/pstore
-Before=systemd-pstore.service umount.target
+ConditionPathIsDirectory=/data/lib/thread
+Before=otbr-agent.service umount.target
 Conflicts=umount.target
 
 [Mount]
-What=/data/crash/pstore
-Where=/var/lib/systemd/pstore
+What=/data/lib/thread
+Where=/var/lib/thread
 Type=none
 Options=bind,nodev,nosuid,noexec
 DirectoryMode=0700

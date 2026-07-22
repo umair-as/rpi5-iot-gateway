@@ -3,16 +3,10 @@ Description=Setup overlayfs for read-only rootfs
 DefaultDependencies=no
 After=data.mount
 Before=sysinit.target
-# Early sysinit-phase services that write under /var must wait for this overlay,
-# otherwise they run while /var is still the read-only rootfs lowerdir:
-#  - systemd-journal-flush: silently finds nothing to flush, journald stays on
-#    /run/log/journal for the rest of the boot.
-#  - systemd-timesyncd: StateDirectory=systemd/timesync cannot be created on the
-#    read-only /var and the unit fails with 238/STATE_DIRECTORY.
-# Both race overlayfs-setup toward sysinit.target, so Before=sysinit.target
-# alone is insufficient — order them explicitly.
-Before=systemd-journal-flush.service
-Before=systemd-timesyncd.service
+# This overlays /etc, /home, /root only. /var is no longer overlaid — journald
+# persistence is handled by iotgw-log-persist's bind (ordered before
+# systemd-journal-flush) and timesyncd's StateDirectory lands on the volatile
+# /var/lib tmpfs (volatile-binds), so neither needs to wait on this unit.
 Wants=data.mount
 RequiresMountsFor=/data
 ConditionPathIsMountPoint=/data
