@@ -29,7 +29,7 @@ PACKAGES =+ "${PN}-devca"
 RAUC_OTA_CA_DIR ?= ""
 IOTGW_NEED_TPM_POLICY ?= "0"
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "0"
-IOTGW_TPM2_PKCS11_STORE ?= "/var/lib/tpm2_pkcs11"
+IOTGW_TPM2_PKCS11_STORE ?= "/data/tpm2_pkcs11"
 
 SYSTEMD_PACKAGES = "${PN}"
 SYSTEMD_SERVICE:${PN} = "ota-certs-provision.service"
