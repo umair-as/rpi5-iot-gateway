@@ -70,7 +70,7 @@ iotgw_rootfs_audit_rules() {
             ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d/iotgw.rules
     fi
 
-    # Override the auditd package-default auditd.conf with our retention/disk
+    # Override the auditd package-default auditd.conf with the layer's retention/disk
     # policy (non-fatal disk actions; logs persist on /data via iotgw-log-persist).
     if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-audit/auditd.conf ]; then
         install -m 0640 ${IMAGE_ROOTFS}${datadir}/iotgw-audit/auditd.conf \

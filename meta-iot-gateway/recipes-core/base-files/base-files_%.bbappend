@@ -1,6 +1,6 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/base-files:"
 
-# fstab matches our WKS layout (A/B slots + LABEL=data)
+# fstab matches the WKS layout (A/B slots + LABEL=data)
 # Set custom hostname
 # Note: issue/motd are shipped by iotgw-banner.
 SRC_URI += "file://fstab file://hostname file://hosts file://profile.d/10-iotgw-path.sh file://skel/.bashrc"
@@ -10,7 +10,7 @@ SRC_URI += "file://fstab file://hostname file://hosts file://profile.d/10-iotgw-
 dirs755 += "/data"
 
 # NOTE: do NOT re-install fstab here. The base recipe's do_install already
-# installs our fstab (S=UNPACKDIR + FILESEXTRAPATHS:prepend makes our copy win),
+# installs this recipe's fstab (S=UNPACKDIR + FILESEXTRAPATHS:prepend makes it win),
 # and meta-selinux's base-files_selinux.inc do_install:append then seds a
 # `rootcontext=...:var_t:s0` onto the /var/volatile line. A second
 # `install ... fstab` in this append ran *after* that sed and silently reverted

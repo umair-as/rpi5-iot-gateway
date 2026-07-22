@@ -6,7 +6,7 @@
 # (tmpfs /var/volatile + volatile-binds for /var/{lib,cache,spool}/srv), so it is
 # genuinely volatile. The few must-persist trees are re-homed onto dedicated
 # /data-backed mounts/redirects (journald+audit via iotgw-log-persist; ssh keys,
-# TPM store, influxdb, mosquitto via service config). See #93.
+# TPM store, influxdb, mosquitto via service config).
 
 set -e
 
