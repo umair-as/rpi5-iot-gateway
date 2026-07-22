@@ -8,6 +8,7 @@ SRC_URI = "\
     file://overlayfs-setup.sh \
     file://overlayfs-setup.service \
     file://iotgw-var-volatile-relabel.tmpfiles.conf \
+    file://systemd-timesyncd-after-volatile-lib.conf \
 "
 
 inherit systemd
@@ -30,11 +31,18 @@ do_install() {
     install -d ${D}${sysconfdir}/tmpfiles.d
     install -m 0644 ${UNPACKDIR}/iotgw-var-volatile-relabel.tmpfiles.conf \
         ${D}${sysconfdir}/tmpfiles.d/iotgw-var-volatile-relabel.conf
+
+    # Order timesyncd after the volatile-binds /var/lib so its StateDirectory
+    # can be created (no more early 238/STATE_DIRECTORY failures).
+    install -d ${D}${systemd_system_unitdir}/systemd-timesyncd.service.d
+    install -m 0644 ${UNPACKDIR}/systemd-timesyncd-after-volatile-lib.conf \
+        ${D}${systemd_system_unitdir}/systemd-timesyncd.service.d/10-iotgw-after-volatile-lib.conf
 }
 
 FILES:${PN} += " \
     ${sbindir}/overlayfs-setup.sh \
     ${systemd_system_unitdir}/overlayfs-setup.service \
     ${sysconfdir}/tmpfiles.d/iotgw-var-volatile-relabel.conf \
+    ${systemd_system_unitdir}/systemd-timesyncd.service.d/10-iotgw-after-volatile-lib.conf \
 "
 RDEPENDS:${PN} += "bash"
