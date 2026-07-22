@@ -3,6 +3,8 @@ header:
 
 local_conf_header:
   uboot_prod_hardening: |
-    # Production U-Boot profile: keep command-surface reduction enabled and
-    # enforce signed FIT images with appliance lockdown.
-    IOTGW_UBOOT_FEATURES = "surface_reduce fit_enforce appliance_lockdown"
+    # Production U-Boot profile: keep command-surface reduction enabled, enforce
+    # signed FIT images, arm the pre-Linux watchdog, and add appliance lockdown.
+    # Global (reaches the u-boot recipe); hard-set, so it re-lists the base tokens
+    # from IOTGW_UBOOT_FEATURES in iotgw-common.inc — keep the two in sync.
+    IOTGW_UBOOT_FEATURES = "surface_reduce fit_enforce watchdog appliance_lockdown"

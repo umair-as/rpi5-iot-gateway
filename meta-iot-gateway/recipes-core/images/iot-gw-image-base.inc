@@ -28,9 +28,10 @@ IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
 # Keep upstream RAUC mark-good flow enabled.
 IOTGW_DISABLE_RAUC_MARK_GOOD ?= "0"
 IOTGW_UBOOT_BOOTDELAY ?= "2"
-# U-Boot feature tokens: command surface reduction + FIT enforcement in all
-# images. prod image appends appliance/prompt lockdown.
-IOTGW_UBOOT_FEATURES ?= "surface_reduce fit_enforce"
+# U-Boot feature tokens (surface_reduce fit_enforce watchdog) default distro-wide
+# in conf/distro/include/iotgw-common.inc; iotgw_write_uboot_policy below emits
+# the resolved value into /etc/default/iotgw-uboot-policy. prod image overrides
+# to append appliance/prompt lockdown.
 IOTGW_AUDIT_RULE_IMMUTABLE ?= "1"
 
 # Desktop profile can include splash

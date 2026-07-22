@@ -44,7 +44,7 @@ The Makefile picks `BASE = kas/local.yml` if present, else `kas/rauc.yml` (RAUC 
 
 - `kas/local.yml` — developer-local secrets/WiFi/RAUC keys and shared cache paths (gitignored; copy from `local.yml.example`)
 - `kas/rauc.yml` — RAUC OTA stack
-- `kas/otbr.yml`, `kas/containers.yml`, `kas/tpm.yml`, `kas/watchdog.yml`, `kas/cve.yml`, `kas/spdx.yml` — feature overlays
+- `kas/otbr.yml`, `kas/containers.yml`, `kas/tpm.yml`, `kas/cve.yml`, `kas/spdx.yml` — feature overlays
 - `kas/uboot-prod-hardening.yml` — applied to `prod` and `bundle-prod-full-fit` automatically when present
 - `kas/desktop.yml` — desktop image variant
 
