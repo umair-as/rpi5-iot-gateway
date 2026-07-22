@@ -110,6 +110,14 @@ When enabled, the following are included:
 
 **Note:** Ensure `igw_networking_iot` kernel features are enabled for nftables/NAT support.
 
+### Operational Dataset Persistence
+
+The OpenThread operational dataset (network key, PAN ID, channel) remains visible
+at `/var/lib/thread`, but that path is a bind mount from `/data/lib/thread`. The
+dataset therefore survives reboot and RAUC A/B updates, and the border router does
+not need re-commissioning after an update. See
+[Persistent State Architecture](PERSISTENT_STATE.md).
+
 ### Thread Version
 
 Default Thread version is **1.4**. Override in `kas/local.yml` if needed:

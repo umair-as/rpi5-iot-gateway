@@ -1,6 +1,12 @@
 #!/bin/sh
 # Setup overlayfs mounts for read-only rootfs with RAUC
-# This script creates writable overlays on /data for /etc, /var, /home, /root
+# This script creates writable overlays on /data for /etc, /home, /root.
+#
+# /var is deliberately NOT overlaid: it is served by the stock OE volatile model
+# (tmpfs /var/volatile + volatile-binds for /var/{lib,cache,spool}/srv), so it is
+# genuinely volatile. The few must-persist trees are re-homed onto dedicated
+# /data-backed mounts/redirects (journald+audit via iotgw-log-persist; ssh keys,
+# TPM store, influxdb, mosquitto via service config).
 
 set -e
 
@@ -8,7 +14,7 @@ DATA_PART="/data"
 OVERLAY_BASE="${DATA_PART}/overlays"
 
 # Directories to overlay (make writable on top of read-only rootfs)
-OVERLAY_DIRS="/etc /var /home /root"
+OVERLAY_DIRS="/etc /home /root"
 
 # Ensure /data is mounted
 if ! mountpoint -q "${DATA_PART}"; then
@@ -46,7 +52,7 @@ for dir in ${OVERLAY_DIRS}; do
     # Default options
     opts="lowerdir=${dir},upperdir=${upper},workdir=${work},rw"
     case "${dir}" in
-        /home|/var)
+        /home)
             opts="${opts},nodev,nosuid"
             ;;
     esac

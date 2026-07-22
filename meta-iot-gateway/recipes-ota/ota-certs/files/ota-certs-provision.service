@@ -30,7 +30,7 @@ RestrictNamespaces=true
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-ReadWritePaths=/etc/ota /data /var/lib /boot
+ReadWritePaths=/etc/ota /data /boot
 
 [Install]
 WantedBy=multi-user.target

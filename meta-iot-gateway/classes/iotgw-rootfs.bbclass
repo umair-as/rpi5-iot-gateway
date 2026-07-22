@@ -69,6 +69,13 @@ iotgw_rootfs_audit_rules() {
         sed -i -E "s/^-e[[:space:]]+[0-9]+$/-e ${audit_lock_mode}/" \
             ${IMAGE_ROOTFS}${sysconfdir}/audit/rules.d/iotgw.rules
     fi
+
+    # Override the auditd package-default auditd.conf with the layer's retention/disk
+    # policy (non-fatal disk actions; logs persist on /data via iotgw-log-persist).
+    if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-audit/auditd.conf ]; then
+        install -m 0640 ${IMAGE_ROOTFS}${datadir}/iotgw-audit/auditd.conf \
+            ${IMAGE_ROOTFS}${sysconfdir}/audit/auditd.conf
+    fi
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_audit_rules;"
 

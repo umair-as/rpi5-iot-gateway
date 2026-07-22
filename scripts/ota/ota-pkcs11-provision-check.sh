@@ -5,11 +5,17 @@ TARGET="${1:-iotgw}"
 TOKEN_LABEL="${TOKEN_LABEL:-iotgw}"
 KEY_LABEL="${KEY_LABEL:-rauc-client-key}"
 MODULE_PATH="${MODULE_PATH:-/usr/lib/pkcs11/libtpm2_pkcs11.so}"
+# The token DB lives on persistent /data (IOTGW_TPM2_PKCS11_STORE). Every
+# pkcs11-tool/tpm2_ptool call must point at it, or the library falls back to its
+# compile-time default store and reports an empty token even when provisioned.
+STORE_PATH="${TPM2_PKCS11_STORE:-/data/tpm2_pkcs11}"
 
 echo "[pkcs11-check] target=${TARGET}"
-echo "[pkcs11-check] token=${TOKEN_LABEL} key=${KEY_LABEL}"
+echo "[pkcs11-check] token=${TOKEN_LABEL} key=${KEY_LABEL} store=${STORE_PATH}"
 
 ssh "${TARGET}" "set -euo pipefail
+export TPM2_PKCS11_STORE='${STORE_PATH}'
+echo \"[pkcs11-check] store=\${TPM2_PKCS11_STORE}\"
 echo '[pkcs11-check] tool availability:'
 command -v pkcs11-tool >/dev/null && echo '  - pkcs11-tool: OK' || echo '  - pkcs11-tool: MISSING'
 if command -v tpm2_ptool >/dev/null; then
@@ -35,13 +41,16 @@ echo '  pkcs11:token=${TOKEN_LABEL};object=${KEY_LABEL};type=private'
 echo
 echo '[pkcs11-check] next provisioning steps (run on target as root):'
 cat <<'EOF'
+# The token DB lives on persistent /data — export the store for every command:
+export TPM2_PKCS11_STORE=/data/tpm2_pkcs11
+
 # 1) Inspect local tool syntax first (varies by distro build):
 tpm2_ptool --help || tpm2_ptool.py --help
 
 # 2) Initialize token store and create token/object:
 #    (use the command variants shown by --help for your target build)
 #    Typical flow:
-#      - init store
+#      - init store at $TPM2_PKCS11_STORE
 #      - add token label 'iotgw' with SO PIN + user PIN
 #      - add private key object label 'rauc-client-key'
 

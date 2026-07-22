@@ -3,24 +3,21 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 SRC_URI:append = " file://openssh-hostkeys.tmpfiles.conf"
 
 do_install:append() {
-    # For read-only-rootfs profile, OE-Core points sshd_config_readonly HostKey
-    # to /var/run/ssh (volatile), forcing key regeneration every boot.
-    # Move host keys to /var/lib/ssh so sshdgenkeys is one-time.
+    # Host keys live on the persistent /data partition, so the host identity is
+    # stable across reboots and A/B updates and sshdgenkeys runs once. /var/lib
+    # is volatile (tmpfs) on this image and OE-Core's read-only-rootfs config
+    # points HostKey at volatile /var/run/ssh, either of which would regenerate
+    # keys every boot. sshd_check_keys derives the key paths from the HostKey
+    # directives of the -f config (sshd_config_readonly, via SSHD_OPTS), so
+    # rewriting these lines is sufficient — SYSCONFDIR in /etc/default/ssh is only
+    # a runtime scratch dir and does not affect where host keys are generated.
     if [ -f ${D}${sysconfdir}/ssh/sshd_config_readonly ]; then
         sed -i '/^HostKey /d' ${D}${sysconfdir}/ssh/sshd_config_readonly
         {
-            echo "HostKey /var/lib/ssh/ssh_host_rsa_key"
-            echo "HostKey /var/lib/ssh/ssh_host_ecdsa_key"
-            echo "HostKey /var/lib/ssh/ssh_host_ed25519_key"
+            echo "HostKey /data/ssh/ssh_host_rsa_key"
+            echo "HostKey /data/ssh/ssh_host_ecdsa_key"
+            echo "HostKey /data/ssh/ssh_host_ed25519_key"
         } >> ${D}${sysconfdir}/ssh/sshd_config_readonly
-    fi
-
-    # Keep sshd_check_keys target directory aligned with readonly sshd config.
-    if [ -f ${D}${sysconfdir}/default/ssh ]; then
-        # Upstream default points to volatile /var/run/ssh on RO rootfs setups.
-        # Rewrite to persistent /var/lib/ssh so key generation is one-time.
-        sed -i -e 's#/var/run/ssh#/var/lib/ssh#g' -e 's#/run/ssh#/var/lib/ssh#g' \
-            ${D}${sysconfdir}/default/ssh
     fi
 
     # Ensure persistent host key directory exists with strict permissions.

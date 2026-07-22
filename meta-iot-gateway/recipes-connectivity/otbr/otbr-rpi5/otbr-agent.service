@@ -50,8 +50,10 @@ RestrictSUIDSGID=true
 LockPersonality=true
 MemoryDenyWriteExecute=false
 
-# Persistent state for OpenThread settings
-StateDirectory=thread
+# Persistent state for OpenThread settings. /var/lib is volatile on this image;
+# the Thread dataset is re-homed onto a /data-backed bind (var-lib-thread.mount,
+# pulled via the RequiresMountsFor drop-in), so StateDirectory= is intentionally
+# not used here.
 ReadWritePaths=/var/lib/thread
 ReadWritePaths=/run
 

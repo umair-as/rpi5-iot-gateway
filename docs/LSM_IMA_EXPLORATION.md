@@ -1,5 +1,15 @@
 # LSM and IMA Exploration Notes
 
+> **⚠️ Historical — superseded.** These are dated field notes from the era
+> when **AppArmor was the default MAC** and SELinux was a dormant,
+> compiled-in candidate. That is no longer true: SELinux is now the
+> always-on active MAC, AppArmor is not carried, and `CONFIG_LSM` is
+> `lockdown,yama,bpf,landlock,selinux`. Statements below such as "AppArmor
+> holds the exclusive slot" or "SELinux does not initialise" describe the
+> old build and **do not reflect current images**. For the current design,
+> wiring, and command reference see **[SELINUX.md](SELINUX.md)**. Kept for
+> the on-target observations and the IMA/TPM-PCR notes, which remain useful.
+
 Practical field notes from bringing up SELinux, AppArmor, and IMA on the RPi5 IoT Gateway.
 Covers concepts, observed behaviour on target, and annotated commands with their actual output.
 

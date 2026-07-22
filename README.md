@@ -151,6 +151,7 @@ Use these docs to customize the gateway image and runtime behavior:
 
 - [Operations](docs/OPERATIONS.md) for host build workflow, provisioning, and OTA runtime operations
 - [Partition Layouts](docs/PARTITIONS.md) for storage sizing and WKS selection
+- [Persistent State Architecture](docs/PERSISTENT_STATE.md) for writable/persistent state and what survives updates
 
 Subsystem deep dives:
 
@@ -175,8 +176,10 @@ Detailed documentation is available in the `docs/` directory:
 
 - **[Operations](docs/OPERATIONS.md)** — Host build, networking, dev SSH keys, OTA runtime workflows
 - **[Security Hardening](docs/SECURITY.md)** — Kernel hardening, compiler flags, audit framework, validation
+- **[SELinux](docs/SELINUX.md)** — Active MAC: concept primer, local wiring, refpolicy-mcs, and bring-up-to-enforcing roadmap
 - **[Kernel Configuration](docs/KERNEL.md)** — Feature sets, fragments, runtime parameters
 - **[Partition Layouts](docs/PARTITIONS.md)** — RAUC A/B partitions, WKS variants, sizing
+- **[Persistent State Architecture](docs/PERSISTENT_STATE.md)** — volatile `/var`, `/data`-backed persistent state, and what survives A/B updates
 - **[OpenThread Border Router](docs/OTBR.md)** — OTBR setup, configuration, commissioning
 - **[OTA Updates](docs/OTA_UPDATE.md)** — RAUC workflow, bundles, rollback
 - **[RAUC Update Runbook](docs/RAUC_UPDATE.md)** — Slot validation and adaptive update checks

@@ -54,6 +54,18 @@ repos:
   # LAYERSERIES_COMPAT. tpm-ops now inherits the OE-core `cargo` class instead
   # of `cargo_bin`.
 
+  # SELinux MAC stack: libselinux/policycoreutils/setools, the refpolicy
+  # variants, packagegroup-core-selinux, and selinux-image.bbclass. Also
+  # ships ~36 <recipe>_%.bbappend files that flip PACKAGECONFIG[selinux] on
+  # in oe-core/meta-oe recipes (systemd, dbus, openssh, sudo, PAM, ...)
+  # whenever DISTRO_FEATURES contains "selinux". The distro-features wiring
+  # lives in iotgw-common.inc; the kernel-side LSM symbols in
+  # security-prod.cfg. See docs/SELINUX.md.
+  meta-selinux:
+    url: https://git.yoctoproject.org/meta-selinux
+    branch: wrynose
+    commit: 1c3a699f363167571ab39fecb0fe6f56691a4e20
+
   # Project layer lives in this repo. No url/path: kas resolves it against the
   # repo containing this kas file, so layer paths under `layers:` are relative
   # to the repo root. Sidesteps the path:-vs-KAS_WORK_DIR interaction — a bare

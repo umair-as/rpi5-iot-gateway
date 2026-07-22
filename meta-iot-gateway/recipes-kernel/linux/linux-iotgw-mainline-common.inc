@@ -13,6 +13,15 @@ require recipes-kernel/linux/linux-yocto.inc
 LINUX_VERSION_EXTENSION = ""
 PV = "${LINUX_VERSION}+git${SRCPV}"
 
+# CVE identity for cve-check/sbom-cve-check. kernel.bbclass defaults
+# CVE_PRODUCT to "linux_kernel linux:linux"; the trailing "linux:linux" token
+# over-matches unrelated "linux" NVD products and yields false positives, so
+# pin to the canonical kernel CPE only. CVE_VERSION defaults to PV, whose
+# "+git${SRCPV}" suffix breaks NVD version-range comparison — feed the clean
+# upstream release (e.g. 6.18.37) instead so fixed-below CVEs aren't flagged.
+CVE_PRODUCT = "linux_kernel"
+CVE_VERSION = "${LINUX_VERSION}"
+
 # Pinned revision for reproducible CI/release builds. SRCREV_machine tracks a
 # released linux-6.18.y tag (not the moving branch tip). The v6.18.37 floor is
 # required: it carries the Bluetooth close-path use-after-free fixes (the .34

@@ -2,7 +2,7 @@
 Description=Bind /data-backed pstore archive over /var/lib/systemd/pstore
 Documentation=man:systemd-pstore.service(8)
 DefaultDependencies=no
-After=data.mount overlayfs-setup.service systemd-tmpfiles-setup.service
+After=data.mount var-volatile-lib.service systemd-tmpfiles-setup.service
 Wants=data.mount
 RequiresMountsFor=/data
 ConditionPathIsMountPoint=/data

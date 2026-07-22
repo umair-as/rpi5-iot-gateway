@@ -90,6 +90,13 @@ flowchart TD
 | InfluxDB 1 | 1.x     | `recipes-observability/influxdb/influxdb_%.bbappend` |
 | InfluxDB 3 | 3.0.0   | `recipes-observability/influxdb3-bin/influxdb3-bin_3.0.0.bb` (experimental, see [Upgrading to InfluxDB 3](#upgrading-to-influxdb-3-native)) |
 
+**Persistence.** Mosquitto (in all image variants) keeps retained
+messages/sessions at `/data/mosquitto` (`persistence_location`), so they survive
+reboot and RAUC A/B updates. When the optional InfluxDB 3 recipe is installed,
+its data directory persists at `/data/influxdb3` (`INFLUXDB3_DATA_DIR`). The
+larger Telegraf/InfluxDB stack remains opt-in and is not in any image variant.
+See [Persistent State Architecture](PERSISTENT_STATE.md).
+
 There is no meta-package; reinstatement is done by adding the desired
 components directly to `IMAGE_INSTALL`. The previous
 `iotgw-observability-stack` meta-recipe was retired together with the

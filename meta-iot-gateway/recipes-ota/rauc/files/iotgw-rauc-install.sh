@@ -481,7 +481,11 @@ rauc_cmd=(rauc install "${BUNDLE_INPUT}" "${EXTRA_ARGS[@]}")
 
 if [ "${VERBOSE}" -eq 1 ]; then
     # Verbose: rauc output flows through directly; operator sees raw progress.
-    if ! "${rauc_cmd[@]}"; then
+    # Capture rc in the else-branch: `$?` after `if ! cmd; then` is the status of
+    # the negation (always 0), not rauc's exit code, so it would mask failures.
+    if "${rauc_cmd[@]}"; then
+        INSTALL_RC=0
+    else
         INSTALL_RC=$?
         _log "rauc install failed rc=${INSTALL_RC}"
         exit "${INSTALL_RC}"
@@ -539,7 +543,10 @@ elif [ "${IS_TTY}" -eq 1 ]; then
     fi
 else
     # Non-TTY (automated): completely silent; syslog and rauc event log have the record.
-    if ! "${rauc_cmd[@]}" >/dev/null 2>&1; then
+    # Capture rc in the else-branch (see verbose branch above re: `if ! cmd`).
+    if "${rauc_cmd[@]}" >/dev/null 2>&1; then
+        INSTALL_RC=0
+    else
         INSTALL_RC=$?
         err="$(_rauc_last_error 2>/dev/null || true)"
         [ -n "${err}" ] && _log "rauc LastError=${err}"

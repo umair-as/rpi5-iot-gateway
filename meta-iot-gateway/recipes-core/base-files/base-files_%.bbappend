@@ -1,6 +1,6 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/base-files:"
 
-# fstab matches our WKS layout (A/B slots + LABEL=data)
+# fstab matches the WKS layout (A/B slots + LABEL=data)
 # Set custom hostname
 # Note: issue/motd are shipped by iotgw-banner.
 SRC_URI += "file://fstab file://hostname file://hosts file://profile.d/10-iotgw-path.sh file://skel/.bashrc"
@@ -9,8 +9,15 @@ SRC_URI += "file://fstab file://hostname file://hosts file://profile.d/10-iotgw-
 # rootfs — systemd cannot mkdir it at mount time.
 dirs755 += "/data"
 
+# NOTE: do NOT re-install fstab here. The base recipe's do_install already
+# installs this recipe's fstab (S=UNPACKDIR + FILESEXTRAPATHS:prepend makes it win),
+# and meta-selinux's base-files_selinux.inc do_install:append then seds a
+# `rootcontext=...:var_t:s0` onto the /var/volatile line. A second
+# `install ... fstab` in this append ran *after* that sed and silently reverted
+# it, so /var/volatile came up unlabeled instead of var_t. Letting the base
+# install + meta-selinux sed operate on the final file preserves the rootcontext
+# without duplicating meta-selinux's sed.
 do_install:append() {
-    install -m 0644 ${UNPACKDIR}/fstab ${D}${sysconfdir}/fstab
     install -m 0644 ${UNPACKDIR}/hostname ${D}${sysconfdir}/hostname
     install -m 0644 ${UNPACKDIR}/hosts ${D}${sysconfdir}/hosts
 

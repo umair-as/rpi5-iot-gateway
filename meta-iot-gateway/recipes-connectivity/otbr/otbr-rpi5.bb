@@ -17,6 +17,8 @@ SRC_URI += " \
     file://otbr-rcp.rules \
     file://dbus-wrapper-otbr.sh \
     file://otbr-config-paths.patch \
+    file://var-lib-thread.mount \
+    file://otbr-agent-thread-persist.conf \
 "
 
 # Ship systemd units
@@ -117,6 +119,12 @@ SYSTEMD_SERVICE:${PN} = "otbr-agent.service"
 do_install:append() {
     install -d ${D}${systemd_system_unitdir}
     install -m 0644 ${UNPACKDIR}/otbr-agent.service ${D}${systemd_system_unitdir}/
+
+    # Persist the Thread dataset on /data (bind over volatile /var/lib/thread).
+    install -m 0644 ${UNPACKDIR}/var-lib-thread.mount ${D}${systemd_system_unitdir}/var-lib-thread.mount
+    install -d ${D}${systemd_system_unitdir}/otbr-agent.service.d
+    install -m 0644 ${UNPACKDIR}/otbr-agent-thread-persist.conf \
+        ${D}${systemd_system_unitdir}/otbr-agent.service.d/10-iotgw-thread-persist.conf
 
     # Provide default env for agent
     install -d ${D}${sysconfdir}/default

@@ -125,13 +125,17 @@ space on first boot by `rauc-grow-data-partition`.
 **Mount Options:** `noatime,nodiratime,commit=60`
 
 **Purpose:**
-- Persistent application data
-- Logs (if not using journald volatile)
-- Configuration files that survive updates
-- Container volumes
-- User data
+- Persistent application data and user data
+- Persistent runtime state re-homed off the read-only rootfs (journald and audit
+  logs, SSH host keys, TPM2 PKCS#11 token DB, provisioning stamps, and more)
+- Writable OverlayFS uppers for `/etc`, `/home`, `/root` (under `overlays/`)
+- Container storage
 
-**Note:** Journald persistent storage is under `/var/log/journal` on the overlay-backed `/var` (stored on `/data`).
+**Note:** `/var` is **not** overlay-backed. Journald and audit logs persist on
+`/data` (`/data/log/{journal,audit}`) via dedicated bind mounts, not an overlay.
+The full writable/persistent-state layout — what is volatile, what persists, and
+what survives A/B updates — is documented in
+[Persistent State Architecture](PERSISTENT_STATE.md).
 
 **Survives OTA Updates:** This partition is not touched by RAUC updates.
 

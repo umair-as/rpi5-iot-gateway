@@ -18,8 +18,10 @@ The distribution implements defense-in-depth security across multiple layers:
 
 For FIT boot signing and verification chain setup, see the [FIT Boot and Signing Guide](FIT_BOOT_SIGNING.md).
 
-For hands-on IMA, AppArmor, and SELinux exploration notes (commands, observed behaviour,
-TPM PCR interaction, known issues), see [LSM and IMA Exploration](LSM_IMA_EXPLORATION.md).
+SELinux is the active MAC — see the [SELinux Guide](SELINUX.md) for the concept
+primer, local wiring, and the bring-up-to-enforcing roadmap. For historical IMA
+and LSM bring-up field notes (from the earlier AppArmor-default era), see
+[LSM and IMA Exploration](LSM_IMA_EXPLORATION.md).
 
 ---
 
@@ -62,7 +64,7 @@ The kernel follows Kernel Self Protection Project (KSPP) recommendations.
 - **ASLR** — Randomized kernel base, increased entropy
 - **Attack Surface** — Debug interfaces disabled, staging drivers removed
 - **Module Signing** — SHA256 signatures enforced
-- **LSM** — AppArmor mandatory access control
+- **LSM** — SELinux mandatory access control (permissive default; see [SELINUX.md](SELINUX.md))
 - **Audit** — Syscall auditing enabled
 
 ### CVE Response Workflow
@@ -138,6 +140,15 @@ The `iotgw-audit` package provides project audit rules aligned to CIS-style base
 Rules are staged under `/usr/share/iotgw-audit/iotgw.rules` and deployed into
 `/etc/audit/rules.d/iotgw.rules` during rootfs post-processing to avoid package
 ownership conflicts with `auditd`.
+
+**Persistence and retention:** the package also ships an explicit `auditd.conf`
+(deployed the same way). Audit logs persist on `/data` — `/var/log/audit` is a
+bind mount from `/data/log/audit` — and rotate at `max_log_file=16` MiB with
+`num_logs=5` (~80 MiB nominal budget). Disk-pressure actions are deliberately
+non-fatal for an unattended gateway (`disk_full_action=ROTATE`,
+`disk_error_action=SYSLOG`, `admin_space_left_action=SYSLOG`), so a full or
+failing `/data` cannot wedge auditing. The full persistent-state layout is in
+[Persistent State Architecture](PERSISTENT_STATE.md).
 
 **What's Audited:**
 - File integrity (critical system files)

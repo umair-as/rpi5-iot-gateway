@@ -1,7 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
-STAMP="/var/lib/iotgw-provision.done"
+# Completion stamp on persistent /data (/var/lib is volatile on this image, so a
+# stamp there would make first-boot provisioning re-run every boot).
+STAMP="/data/iotgw-provision.done"
 SRC_DIR="/data/iotgw"
 UBOOT_POLICY="/etc/default/iotgw-uboot-policy"
 CHANGED=0

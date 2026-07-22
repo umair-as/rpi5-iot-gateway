@@ -11,9 +11,9 @@ provider. FIT signed boot is mandatory (see `docs/FIT_BOOT_SIGNING.md`); there i
 no non-FIT / `linux-raspberrypi` option.
 
 **Always Enabled:**
-- `branding.cfg` — Kernel version suffix (`-v8-16k-igw`)
+- `branding.cfg` — Kernel version suffix (`-v8-igw`)
 - `trim.cfg` — disable non-required subsystems for appliance profile
-- `storage-filesystems.cfg` — OverlayFS, dm-verity, SquashFS (required for RAUC)
+- `storage-filesystems.cfg` — OverlayFS, dm-verity, SquashFS (SquashFS xattr required for RAUC bundle mount under SELinux)
 - `ikconfig.cfg` — runtime kernel config introspection support
 - `audit.cfg` — audit framework plumbing
 - `panic-recovery.cfg` — `CONFIG_PANIC_TIMEOUT=30`. Always applied.
@@ -267,7 +267,7 @@ Comprehensive kernel hardening for production.
 - Access restrictions (dmesg, devmem, kcore disabled)
 - ASLR (increased entropy)
 - Module signing (SHA256, enforced)
-- AppArmor LSM
+- SELinux LSM (active MAC; lockdown/yama/bpf/landlock stacked)
 - Audit framework
 
 **See:** [SECURITY.md](SECURITY.md) for full details
@@ -471,7 +471,7 @@ console=serial0,115200  # Enable serial console
 Custom version suffix for identification:
 
 ```
-CONFIG_LOCALVERSION="-v8-16k-igw"
+CONFIG_LOCALVERSION="-v8-igw"
 ```
 
 ---

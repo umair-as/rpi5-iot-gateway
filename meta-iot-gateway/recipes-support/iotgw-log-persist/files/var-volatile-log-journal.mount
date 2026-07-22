@@ -1,0 +1,20 @@
+[Unit]
+Description=Bind /data-backed journal storage over /var/volatile/log/journal
+Documentation=man:systemd-journald.service(8)
+DefaultDependencies=no
+After=data.mount var-volatile.mount iotgw-log-persist-prep.service
+Requires=iotgw-log-persist-prep.service
+Wants=data.mount
+RequiresMountsFor=/data
+ConditionPathIsMountPoint=/data
+ConditionPathIsDirectory=/data/log/journal
+Before=systemd-journal-flush.service umount.target
+Conflicts=umount.target
+
+[Mount]
+What=/data/log/journal
+Where=/var/volatile/log/journal
+Type=none
+Options=bind,nodev,nosuid,noexec
+DirectoryMode=2755
+TimeoutSec=10s
