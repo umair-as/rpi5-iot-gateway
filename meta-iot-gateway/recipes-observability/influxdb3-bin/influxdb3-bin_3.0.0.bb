@@ -34,7 +34,7 @@ do_install() {
     install -d ${D}${sysconfdir}/default
     cat > ${D}${sysconfdir}/default/influxdb3 <<'EOF'
 INFLUXDB3_HTTP_ADDR=127.0.0.1:8181
-INFLUXDB3_DATA_DIR=/var/lib/influxdb3
+INFLUXDB3_DATA_DIR=/data/influxdb3
 EOF
 
     install -d ${D}${systemd_system_unitdir}
