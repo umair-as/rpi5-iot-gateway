@@ -499,17 +499,21 @@ else
     # Journal + audit re-homed onto /data-backed binds (read real paths; /var/log
     # is a symlink into /var/volatile/log).
     data_dev=$(findmnt -no SOURCE /data 2>/dev/null)
-    for m in /var/volatile/log/journal /var/volatile/log/audit; do
-        if findmnt --target "$m" >/dev/null 2>&1; then
-            msrc=$(findmnt -no SOURCE --target "$m" 2>/dev/null)
-            case "$msrc" in
-                "${data_dev}"*|*/data/*) say_pass "$m persisted on /data ($msrc)" ;;
-                *) say_fail "$m mounted but not from /data ($msrc)" ;;
-            esac
-        else
-            say_fail "$m is not a bind — journal/audit NOT re-homed to /data"
-        fi
-    done
+    if [ -z "$data_dev" ]; then
+        say_fail "cannot resolve /data source device — journal/audit bind-source checks skipped"
+    else
+        for m in /var/volatile/log/journal /var/volatile/log/audit; do
+            if findmnt --target "$m" >/dev/null 2>&1; then
+                msrc=$(findmnt -no SOURCE --target "$m" 2>/dev/null)
+                case "$msrc" in
+                    "${data_dev}"*|*/data/*) say_pass "$m persisted on /data ($msrc)" ;;
+                    *) say_fail "$m mounted but not from /data ($msrc)" ;;
+                esac
+            else
+                say_fail "$m is not a bind — journal/audit NOT re-homed to /data"
+            fi
+        done
+    fi
     command -v journalctl >/dev/null 2>&1 && du=$(journalctl --disk-usage 2>/dev/null) && [ -n "$du" ] && say_pass "journald: $du"
 
     # The /data persistence set (must-exist backing dirs).
