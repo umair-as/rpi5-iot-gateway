@@ -1,0 +1,20 @@
+[Unit]
+Description=Prepare /data-backed log dirs and mountpoints before journald/auditd
+DefaultDependencies=no
+After=data.mount var-volatile.mount
+Wants=data.mount
+RequiresMountsFor=/data
+ConditionPathIsMountPoint=/data
+# Must complete before the binds and their early consumers so the persistent
+# journal/audit storage exists at flush time (journal-flush is Before= the
+# normal tmpfiles pass).
+Before=var-volatile-log-journal.mount var-volatile-log-audit.mount
+Before=systemd-journal-flush.service auditd.service sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iotgw-log-persist-prep
+
+[Install]
+WantedBy=sysinit.target
