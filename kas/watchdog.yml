@@ -19,3 +19,10 @@ local_conf_header:
     IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "0"
     IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "20s"
     IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"
+
+  uboot_watchdog: |
+    # U-Boot watchdog evaluation. This enables the BCM2835/BCM2711 watchdog
+    # command/driver and the IoT Gateway boot policy that arms the watchdog
+    # during U-Boot RAUC/FIT work, then stops it before bootm. This is separate
+    # from systemd PID1 watchdog feeding above.
+    IOTGW_UBOOT_FEATURES:append = " watchdog"

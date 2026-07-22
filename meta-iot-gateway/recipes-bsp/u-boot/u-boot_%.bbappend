@@ -23,6 +23,10 @@ SRC_URI:append = "${@' file://iotgw-uboot-hardening.cfg' \
 SRC_URI:append = "${@' file://iotgw-uboot-fit-enforce.cfg' \
     if 'fit_enforce' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
 
+# watchdog: BCM2835 watchdog command/driver plus explicit IoT Gateway boot policy
+SRC_URI:append = "${@' file://iotgw-uboot-watchdog.cfg file://0006-rpi-iotgw-watchdog-policy.patch' \
+    if 'watchdog' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
+
 # appliance_lockdown: production prompt/env lockdown
 SRC_URI:append = "${@' file://iotgw-uboot-prod.cfg' \
     if 'appliance_lockdown' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
