@@ -20,6 +20,16 @@ IOTGW_KERNEL_CONSOLE ?= "ttyAMA10,115200"
 # runtime state (BOOT_ORDER, BOOT_*_LEFT, bootcount, rauc_slot, EXTRA_KERNEL_ARGS).
 IOTGW_SELFHEAL_ENV_KEYS ?= "iotgw_load_boot iotgw_exec_fit iotgw_rauc_select iotgw_try_a iotgw_try_b iotgw_set_bootargs iotgw_halt bootcmd"
 
+# When the U-Boot watchdog policy is built in (IOTGW_UBOOT_FEATURES contains
+# 'watchdog'), bootcmd/iotgw_exec_fit/iotgw_halt above are rewritten to `run
+# iotgw_wdt_start`/`run iotgw_wdt_stop`. Those macros MUST self-heal too — else
+# an OTA updates the callers but not the macros, leaving `run iotgw_wdt_start`
+# pointing at an undefined var (U-Boot prints `## Error: "iotgw_wdt_start" not
+# defined` and, since bootcmd is `;`-separated, boots on with the watchdog
+# silently inert). Appended only when the token is on, so non-watchdog builds
+# don't bbwarn on keys absent from u-boot-initial-env.
+IOTGW_SELFHEAL_ENV_KEYS:append = "${@' iotgw_wdt_dev iotgw_wdt_start iotgw_wdt_stop' if 'watchdog' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
+
 do_deploy() {
     install -d ${DEPLOYDIR}
     workdir=${WORKDIR}/bootfiles-stage
