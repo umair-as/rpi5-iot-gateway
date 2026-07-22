@@ -464,6 +464,88 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+section "/var narrowing & /data persistence"
+# /var is no longer overlaid — it reverts to the stock OE volatile model
+# (tmpfs /var/volatile + volatile-binds), with the must-persist state re-homed
+# onto dedicated /data-backed binds/redirects. This block asserts the narrowed
+# shape; on a pre-narrowing image (/var still overlaid) it SKIPs cleanly.
+
+# Read the true fstype from PID1's view — the SSH session's mount namespace can
+# misreport mounts.
+vv_fs=$(stat -f -c %T /proc/1/root/var/volatile 2>/dev/null)
+[ -z "$vv_fs" ] && vv_fs=$(stat -f -c %T /var/volatile 2>/dev/null)
+
+if [ "$vv_fs" != "tmpfs" ]; then
+    say_skip "/var narrowing" "/var/volatile fstype is '${vv_fs:-unknown}' (pre-narrowing image — /var still overlaid)"
+else
+    say_pass "/var/volatile is a true tmpfs (overlay narrowed)"
+
+    # /var must no longer carry an overlay upper on /data.
+    if grep -qE 'upperdir=[^ ,]*/overlays/var/' /proc/1/mountinfo 2>/dev/null; then
+        say_fail "/var still has an overlay upper (narrowing incomplete)"
+    else
+        say_pass "/var is not overlaid (no /data/overlays/var upper)"
+    fi
+
+    # Stock volatile-binds now actually run (were condition-skipped under the overlay).
+    for u in var-volatile-lib var-volatile-cache var-volatile-spool; do
+        if systemctl is-active "${u}.service" >/dev/null 2>&1; then
+            say_pass "${u}.service active (stock volatile-binds)"
+        else
+            say_fail "${u}.service not active — /var/lib may be read-only"
+        fi
+    done
+
+    # Journal + audit re-homed onto /data-backed binds (read real paths; /var/log
+    # is a symlink into /var/volatile/log).
+    data_dev=$(findmnt -no SOURCE /data 2>/dev/null)
+    for m in /var/volatile/log/journal /var/volatile/log/audit; do
+        if findmnt --target "$m" >/dev/null 2>&1; then
+            msrc=$(findmnt -no SOURCE --target "$m" 2>/dev/null)
+            case "$msrc" in
+                "${data_dev}"*|*/data/*) say_pass "$m persisted on /data ($msrc)" ;;
+                *) say_fail "$m mounted but not from /data ($msrc)" ;;
+            esac
+        else
+            say_fail "$m is not a bind — journal/audit NOT re-homed to /data"
+        fi
+    done
+    command -v journalctl >/dev/null 2>&1 && du=$(journalctl --disk-usage 2>/dev/null) && [ -n "$du" ] && say_pass "journald: $du"
+
+    # The /data persistence set (must-exist backing dirs).
+    for d in /data/log /data/log/journal /data/log/audit /data/ssh /data/mosquitto; do
+        if [ -d "$d" ]; then say_pass "backing dir present: $d"; else say_fail "backing dir missing: $d"; fi
+    done
+    # Feature/state-dependent dirs — SKIP when the feature/pairing has not populated them.
+    for d in /data/lib/thread /data/lib/bluetooth /data/tpm2_pkcs11 /data/influxdb3; do
+        if [ -d "$d" ]; then say_pass "backing dir present: $d"; else say_skip "backing dir $d" "not created (feature off / no state yet)"; fi
+    done
+
+    # No read-only-filesystem errors this boot — the main regression risk of
+    # dropping the /var overlay (a writer hitting a bare /var path).
+    if command -v journalctl >/dev/null 2>&1; then
+        ro=$(journalctl -b --no-pager 2>/dev/null | grep -icE 'read-only file system')
+        if [ "${ro:-0}" -eq 0 ]; then
+            say_pass "no 'read-only file system' errors this boot"
+        else
+            say_fail "$ro 'read-only file system' error(s) — a writer hit a bare /var path (journalctl -b | grep -i 'read-only')"
+        fi
+    fi
+
+    # /var/volatile root label (steady-state z-relabel → var_t).
+    vvctx=$(stat -c %C /var/volatile 2>/dev/null)
+    case "$vvctx" in
+        *:var_t:*|*var_t) say_pass "/var/volatile labeled var_t ($vvctx)" ;;
+        *unlabeled_t*)    say_skip "/var/volatile label" "unlabeled_t — z-relabel not yet applied (permissive-harmless)" ;;
+        ""|'?')           say_skip "/var/volatile label" "no SELinux context support in stat" ;;
+        *)                say_skip "/var/volatile label" "context '$vvctx'" ;;
+    esac
+fi
+# NOTE: general failed-unit / system-state health is covered by the "Systemd
+# unit health" section above (which flags a degraded state and hints the
+# ota-certs-provision provisioning workflow). Not re-checked here.
+
+# ---------------------------------------------------------------------------
 printf '\n== summary ==\n'
 printf '  PASS: %d\n' "$PASS"
 printf '  FAIL: %d\n' "$FAIL"
