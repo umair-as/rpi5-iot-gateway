@@ -211,8 +211,8 @@ local_conf_header:
     # IOTGW_RAUC_PKCS11_BACKEND = "tpm2"
     # TPM2 preset (defaults in layer):
     # IOTGW_RAUC_PKCS11_TLS_KEY_TPM2 = "pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin"
-    # TPM2 PKCS#11 DB location for RAUC sandbox-helper:
-    # IOTGW_TPM2_PKCS11_STORE = "/var/lib/tpm2_pkcs11"
+    # TPM2 PKCS#11 DB location for RAUC sandbox-helper (persistent /data):
+    # IOTGW_TPM2_PKCS11_STORE = "/data/tpm2_pkcs11"
     # Custom backend example:
     # IOTGW_RAUC_PKCS11_TLS_KEY_CUSTOM = "pkcs11:token=<token>;object=<key>;type=private"
     # IOTGW_RAUC_PKCS11_MODULE_CUSTOM = "/usr/lib/pkcs11/<provider>.so"

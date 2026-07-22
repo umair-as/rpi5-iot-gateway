@@ -141,6 +141,15 @@ Rules are staged under `/usr/share/iotgw-audit/iotgw.rules` and deployed into
 `/etc/audit/rules.d/iotgw.rules` during rootfs post-processing to avoid package
 ownership conflicts with `auditd`.
 
+**Persistence and retention:** the package also ships an explicit `auditd.conf`
+(deployed the same way). Audit logs persist on `/data` — `/var/log/audit` is a
+bind mount from `/data/log/audit` — and rotate at `max_log_file=16` MiB with
+`num_logs=5` (~80 MiB nominal budget). Disk-pressure actions are deliberately
+non-fatal for an unattended gateway (`disk_full_action=ROTATE`,
+`disk_error_action=SYSLOG`, `admin_space_left_action=SYSLOG`), so a full or
+failing `/data` cannot wedge auditing. The full persistent-state layout is in
+[Persistent State Architecture](PERSISTENT_STATE.md).
+
 **What's Audited:**
 - File integrity (critical system files)
 - User/group modifications

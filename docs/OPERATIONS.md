@@ -374,6 +374,27 @@ For provisioning/OTA debugging, prefer the serial console or the
 persistent target tmux session (Section 9) to minimize namespace
 confusion.
 
+## 11) Persistent State
+
+`/var` is volatile; only an explicit set of paths persists on `/data`. The full
+layout — what is volatile, what persists, and what survives A/B updates — is in
+[Persistent State Architecture](PERSISTENT_STATE.md). During OTA validation,
+confirm the narrowed shape from PID1's view (per Section 10):
+
+```bash
+stat -f -c %T /proc/1/root/var/volatile                    # tmpfs
+findmnt -no SOURCE --target /var/volatile/log/journal      # /dev/...p5[/log/journal]
+findmnt -no SOURCE --target /var/volatile/log/audit        # /dev/...p5[/log/audit]
+systemctl --failed
+```
+
+The on-target smoke check includes a `/var narrowing & /data persistence`
+section:
+
+```bash
+scripts/run-target-checks.sh <device-ip> ota-smoke
+```
+
 ## Related
 
 - [RAUC Update Runbook](RAUC_UPDATE.md) - install semantics and troubleshooting
