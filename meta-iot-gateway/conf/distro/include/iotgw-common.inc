@@ -28,6 +28,13 @@ RAUC_BUNDLE_VERSION ?= "${DISTRO_VERSION}-${MACHINE}-${IOTGW_RELEASE_TRACK}-b${I
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 PREFERRED_RPROVIDER_virtual-rauc-conf ?= "rauc-conf-iotgw"
 
+# libnss-mdns is RPROVIDED by both avahi-libnss-mdns and mdns (mDNSResponder,
+# pulled in via otbr-rpi5's RDEPENDS). This distro standardises on avahi for
+# mDNS/DNS-SD (avahi-daemon ships in the images, OTBR builds with
+# -DOTBR_MDNS=avahi), so pin the NSS mDNS plugin to avahi's to match the
+# running resolver and resolve the multiple-provider ambiguity deterministically.
+PREFERRED_RPROVIDER_libnss-mdns ?= "avahi-libnss-mdns"
+
 # Avoid parsing meta-rauc's reference rauc-conf which expects certs not present here
 SKIP_RECIPE[rauc-conf] = "replaced with rauc-conf-iotgw"
 PREFERRED_VERSION_rauc ?= "1.15.2"
