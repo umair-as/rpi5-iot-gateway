@@ -447,20 +447,27 @@ else
     say_skip "tracefs" "not mounted (mount -t tracefs none /sys/kernel/tracing to use ftrace/kprobes)"
 fi
 
-# Kernel tracing kconfig — the observability-dev.cfg symbols. Needs
-# CONFIG_IKCONFIG_PROC (/proc/config.gz); SKIP the block if it is absent.
-if [ -r /proc/config.gz ] && command -v zcat >/dev/null 2>&1; then
-    cfg=$(zcat /proc/config.gz 2>/dev/null)
-    for sym in CONFIG_BPF_EVENTS CONFIG_KPROBES CONFIG_KPROBE_EVENTS \
-               CONFIG_UPROBES CONFIG_UPROBE_EVENTS CONFIG_FTRACE CONFIG_FUNCTION_TRACER; do
-        if printf '%s\n' "$cfg" | grep -q "^${sym}=y"; then
-            say_pass "kconfig ${sym}=y"
-        else
-            say_fail "kconfig ${sym} not set — observability-dev fragment missing?"
-        fi
-    done
-else
+# Kernel tracing kconfig — the observability-dev.cfg symbols. These ship only on
+# images built with the observability-dev tracing fragment, so gate on a sentinel
+# (CONFIG_BPF_EVENTS): if it is absent the image simply does not carry these
+# symbols, so SKIP rather than FAIL (mirrors the bpftool/tracefs checks above).
+# Reading them needs CONFIG_IKCONFIG_PROC (/proc/config.gz).
+if [ ! -r /proc/config.gz ] || ! command -v zcat >/dev/null 2>&1; then
     say_skip "/proc/config.gz" "CONFIG_IKCONFIG_PROC off — cannot verify tracing kconfig on target"
+else
+    cfg=$(zcat /proc/config.gz 2>/dev/null)
+    if ! printf '%s\n' "$cfg" | grep -q "^CONFIG_BPF_EVENTS=y"; then
+        say_skip "tracing kconfig" "observability-dev tracing fragment not in this image build"
+    else
+        for sym in CONFIG_BPF_EVENTS CONFIG_KPROBES CONFIG_KPROBE_EVENTS \
+                   CONFIG_UPROBES CONFIG_UPROBE_EVENTS CONFIG_FTRACE CONFIG_FUNCTION_TRACER; do
+            if printf '%s\n' "$cfg" | grep -q "^${sym}=y"; then
+                say_pass "kconfig ${sym}=y"
+            else
+                say_fail "kconfig ${sym} not set — observability-dev fragment incomplete?"
+            fi
+        done
+    fi
 fi
 
 # ---------------------------------------------------------------------------

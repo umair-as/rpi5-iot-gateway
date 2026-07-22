@@ -10,9 +10,9 @@ missing a license or a download URL), and a HIGH-risk license review list.
 Read-only over the deploy tree; produces no build state.
 
 Usage:
-  scripts/sbom-report.py                      # auto-locate newest SBOM
-  scripts/sbom-report.py -i path.spdx.json
-  scripts/sbom-report.py --csv dl.csv         # package/license/download CSV
+  scripts/sbom-cve/sbom-report.py                # auto-locate newest SBOM
+  scripts/sbom-cve/sbom-report.py -i path.spdx.json
+  scripts/sbom-cve/sbom-report.py --csv dl.csv   # package/license/download CSV
 """
 
 import argparse
