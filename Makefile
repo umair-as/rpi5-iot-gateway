@@ -1,7 +1,7 @@
 .PHONY: help base dev prod \
         bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
         tools-venv test-sign-fit test-sign-fit-softhsm \
-        sbom-cve layers parse clean-lock
+        sbom-cve cve-report sbom-report layers parse clean-lock
 
 KAS ?= kas
 
@@ -68,6 +68,8 @@ help:
 	@echo "  make test-sign-fit-softhsm        # Run full suite incl. SoftHSM integration tests"
 	@echo "  -- SBOM/CVE --"
 	@echo "  make sbom-cve                     # Build dev image with wrynose SBOM+CVE reports"
+	@echo "  make cve-report                   # Summarise the CVE report (buckets, kernel split, CVE_STATUS scaffold)"
+	@echo "  make sbom-report                  # Summarise the SBOM (license inventory + HIGH-risk review)"
 	@echo "  -- Utilities --"
 	@echo "  make layers                       # Show layers for RAUC stack"
 	@echo "  make parse                        # Parse-only for RAUC stack"
@@ -198,6 +200,15 @@ bundle-prod-full-fit-resign: | $(KAS_WORK_DIR)
 # generation is slow and should be opt-in, not on every build.
 sbom-cve: | $(KAS_WORK_DIR)
 	$(call iotgw_bitbake,bitbake $(SBOM_CVE_IMAGE),$(BASE):$(CVE_KAS))
+
+# Host-side report readers over the sbom-cve-check deploy artifacts. Stdlib-only
+# Python (no venv), read-only — run after `make sbom-cve` produced the reports.
+CVE_REPORT_ARGS  ?=
+SBOM_REPORT_ARGS ?=
+cve-report:
+	python3 scripts/sbom-cve/cve-report.py $(CVE_REPORT_ARGS)
+sbom-report:
+	python3 scripts/sbom-cve/sbom-report.py $(SBOM_REPORT_ARGS)
 
 layers: | $(KAS_WORK_DIR)
 	$(KAS) shell -c 'bitbake-layers show-layers' $(BASE)
