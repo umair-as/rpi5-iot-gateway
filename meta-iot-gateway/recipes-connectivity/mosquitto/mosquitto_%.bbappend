@@ -5,6 +5,7 @@ SRC_URI += " \
     file://20-security.conf \
     file://acl \
     file://passwd \
+    file://iotgw-mosquitto-persist.tmpfiles.conf \
 "
 
 do_install:append() {
@@ -16,4 +17,11 @@ do_install:append() {
     # Provisioning/RAUC reconciliation enforce mosquitto:mosquitto ownership at runtime.
     install -m 0600 ${UNPACKDIR}/acl ${D}${sysconfdir}/mosquitto/acl
     install -m 0600 ${UNPACKDIR}/passwd ${D}${sysconfdir}/mosquitto/passwd
+
+    # Create the persistent /data-backed state dir (persistence_location).
+    install -d ${D}${sysconfdir}/tmpfiles.d
+    install -m 0644 ${UNPACKDIR}/iotgw-mosquitto-persist.tmpfiles.conf \
+        ${D}${sysconfdir}/tmpfiles.d/iotgw-mosquitto-persist.conf
 }
+
+FILES:${PN} += "${sysconfdir}/tmpfiles.d/iotgw-mosquitto-persist.conf"
