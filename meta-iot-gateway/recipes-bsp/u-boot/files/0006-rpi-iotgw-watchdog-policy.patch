@@ -35,7 +35,7 @@ index bef56777b96..3c3f6e8dc64 100644
  ramdisk_addr_r=0x05700000
  
  iotgw_fit_addr_r=0x08000000
-+iotgw_wdt_dev=watchdog@7e100000
++iotgw_wdt_dev=watchdog@7d200000
 +iotgw_wdt_start=if wdt dev ${iotgw_wdt_dev}; then wdt start 15000; echo [IOTGW] watchdog started; else echo [IOTGW] watchdog unavailable; fi
 +iotgw_wdt_stop=if wdt dev ${iotgw_wdt_dev}; then wdt stop; echo [IOTGW] watchdog stopped; else echo [IOTGW] watchdog stop skipped; fi
  iotgw_try_a=if test -z "${rauc_slot}"; then if itest ${BOOT_A_LEFT} -gt 0; then setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1; setenv rauc_slot A; setenv rootpartnum 3; fi; fi
