@@ -48,6 +48,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/influxdb3
+ExecStartPre=/bin/mkdir -p ${INFLUXDB3_DATA_DIR}
 ExecStart=/usr/bin/influxdb3 serve --node-id iotgw --object-store file --data-dir ${INFLUXDB3_DATA_DIR} --http-bind ${INFLUXDB3_HTTP_ADDR}
 Restart=on-failure
 RestartSec=10
