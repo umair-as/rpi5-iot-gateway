@@ -75,7 +75,6 @@ EXTRA_OECMAKE = " \
     -DEDGE_ENABLE_LTO=ON \
     -DEDGE_WEB_UI=OFF \
     -DEDGE_FETCH_SDBUSCPP=OFF \
-    -DEDGE_STATIC_LINK=OFF \
 "
 
 # -----------------------------------------------------------------------------
