@@ -7,13 +7,12 @@ SRC_URI:append = " file://0003-defconfig-iotgw-base.patch file://0004-configs-rp
 
 # ── U-Boot feature gating (mirrors IOTGW_KERNEL_FEATURES / iotgw-kernel-fragments.bbclass) ──
 
-# FIT signed boot is mandatory (distro policy), so fit_enforce
-# (CONFIG_FIT_SIGNATURE + legacy-image-format off) is a default for ALL images,
-# not just prod — otherwise dev U-Boot would boot an unsigned/tampered FIT. This
-# is the u-boot-recipe default; image-recipe IOTGW_UBOOT_FEATURES does not reach
-# this separate recipe. appliance_lockdown is still added on top only for prod
-# (kas/uboot-prod-hardening.yml / iot-gw-image-prod).
-IOTGW_UBOOT_FEATURES ?= "surface_reduce fit_enforce"
+# The base default for IOTGW_UBOOT_FEATURES ("surface_reduce fit_enforce
+# watchdog") is set distro-wide in conf/distro/include/iotgw-common.inc, which
+# reaches this separate recipe — so no per-recipe default is duplicated here.
+# fit_enforce is mandatory (signed FIT); appliance_lockdown is added on top only
+# for prod (kas/uboot-prod-hardening.yml). The SRC_URI gating below keys off
+# whichever tokens are present.
 
 # surface_reduce: disable unused commands (safe for dev and prod)
 SRC_URI:append = "${@' file://iotgw-uboot-hardening.cfg' \
@@ -22,6 +21,10 @@ SRC_URI:append = "${@' file://iotgw-uboot-hardening.cfg' \
 # fit_enforce: require signed FIT, disable legacy image format (all variants)
 SRC_URI:append = "${@' file://iotgw-uboot-fit-enforce.cfg' \
     if 'fit_enforce' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
+
+# watchdog: BCM2835 watchdog command/driver plus explicit IoT Gateway boot policy
+SRC_URI:append = "${@' file://iotgw-uboot-watchdog.cfg file://0006-rpi-iotgw-watchdog-policy.patch' \
+    if 'watchdog' in (d.getVar('IOTGW_UBOOT_FEATURES') or '') else ''}"
 
 # appliance_lockdown: production prompt/env lockdown
 SRC_URI:append = "${@' file://iotgw-uboot-prod.cfg' \

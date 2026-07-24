@@ -1,0 +1,57 @@
+From 5b7d2539a2d8e286f9aaf356f3f6fd6959793b4a Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Wed, 15 Jul 2026 16:30:00 +0200
+Subject: [PATCH] rpi: env: add explicit IoT Gateway watchdog policy
+
+Add IoT Gateway watchdog start/stop hooks for builds that enable the
+U-Boot watchdog command and BCM2835 watchdog driver.
+
+The policy is deliberately conservative while Linux/systemd watchdog
+handoff is still under validation:
+
+* start the watchdog at the beginning of the RAUC boot path, covering
+  slot selection, bootargs setup, FIT load (fatload), and env save;
+* stop it as the first step of iotgw_exec_fit, before bootm, so the
+  kernel does not inherit an armed watchdog unless a later policy
+  explicitly enables handoff — note this also leaves FIT signature
+  verification (performed by bootm) outside the armed window;
+* stop it before the intentional all-slots-exhausted halt loop, preserving
+  the operator-observable serial recovery endpoint instead of turning that
+  state back into a reset loop.
+
+If the U-Boot control FDT does not expose the expected watchdog device
+name, the macros log that watchdog start/stop was skipped and continue
+normal boot behavior.
+
+Upstream-Status: Inappropriate [product specific - appliance watchdog policy]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+---
+ board/raspberrypi/rpi/rpi.env | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/board/raspberrypi/rpi/rpi.env b/board/raspberrypi/rpi/rpi.env
+index bef56777b96..3c3f6e8dc64 100644
+--- a/board/raspberrypi/rpi/rpi.env
++++ b/board/raspberrypi/rpi/rpi.env
+@@ -78,12 +78,15 @@ fdt_addr_r=0x05600000
+ ramdisk_addr_r=0x05700000
+ 
+ iotgw_fit_addr_r=0x08000000
++iotgw_wdt_dev=watchdog@7d200000
++iotgw_wdt_start=if wdt dev ${iotgw_wdt_dev}; then wdt start 15000; echo [IOTGW] watchdog started; else echo [IOTGW] watchdog unavailable; fi
++iotgw_wdt_stop=if wdt dev ${iotgw_wdt_dev}; then wdt stop; echo [IOTGW] watchdog stopped; else echo [IOTGW] watchdog stop skipped; fi
+ iotgw_try_a=if test -z "${rauc_slot}"; then if itest ${BOOT_A_LEFT} -gt 0; then setexpr BOOT_A_LEFT ${BOOT_A_LEFT} - 1; setenv rauc_slot A; setenv rootpartnum 3; fi; fi
+ iotgw_try_b=if test -z "${rauc_slot}"; then if itest ${BOOT_B_LEFT} -gt 0; then setexpr BOOT_B_LEFT ${BOOT_B_LEFT} - 1; setenv rauc_slot B; setenv rootpartnum 4; fi; fi
+ iotgw_rauc_select=test -n "${BOOT_ORDER}" || setenv BOOT_ORDER A B; test -n "${BOOT_A_LEFT}" || setenv BOOT_A_LEFT 3; test -n "${BOOT_B_LEFT}" || setenv BOOT_B_LEFT 3; setenv rauc_slot; for BOOT_SLOT in ${BOOT_ORDER}; do if test x${BOOT_SLOT} = xA; then run iotgw_try_a; else run iotgw_try_b; fi; done
+ iotgw_set_bootargs=if part uuid mmc 0:${rootpartnum} rootpartuuid; then fdt addr ${fdt_addr}; fdt get value bootargs /chosen bootargs; setenv bootargs ${bootargs} root=PARTUUID=${rootpartuuid} rootwait rauc.slot=${rauc_slot}; if test -n "${EXTRA_KERNEL_ARGS}"; then setenv bootargs ${bootargs} ${EXTRA_KERNEL_ARGS}; fi; else echo [RAUC] part uuid failed; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset; fi
+ iotgw_load_boot=if test "x${rauc_slot}" = "xA"; then setenv _fit fitImage-a; elif test "x${rauc_slot}" = "xB"; then setenv _fit fitImage-b; else setenv _fit fitImage; fi; if fatload mmc 0:1 ${iotgw_fit_addr_r} ${_fit}; then echo [IOTGW] FIT ${_fit} loaded; elif fatload mmc 0:1 ${iotgw_fit_addr_r} fitImage; then echo [IOTGW] FIT fallback fitImage loaded; else echo [IOTGW] FIT load failed; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset; fi
+-iotgw_exec_fit=if test -n "${iotgw_fit_conf}"; then bootm ${iotgw_fit_addr_r}#${iotgw_fit_conf} - ${fdt_addr}; else bootm ${iotgw_fit_addr_r} - ${fdt_addr}; fi; echo [IOTGW] bootm returned for slot ${rauc_slot}: marking slot non-bootable; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset
+-iotgw_halt=echo [IOTGW][HALT] All RAUC slots exhausted (A_LEFT=${BOOT_A_LEFT} B_LEFT=${BOOT_B_LEFT}); echo [IOTGW][HALT] No bootable FIT image. Out-of-band recovery required (serial console or SD reflash); while itest 1 -eq 1; do sleep 60; echo [IOTGW][HALT] halted; done
+-bootcmd=run iotgw_rauc_select; if test -z "${rauc_slot}"; then run iotgw_halt; fi; run iotgw_set_bootargs; run iotgw_load_boot; saveenv; run iotgw_exec_fit
++iotgw_exec_fit=run iotgw_wdt_stop; if test -n "${iotgw_fit_conf}"; then bootm ${iotgw_fit_addr_r}#${iotgw_fit_conf} - ${fdt_addr}; else bootm ${iotgw_fit_addr_r} - ${fdt_addr}; fi; echo [IOTGW] bootm returned for slot ${rauc_slot}: marking slot non-bootable; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset
++iotgw_halt=run iotgw_wdt_stop; echo [IOTGW][HALT] All RAUC slots exhausted (A_LEFT=${BOOT_A_LEFT} B_LEFT=${BOOT_B_LEFT}); echo [IOTGW][HALT] No bootable FIT image. Out-of-band recovery required (serial console or SD reflash); while itest 1 -eq 1; do sleep 60; echo [IOTGW][HALT] halted; done
++bootcmd=run iotgw_wdt_start; run iotgw_rauc_select; if test -z "${rauc_slot}"; then run iotgw_halt; fi; run iotgw_set_bootargs; run iotgw_load_boot; saveenv; run iotgw_exec_fit
+ boot_targets=mmc
+-- 
+2.43.0
+

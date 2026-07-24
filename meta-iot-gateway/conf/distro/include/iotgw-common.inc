@@ -96,6 +96,25 @@ FIT_GENERATE_KEYS = "0"
 IOTGW_FIT_SIGNING ?= "1"
 UBOOT_SIGN_ENABLE = "${@bb.utils.contains('IOTGW_FIT_SIGNING','1','1','0',d)}"
 
+# ── U-Boot feature tokens ────────────────────────────────────────────────────
+# IOTGW_UBOOT_FEATURES is read in three recipe datastores that do not share
+# variables: the u-boot recipe (builds the matching cfg/patch), the
+# rpi-bootfiles-archive-* recipe (self-heals the matching boot-critical env vars
+# into the RAUC bundle), and the image recipes (write /etc/default/
+# iotgw-uboot-policy). The default is set here, distro-wide, so all three see the
+# same tokens; a per-recipe default would leave the bootfiles recipe (which has
+# none of its own) blind to it.
+#
+#   surface_reduce  disable unused U-Boot commands
+#   fit_enforce     require signed FIT, drop legacy image format (mandatory)
+#   watchdog        BCM2712 wdt (watchdog@7d200000): armed across the U-Boot
+#                   RAUC/FIT boot path and the exhausted-slot halt, stopped
+#                   before bootm
+#
+# prod adds appliance_lockdown via kas/uboot-prod-hardening.yml (global, reaches
+# the u-boot recipe) and iot-gw-image-prod.bb (image datastore).
+IOTGW_UBOOT_FEATURES ?= "surface_reduce fit_enforce watchdog"
+
 
 # Init system and features (single source of truth)
 INIT_MANAGER ?= "systemd"

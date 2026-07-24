@@ -27,9 +27,11 @@ IMAGE_ROOTFS_EXTRA_SPACE = "524288"
 # Production policy: disable U-Boot interactive stop window.
 IOTGW_UBOOT_BOOTDELAY = "-2"
 
-# Production U-Boot posture: reduce command surface, enforce signed FIT, and
-# lock appliance gate variables against runtime mutation from U-Boot console.
-IOTGW_UBOOT_FEATURES = "surface_reduce fit_enforce appliance_lockdown"
+# Production U-Boot posture: reduce command surface, enforce signed FIT, arm the
+# pre-Linux watchdog, and lock appliance gate variables against runtime mutation
+# from U-Boot console. Hard-set (overrides the distro default), so it re-lists the
+# base tokens; keep in sync with IOTGW_UBOOT_FEATURES in iotgw-common.inc.
+IOTGW_UBOOT_FEATURES = "surface_reduce fit_enforce watchdog appliance_lockdown"
 
 # Production policy: lock audit rules after load (reboot required to change).
 IOTGW_AUDIT_RULE_IMMUTABLE = "2"
