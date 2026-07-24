@@ -101,8 +101,9 @@ U-Boot-side slot selection, bootargs, FIT loading (`fatload`), and env save.
 FIT signature verification and kernel handoff happen inside `bootm`, *after*
 the watchdog is stopped — so the kernel never inherits an armed timer, but the
 signature-verify step itself is not watchdog-covered. Linux PID1 watchdog
-feeding remains controlled by `IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG` and is
-intentionally separate.
+feeding is a separate mechanism, now on by default
+(`IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG=1`): systemd feeds `/dev/watchdog0` at
+`RuntimeWatchdogSec=15s`, kept ≤ the ~16s BCM2712 hardware maximum.
 
 ### Env-based RAUC slot selection
 

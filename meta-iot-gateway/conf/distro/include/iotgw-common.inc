@@ -301,12 +301,24 @@ IOTGW_UBOOT_EXTRA_KERNEL_ARGS ?= "${@('panic=%s oops=panic sysrq_always_enabled=
 # /dev/watchdog0 does not reboot.
 IOTGW_ENABLE_HW_WATCHDOG ?= "1"
 
-# Optional: systemd hardware watchdog integration (disabled by default).
-# When enabled, PID1 opens /dev/watchdog and pings it at RuntimeWatchdogSec
-# cadence. Requires IOTGW_ENABLE_HW_WATCHDOG=1 (or another driver source)
-# for /dev/watchdog to exist.
-IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "0"
-IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "20s"
+# systemd hardware watchdog integration (enabled by default; issue #56).
+# PID1 opens /dev/watchdog and pings it at RuntimeWatchdogSec cadence, so a
+# wedged kernel/PID1 self-recovers by hardware reset. Requires
+# IOTGW_ENABLE_HW_WATCHDOG=1 (or another driver source) for /dev/watchdog to
+# exist. Ships the vendor drop-in via recipes-support/iotgw-systemd-watchdog
+# (packaged only when this is "1").
+#
+# RUNTIME must stay <= the BCM2712 HW max heartbeat (bcm2835_wdt
+# max_hw_heartbeat_ms ~= 16s). At <=16s systemd programs the hardware timeout
+# directly and pings at RUNTIME/2 (7.5s here) — validated stable on-target
+# (issue #56). ABOVE 16s (e.g. 20s/30s) the kernel must *bridge* the software
+# timeout past the HW max via the watchdog-core worker; the worker->PID1
+# fd-open handoff is racy on BCM2712 and resets the board erratically
+# (reproduced at 20s: reset in ~7-40s; 15s soaks clean). So keep RUNTIME <=15s.
+# SHUTDOWN is only the shutdown-hang guard and is not on the runtime feed path,
+# so >16s there is fine.
+IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "1"
+IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "15s"
 IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"
 
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
