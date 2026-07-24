@@ -93,12 +93,16 @@ BCM2712 ROM
 ```
 
 When the optional `watchdog` U-Boot feature token is enabled, the boot
-environment starts the BCM2835 watchdog at the beginning of `bootcmd`, stops
-it immediately before `bootm`, and also stops it before the intentional
-all-slots-exhausted halt loop. This covers U-Boot-side slot selection,
-bootargs, FIT loading, env save, and FIT verification without handing an armed
-watchdog to Linux/systemd. Linux PID1 watchdog feeding remains controlled by
-`IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG` and is intentionally separate.
+environment starts the BCM2712 watchdog (`watchdog@7d200000`, bcm2835-class
+driver) at the beginning of `bootcmd` and stops it as the first step of
+`iotgw_exec_fit`, immediately before `bootm`; it is also stopped before the
+intentional all-slots-exhausted halt loop. The armed window therefore covers
+U-Boot-side slot selection, bootargs, FIT loading (`fatload`), and env save.
+FIT signature verification and kernel handoff happen inside `bootm`, *after*
+the watchdog is stopped — so the kernel never inherits an armed timer, but the
+signature-verify step itself is not watchdog-covered. Linux PID1 watchdog
+feeding remains controlled by `IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG` and is
+intentionally separate.
 
 ### Env-based RAUC slot selection
 

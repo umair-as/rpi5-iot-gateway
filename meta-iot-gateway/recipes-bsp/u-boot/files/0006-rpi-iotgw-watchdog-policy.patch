@@ -10,9 +10,11 @@ The policy is deliberately conservative while Linux/systemd watchdog
 handoff is still under validation:
 
 * start the watchdog at the beginning of the RAUC boot path, covering
-  slot selection, bootargs setup, FIT load, env save, and FIT verify;
-* stop it before bootm so the kernel does not inherit an armed watchdog
-  unless a later policy explicitly enables handoff;
+  slot selection, bootargs setup, FIT load (fatload), and env save;
+* stop it as the first step of iotgw_exec_fit, before bootm, so the
+  kernel does not inherit an armed watchdog unless a later policy
+  explicitly enables handoff — note this also leaves FIT signature
+  verification (performed by bootm) outside the armed window;
 * stop it before the intentional all-slots-exhausted halt loop, preserving
   the operator-observable serial recovery endpoint instead of turning that
   state back into a reset loop.
