@@ -32,8 +32,15 @@ IOTGW_ENABLE_OTBR=1 make dev
 IOTGW_KERNEL_FEATURES="igw_containers igw_networking_iot igw_security_prod" make prod
 ```
 
-For OTA feature-gate combinations (verity vs crypt bundle, file-key vs TPM vs
-PKCS#11 streaming), see the matrix in [OTA Updates](OTA_UPDATE.md#feature-gating-matrix-verity--tpm--pkcs11--encrypted-bundles).
+RAUC bundles are **encrypted (`crypt`) by default**; `verity` is an explicit
+opt-out. A bundle build fails rather than falling back if no usable recipient
+certificate is configured, and a freshly flashed device cannot install a crypt
+bundle until its decryption identity has been provisioned. Confirm what an
+artifact actually is with `rauc info --no-verify <bundle>.raucb`.
+
+For OTA feature-gate combinations (crypt default vs verity opt-out, file-key vs
+TPM vs PKCS#11 streaming) and the three locations device key material lives in,
+see [OTA Updates](OTA_UPDATE.md#feature-gating-matrix-verity--tpm--pkcs11--encrypted-bundles).
 
 Release version override example:
 

@@ -215,7 +215,7 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OTA_TPM_MTLS IOTGW_OTA_TPM_KEY_URI IOTGW_OTA_TPM_KEY_ENGINE IOTGW_OTA_OPENSSL_CONF"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_STREAMING_KEY_MODE IOTGW_RAUC_PKCS11_BACKEND IOTGW_RAUC_PKCS11_TLS_KEY IOTGW_RAUC_PKCS11_MODULE IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES IOTGW_TPM2_PKCS11_STORE"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS IOTGW_RAUC_BUNDLE_RECIPIENT_BASENAME IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_KEYRING_CERTS IOTGW_RAUC_ALLOWED_SIGNER_CNS IOTGW_RAUC_CHECK_PURPOSE"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_IMA"
@@ -476,13 +476,78 @@ IOTGW_NEED_TPM_POLICY ?= "${@'1' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECT
 IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS ??= ""
 IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'ota:iotgwtpm' if (d.getVar('IOTGW_NEED_TPM_POLICY') or '0') == '1' else ''}"
 
-# Optional encrypted RAUC bundle support (disabled by default):
-# - build side: create `crypt` bundles and encrypt to recipient cert set
-# - target side: populate /etc/rauc/system.conf [encryption] for decrypt key
-IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION ?= "0"
-IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS ?= ""
-IOTGW_RAUC_ENCRYPTION_KEY ?= ""
-IOTGW_RAUC_ENCRYPTION_CERT ?= ""
+# === RAUC bundle encryption — CRYPT IS THE DEFAULT POSTURE ===
+#
+# This block is the ONE canonical definition of the crypt/verity decision.
+# Neither iot-gw-bundle-common.inc nor rauc-conf-iotgw_1.0.bb re-declares a
+# default; both read IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE below. Duplicated `?=`
+# defaults used to live in all three files, which meant a build could silently
+# disagree with itself about whether the image it produced could decrypt the
+# bundles it produced. There is now exactly one place to change the posture.
+#
+# - build side:  RAUC_BUNDLE_FORMAT = "crypt", bundle encrypted to the
+#                recipient cert set before it reaches DEPLOYDIR
+# - target side: /etc/rauc/system.conf gets an [encryption] stanza naming the
+#                per-device decryption key
+#
+# Opt-out (development or compatibility testing only) — produces an
+# unencrypted `verity` bundle, and an image whose system.conf carries no
+# [encryption] stanza:
+#
+#     IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "0"
+#
+# There is deliberately NO automatic fallback: with the toggle at "1" and no
+# usable recipient certificate, the build fails rather than quietly emitting a
+# verity bundle that an operator could mistake for a released artifact.
+IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION ?= "1"
+
+# The one crypt/verity mapping. Both the bundle producer and the target config
+# recipe read this rather than re-deriving it, so they cannot disagree.
+#
+# An unrecognised toggle is refused here rather than folded into "not 1".
+# Mapping anything-but-1 to verity would turn a typo into a silent downgrade to
+# unencrypted bundles, which is the failure this posture exists to prevent.
+# bb.fatal() inside the expansion keeps that check to one line -- no class and
+# no extra task -- and fires in whichever recipe expands the value.
+#
+# No .strip(): the consumers in iot-gw-bundle-common.inc compare the raw value
+# in shell, so accepting " 1 " here would resolve the format to crypt while
+# those comparisons took the disabled branch. Exact means exact.
+IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE = "${@{'1': 'crypt', '0': 'verity'}.get(d.getVar('IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION')) or bb.fatal('IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION must be exactly 1 (encrypted crypt bundles, the default) or 0 (verity opt-out); got %r' % (d.getVar('IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION'),))}"
+
+# Recipient identity (build host, PUBLIC certificate only — never the key).
+# Defaults to the device leaf issued by the OTA CA that RAUC_OTA_CA_DIR already
+# names, so an operator who has followed the OTA cert runbook does not have to
+# configure the same directory twice. Unset RAUC_OTA_CA_DIR leaves this empty,
+# and the build then fails with an actionable message rather than guessing.
+#
+# May name a PEM holding SEVERAL certificates: `rauc encrypt` loads every
+# certificate found in the file and envelopes the bundle to all of them
+# (rauc 1.15.2, src/signature.c:cms_encrypt -> load_certs_from_file).
+IOTGW_RAUC_BUNDLE_RECIPIENT_BASENAME ?= "device-filekey"
+IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS ?= "${@((d.getVar('RAUC_OTA_CA_DIR') or '').rstrip('/') + '/' + (d.getVar('IOTGW_RAUC_BUNDLE_RECIPIENT_BASENAME') or 'device-filekey') + '.crt') if (d.getVar('RAUC_OTA_CA_DIR') or '') else ''}"
+
+# Declared here so the recipient expansion above is always resolvable. The
+# ota-certs recipe declares the same `?=`; whichever parses first wins and both
+# agree on "".
+RAUC_OTA_CA_DIR ?= ""
+
+# Target-side decryption identity (paths ON THE DEVICE, not on the build host).
+# These match what ota-certs-provision installs into /etc/ota.
+#
+# The key is REQUIRED by RAUC: with an enveloped CMS and no key configured,
+# rauc 1.15.2 aborts in src/bundle.c with "Encrypted bundle detected, but no
+# decryption key given."
+#
+# The cert is OPTIONAL — verified in source, not inferred from the variable
+# name: src/signature.c:cms_decrypt() guards the cert load with `if (certfile)`
+# and passes NULL through to CMS_decrypt(), which then tries the key against
+# every RecipientInfo. It is defaulted anyway because ota-certs-provision
+# always installs device.crt alongside device.key, and naming it makes
+# recipient selection deterministic instead of trial-and-error. Set it to ""
+# on a device that holds the key but not the certificate.
+IOTGW_RAUC_ENCRYPTION_KEY ?= "/etc/ota/device.key"
+IOTGW_RAUC_ENCRYPTION_CERT ?= "/etc/ota/device.crt"
 
 # Optional kernel EFI surface reduction profile for non-UEFI RPi5 boot flow.
 # Enable to append igw_no_efi fragment set.

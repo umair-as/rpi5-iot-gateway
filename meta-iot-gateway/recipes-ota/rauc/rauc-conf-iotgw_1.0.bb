@@ -27,9 +27,10 @@ S = "${UNPACKDIR}"
 IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "file"
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "0"
 IOTGW_RAUC_STREAMING_TLS_KEY = "${@bb.utils.contains('IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE', 'pkcs11', d.getVar('IOTGW_RAUC_PKCS11_TLS_KEY') or '', '/etc/ota/device.key', d)}"
-IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION ?= "0"
-IOTGW_RAUC_ENCRYPTION_KEY ?= ""
-IOTGW_RAUC_ENCRYPTION_CERT ?= ""
+# No encryption defaults are declared here. The single canonical decision and
+# its crypt/verity mapping live in the distro include; this recipe reads the
+# same IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE the bundle producer reads, so the
+# image and the bundles it is paired with cannot disagree about the posture.
 
 # Bundle-signing PKI chain hygiene.
 # IOTGW_RAUC_KEYRING_CERTS: space-separated list of cert files installed
@@ -105,7 +106,22 @@ do_install() {
             ${D}${sysconfdir}/rauc/system.conf
     fi
 
-    if [ "${IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION}" = "1" ]; then
+    # [encryption] — the device half of the crypt posture. Rendered whenever
+    # encryption is on, which is the default; the verity opt-out leaves
+    # system.conf without the stanza entirely.
+    #
+    # `key` is mandatory (rauc 1.15.2 src/bundle.c refuses an enveloped CMS
+    # without one). `cert` is optional — src/signature.c:cms_decrypt() only
+    # loads it `if (certfile)` and otherwise lets CMS_decrypt try the key
+    # against every RecipientInfo — but is rendered when set so recipient
+    # selection is deterministic on multi-recipient bundles.
+    #
+    # These are paths ON THE DEVICE. Neither file is built into the image:
+    # ota-certs-provision installs them at runtime from /boot/iotgw/ota/ or
+    # /data/ota/certs/. A freshly flashed device therefore cannot install a
+    # crypt bundle until it has been provisioned. No private key is ever
+    # staged into the rootfs here.
+    if [ "${IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE}" = "crypt" ]; then
         if [ -z "${IOTGW_RAUC_ENCRYPTION_KEY}" ]; then
             bbfatal "IOTGW_RAUC_ENCRYPTION_KEY is required when encrypted bundle mode is enabled."
         fi
@@ -150,6 +166,8 @@ do_install() {
         install -m 0644 "$keyring" ${D}${sysconfdir}/rauc/ca.cert.pem
     fi
 }
+
+do_install[vardeps] += "IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT"
 
 FILES:${PN} = "${sysconfdir}/rauc/system.conf \
                ${sysconfdir}/rauc/ca.cert.pem \

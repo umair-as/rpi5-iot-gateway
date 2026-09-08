@@ -96,7 +96,7 @@ RAUC's bootchooser provides automatic failsafe via U-Boot bootcount:
 | **Bundle Signing** | Cryptographic signatures verified on-device before installation |
 | **Integrity Protection** | dm-verity format provides tamper detection |
 | **Boot Integrity Chain** | U-Boot FIT signature verification + signed RAUC bundles |
-| **Bundle Encryption** | Optional `crypt` format with per-device decryption key |
+| **Bundle Encryption** | `crypt` format by default; decryption key held per device. Opt out to `verity`. |
 | **mTLS Streaming** | Device identity verified via client certificate |
 
 ---
@@ -185,10 +185,94 @@ Notes:
 
 ## ⚙️ Feature-Gating Profiles
 
-All advanced OTA paths are opt-in. Default remains `verity + file-key`.
+<a id="feature-gating-matrix-verity--tpm--pkcs11--encrypted-bundles"></a>
 
-**Baseline (default)** — no additional variables required.
-Verity bundle, file-key mTLS, no TPM.
+The TPM and PKCS#11 paths are opt-in. **Bundle encryption is not** — it is the
+default.
+
+**Baseline (default)** — encrypted `crypt` bundles, file-key mTLS, no TPM.
+Requires one thing on the build host: a recipient certificate, which comes for
+free from `RAUC_OTA_CA_DIR` (see below).
+
+> ⚠️ **A bundle build fails if no usable recipient certificate is configured.**
+> There is no fallback to an unencrypted bundle. That fallback is the accident
+> the default exists to prevent: it would produce an artifact with the expected
+> filename, in the expected place, that any operator would reasonably take for
+> a finished release.
+
+### 🔐 Encryption identity — three locations, three different roles
+
+Conflating these is the most common way to end up with bundles a device cannot
+install. Bundle *signing* trust is a separate axis entirely and is not
+discussed here — see [RAUC PKI](RAUC_PKI.md).
+
+| Where | What | Role |
+|---|---|---|
+| Build input | `<RAUC_OTA_CA_DIR>/device-filekey.crt` | **The bundle build reads only this public certificate.** The bundle is encrypted *to* it. Encryption consumes recipient certificates and never needs a recipient private key. |
+| Target, active | `/etc/ota/device.key` (+ `/etc/ota/device.crt`) | The private key RAUC uses to decrypt. Named by `[encryption]` in `/etc/rauc/system.conf`. |
+| Target, provisioning source | `/data/ota/certs/device.key`, or `/boot/iotgw/ota/` | Where `ota-certs-provision` reads from to populate `/etc/ota`. |
+
+> ⚠️ **The CA directory does hold the device private key.**
+> `RAUC_OTA_CA_DIR` is not a public-only directory. `ota-certs-sync.sh`
+> generates `<basename>.key` there and keeps it, because it needs that key to
+> provision the device and to reuse on later runs. So on the common setup —
+> build host and provisioning workstation being the same machine — the private
+> key *is* on the build host.
+>
+> What the build needs is narrower: only the `.crt`. Encryption never requires
+> a recipient private key, so point `IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS` at a
+> certificate-only file. Nothing enforces that — `rauc encrypt` loads the
+> certificates it finds and ignores other PEM blocks — so keeping the key out of
+> that file is an operator responsibility, not a build guarantee.
+>
+> To actually separate the two roles, copy **only** the `.crt` to the build
+> host and point the recipient at it explicitly there:
+> ```
+> IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/path/to/device-filekey.crt"
+> ```
+> (the `RAUC_OTA_CA_DIR` default derives a path inside the CA directory, which
+> is what you are trying to avoid, so set the recipient rather than the CA
+> directory on a build-only host).
+
+`/boot/iotgw/ota/` is a **provisioning source, not the active path**. A freshly
+flashed device has a blank data partition and therefore no decryption key:
+**it cannot install a crypt bundle until the matching identity is
+provisioned.** Provision first (below), then update.
+
+Provision the device identity (the private key the target decrypts with, and
+the certificate the build encrypts to):
+
+```bash
+scripts/ota/ota-certs-sync.sh
+```
+
+Confirm any bundle's real format, from the artifact rather than the build:
+
+```bash
+rauc info --no-verify <bundle>.raucb        # read the 'Bundle Format:' line
+```
+
+Three states matter, and `rauc` names them explicitly:
+`crypt [encrypted CMS]` is the shippable one, `crypt [unencrypted CMS]` is a
+crypt bundle that was never encrypted and whose payload key is readable, and
+`verity` is the unencrypted opt-out. "Not verity" is **not** a sufficient
+check. `rauc` colourises that field even when stdout is not a terminal, so pipe
+through `sed 's/\x1b\[[0-9;]*m//g'` before grepping it.
+
+### 🚧 Fleet scope — what this does and does not give you
+
+Encryption happens **during the BSP build**, to a fixed recipient set. That is
+appropriate for a single-recipient or shared-recipient lane: a lab, a dev
+fleet, or a deployment where every device legitimately shares one decryption
+identity.
+
+It is **not** per-device encryption, and it does **not** provide key
+revocation. Revoking one device means re-issuing to everyone still in the
+recipient set. A production fleet needs per-device re-encryption performed
+*outside* the BSP — upstream meta-rauc says the same in
+`classes-recipe/bundle.bbclass`. This change does not add such a pipeline, so
+no claim of production-scale per-device revocation should be made on the basis
+of it.
 
 **Updater TPM only** — `ota-updater` uses a TPM key URI for manifest
 polling; RAUC streaming still uses the file key.
@@ -206,22 +290,30 @@ IOTGW_RAUC_PKCS11_BACKEND    = "tpm2"
 IOTGW_RAUC_PKCS11_TLS_KEY    = "pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin"
 ```
 
-**Encrypted bundles** — RAUC `crypt` format with per-device decryption
-key. Independent of streaming key mode.
+**Unencrypted bundles (opt-out)** — the only way to get a `verity` bundle.
+Independent of streaming key mode. Produces a signed but unencrypted bundle,
+and an image whose `system.conf` has no `[encryption]` stanza.
 ```
-IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"
-IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/path/to/device-filekey.crt"
-IOTGW_RAUC_ENCRYPTION_KEY            = "/etc/ota/device.key"
+IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "0"
 ```
 
-**Full TPM + PKCS#11 + crypt** — combines all three. Set all variables
-from the profiles above.
+**Overriding the recipient** — only needed to point somewhere other than the
+`RAUC_OTA_CA_DIR` default, e.g. a PEM holding several device certificates
+(`rauc encrypt` envelopes to every certificate in the file).
+```
+IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/path/to/recipients.pem"
+IOTGW_RAUC_ENCRYPTION_KEY            = "/etc/ota/device.key"   # required by RAUC
+IOTGW_RAUC_ENCRYPTION_CERT           = "/etc/ota/device.crt"   # optional
+```
+
+**Full TPM + PKCS#11 + crypt** — combines all three. Set the TPM and PKCS#11
+variables from the profiles above; crypt needs nothing added.
 
 > 💡 **Compatibility notes:**
 > - PKCS#11 streaming and encrypted bundle decryption are independent.
-> - To return to baseline: set `IOTGW_ENABLE_OTA_TPM_MTLS = "0"`,
->   `IOTGW_RAUC_STREAMING_KEY_MODE = "file"`, and
->   `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "0"`.
+> - To return to baseline: set `IOTGW_ENABLE_OTA_TPM_MTLS = "0"` and
+>   `IOTGW_RAUC_STREAMING_KEY_MODE = "file"`. Leave
+>   `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION` alone — encryption *is* the baseline.
 
 ### 🔒 PKCS#11 PIN Handling
 

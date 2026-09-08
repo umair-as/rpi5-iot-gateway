@@ -12,6 +12,18 @@ For architecture and design, see [OTA Updates](OTA_UPDATE.md).
 
 ## 📦 Installing a Bundle
 
+> 🔐 **Bundles are encrypted by default.** The device decrypts with the private
+> key at `/etc/ota/device.key`, named by the `[encryption]` stanza in
+> `/etc/rauc/system.conf`. A freshly flashed device has none, so **provision
+> before updating** — see
+> [OTA Updates](OTA_UPDATE.md#-encryption-identity--three-locations-three-different-roles).
+> The symptom of skipping it is an install that fails with
+> `Encrypted bundle detected, but no decryption key given.`
+>
+> To check an artifact before shipping it:
+> `rauc info --no-verify <bundle>.raucb` and read the `Bundle Format:` line
+> (`crypt [encrypted CMS]` is the shippable state).
+
 ### Local install
 
 ```bash
@@ -182,6 +194,28 @@ reboot
 
 Or, at the U-Boot prompt, `env default -a; saveenv` to drop all stale
 vars, then re-set `BOOT_ORDER` as needed.
+
+### Encrypted bundle refused on target
+
+```
+Encrypted bundle detected, but no decryption key given.
+```
+
+The bundle is `crypt` (the default) and the device has no usable decryption
+identity. Either `/etc/ota/device.key` is missing — a freshly flashed device,
+before provisioning — or `/etc/rauc/system.conf` has no `[encryption]` stanza,
+meaning the image itself was built with the verity opt-out while the bundle was
+not. Confirm both halves:
+
+```bash
+# on target
+grep -A3 '^\[encryption\]' /etc/rauc/system.conf; ls -l /etc/ota/device.key
+# on host
+rauc info --no-verify <bundle>.raucb
+```
+
+Re-provision with `scripts/ota/ota-certs-sync.sh` and reboot so the `/etc`
+overlay picks the new files up.
 
 ### mTLS CA mismatch
 
