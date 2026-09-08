@@ -542,9 +542,21 @@ rauc info --keyring=<one-of-the-three-pems>.pem \
           <bundle>.raucb
 ```
 
-The `--key=` flag is required because bundles ship `crypt`-format
-(encrypted CMS); without it `rauc info` errors out with
-`Encrypted bundle detected, but no decryption key given.`
+The `--key=` flag is required **when the bundle is encrypted**, which is the
+default posture (`IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"` produces
+`crypt`-format, encrypted CMS). Without it `rauc info` errors out with
+`Encrypted bundle detected, but no decryption key given.` A build using the
+documented `verity` opt-out produces bundles that need no `--key=` at all, so
+drop the flag for those. Confirm which you have before assuming:
+
+```bash
+rauc info --no-verify <bundle>.raucb        # read 'Bundle Format:'
+```
+
+Note the separation of concerns: `--key=` is the *encryption* identity, and
+`--keyring=` is the *signing* trust anchor. The matrix below varies only the
+latter. Changing the encryption key changes whether `rauc info` can read the
+bundle at all; it says nothing about whether the bundle is trusted.
 
 Expected results:
 
