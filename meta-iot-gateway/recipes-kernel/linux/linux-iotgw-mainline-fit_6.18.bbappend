@@ -48,6 +48,24 @@
 # earns its place.
 include ${THISDIR}/files/cve-exclusion_6.18.inc
 
+# CVE_STATUS -- narrowly-evidenced VEX for an sbom-cve-check row the pinned
+# database cannot resolve on its own.
+#
+# CVE-2026-31688 was rejected by the Linux kernel CNA on 2026-06-17, one day
+# after the cvelistV5 pin in kas/cve.yml. The row is a snapshot artifact, not a
+# finding. Evidence, independent of the scanner: vulns.git
+# cve/rejected/2026/CVE-2026-31688.mbox.rejected, PGP-signed,
+# Message-Id <2026061707-REJECTED-2d4a@gregkh>.
+#
+# EXPIRES with cvelistV5 SRCREV d34c26123e45. Any newer pin carries the
+# rejection and drops the row on its own, so delete this entry in the same
+# change that moves the pin; the bump checklist in kas/cve.yml points back here.
+#
+# Not the justification: 6.18.y applied the driver-core change as 8d76b2488eb3
+# and reverted it as 53a76425e076 after boot regressions. Never cherry-pick that
+# fix alone -- but a revert is not a disposition.
+CVE_STATUS[CVE-2026-31688] = "disputed: rejected by the Linux kernel CNA on 2026-06-17, after the pinned cvelistV5 snapshot"
+
 # --- DX-M1 exported-symbol whitelist -----------------------------------------
 # CONFIG_UNUSED_KSYMS_WHITELIST resolves its path relative to the kernel source
 # tree, and Kbuild SILENTLY IGNORES a path that does not exist — it is not an
