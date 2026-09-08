@@ -67,6 +67,19 @@ local_conf_header:
     #
     #   git -C .kas/openembedded-core ls-tree --name-only HEAD meta/recipes-devtools/sbom-cve-check/
     #
+    # WHEN MOVING THE cvelistV5 PIN ABOVE: re-check every CVE_STATUS entry that
+    # was justified by the pin being older than some upstream event, and delete
+    # the ones the new snapshot resolves on its own. A CVE_STATUS that outlives
+    # its reason keeps suppressing the row -- the scan stays green and nothing
+    # reports the mistake. Currently pin-dependent:
+    #
+    #   CVE-2026-31688 -- meta-iot-gateway/recipes-kernel/linux/
+    #                     linux-iotgw-mainline-fit_6.18.bbappend
+    #                     (CNA rejection 2026-06-17 postdates this snapshot)
+    #
+    # Keep that list accurate: an entry added here without its counterpart, or
+    # left here after deletion, is worse than no list.
+
     # Checked at the 2026-07-30 oe-core pin: upstream's recipes are
     # sbom-cve-check-update-nvd-native_2026.05.07-000006 and
     # sbom-cve-check-update-cvelist-native_2026-05-07, i.e. 2026-05-07. The
