@@ -8,10 +8,12 @@ inherit bundle iotgw-rauc-adaptive-guard iotgw-bundle-slot-gate
 # Bundle identity (matches device system.conf via rauc-conf)
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 
-# /boot (kernel/DTBs) is always updated by the bundle hook. FIT is the only
-# boot flow and the root slots are raw dm-verity slots whose root hash lives in
-# the per-slot FIT, so a bundle without the bootfiles archive and those FITs
-# cannot update a slot (the hook refuses it). There is no rootfs-only bundle.
+# The bundle always carries the bootfiles archive and both slot FITs. The root
+# slots are raw dm-verity slots whose root hash lives only in the per-slot FIT,
+# so a bundle without them cannot update a slot (the device's pre-install
+# handler and the hook refuse it); there is no rootfs-only bundle. The hook
+# installs only the target slot's FIT and reads kernel.release and the U-Boot
+# env from the archive; it never writes the shared /boot files.
 IOTGW_RAUC_UPDATE_BOOTFILES = "1"
 IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE ?= "rpi-bootfiles-archive-fit"
 IOTGW_RAUC_BOOTFILES_HOOK_FILE ?= "bundle-hooks-fit.sh"
@@ -34,6 +36,10 @@ RAUC_SLOT_rootfs[fstype] = "ext4.verity"
 RAUC_SLOT_rootfs[imagetype] = "raw"
 # Run pre/post hooks: slot/mode checks, trial-slot record, and FIT/bootfile installation.
 RAUC_SLOT_rootfs[hooks] = "pre-install;post-install"
+# Bundle ABI checked by the device's pre-install handler (iotgw-boot-guard):
+# 2 = the hook installs only the slot FIT and never the shared /boot files.
+RAUC_META_SECTIONS += "iotgw"
+RAUC_META_iotgw[bundle-abi] = "2"
 # RAUC adaptive updates (block-hash-index) would reduce rewritten data when
 # installing near-identical rootfs images. Not applied: adaptive updates are not
 # validated against a raw dm-verity slot image, so IOTGW_RAUC_ADAPTIVE=1 warns

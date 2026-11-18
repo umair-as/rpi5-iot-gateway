@@ -78,6 +78,7 @@ do_install() {
     sed -e "s|@COMPATIBLE@|${RAUC_BUNDLE_COMPATIBLE}|g" \
         -e "s|@TLS_KEY@|${IOTGW_RAUC_STREAMING_TLS_KEY}|g" \
         -e "s|@ROOTFS_SLOT_TYPE@|${IOTGW_RAUC_ROOTFS_SLOT_TYPE}|g" \
+        -e "s|@BUNDLE_FORMATS@|${IOTGW_RAUC_BUNDLE_FORMATS}|g" \
         ${UNPACKDIR}/iotgw-system.conf > ${D}${sysconfdir}/rauc/system.conf
 
     # Keyring locator: directory mode when IOTGW_RAUC_KEYRING_CERTS is set,
@@ -171,7 +172,12 @@ do_install() {
     fi
 }
 
-do_install[vardeps] += "IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT"
+do_install[vardeps] += "IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE IOTGW_RAUC_ENCRYPTION_KEY IOTGW_RAUC_ENCRYPTION_CERT IOTGW_RAUC_BUNDLE_FORMATS"
+
+# bundle-formats is an allowlist checked before anything else: plain bundles
+# (no dm-verity on the bundle payload) are refused outright, and a crypt
+# bundle is accepted only while this build produces crypt bundles.
+IOTGW_RAUC_BUNDLE_FORMATS ?= "${@'verity crypt' if d.getVar('IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE') == 'crypt' else 'verity'}"
 
 FILES:${PN} = "${sysconfdir}/rauc/system.conf \
                ${sysconfdir}/rauc/ca.cert.pem \
@@ -180,3 +186,5 @@ FILES:${PN} = "${sysconfdir}/rauc/system.conf \
 
 # ota-certs provisions the streaming TLS certificates referenced in system.conf
 RDEPENDS:${PN} += "ota-certs iotgw-ota-user"
+# The [handlers] pre-install guard named in system.conf.
+RDEPENDS:${PN} += "iotgw-boot-guard"
