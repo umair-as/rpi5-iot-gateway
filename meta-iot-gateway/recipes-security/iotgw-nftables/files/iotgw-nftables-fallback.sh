@@ -19,8 +19,11 @@
 
 echo "iotgw-nftables: ruleset load failed (${SERVICE_RESULT:-unknown}); installing the fail-closed fallback" >&2
 
-nft delete table inet filter 2>/dev/null || true
+# One transaction, as in /etc/nftables.conf: whatever is left of the table is
+# replaced together with the new definition, or not at all.
 nft -f - <<'EOF'
+table inet filter
+delete table inet filter
 table inet filter {
   chain input {
     type filter hook input priority 0; policy drop;
