@@ -5,7 +5,7 @@ mainline kernel carried in a Yocto layer, without devtool.
 
 **Example used:** RPi VCIO mailbox char driver (`/dev/vcio`) from
 `github.com/raspberrypi/linux` into mainline 6.18 carried by
-`linux-iotgw-mainline-fit` (via the shared `linux-iotgw-mainline-common.inc`).
+`linux-iotgw-mainline` (via the shared `linux-iotgw-mainline-common.inc`).
 
 ---
 
@@ -71,7 +71,7 @@ grep "depends on" drivers/char/broadcom/Kconfig
 # → BCM2835_MBOX  — check it's compiled in (from an existing fragment):
 grep "BCM2835_MBOX" $KSRC/arch/ -r
 # or on a running target:
-ssh iotgw "zcat /proc/config.gz | grep BCM2835_MBOX"
+ssh <target> "zcat /proc/config.gz | grep BCM2835_MBOX"
 ```
 
 If a dependency is missing, it either needs its own backport first, or you can
@@ -221,8 +221,8 @@ SRC_URI:append = "${@' file://fragments/vcio-rpi.cfg' if d.getVar('IOTGW_ENABLE_
 
 ```bash
 # Rebuild kernel only first to check patch applies and compiles
-kas shell kas/local.yml -c "bitbake virtual/kernel -c patch -f"
-kas shell kas/local.yml -c "bitbake virtual/kernel -c compile -f"
+. scripts/env.sh && kas shell kas/local.yml -c "bitbake virtual/kernel -c patch -f"
+. scripts/env.sh && kas shell kas/local.yml -c "bitbake virtual/kernel -c compile -f"
 
 # Full bundle when kernel build passes
 make bundle-dev-full-fit
@@ -239,7 +239,7 @@ vcgencmd version
 vcgencmd measure_temp
 vcgencmd get_throttled
 
-# rpi-eeprom-update can now read current config (no longer needs -d fallback)
+# rpi-eeprom-update reads the current config through /dev/vcio
 rpi-eeprom-update
 ```
 

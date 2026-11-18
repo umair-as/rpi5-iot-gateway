@@ -17,12 +17,19 @@
 #
 # Usage:
 #   ./scripts/kernel/kernel-fragment-audit.sh [fragment.cfg ...]
-#   (no args: audits the fragment set applied by the current dev build)
+#   No args: audits the fragments the kernel recipe applies in the kas
+#   composition IOTGW_AUDIT_KAS, read with bitbake-getvar
+#   (IOTGW_KERNEL_FRAGMENTS of linux-iotgw-mainline). Default: the Makefile's
+#   non-prod chain, <base>:kas/deepx.yml (base = kas/local.yml, else
+#   kas/rauc.yml), i.e. base and dev. Desktop:
+#     IOTGW_AUDIT_KAS=kas/local.yml:kas/desktop.yml
+#   The .config must come from the same composition: DOTCONFIG=<path> (the
+#   work-shared one belongs to the last kernel build, whichever image it was).
 #
 # Exits non-zero if any MISMATCH/UNMET/REMOVED is found.
 
 set -u
-REPO=$(cd "$(dirname "$0")/.." && pwd)
+REPO=$(cd "$(dirname "$0")/../.." && pwd)
 FRAGDIR=$REPO/meta-iot-gateway/recipes-kernel/linux/files/fragments
 DOTCONFIG=${DOTCONFIG:-$REPO/build/tmp/work-shared/raspberrypi5/kernel-build-artifacts/.config}
 KSRC=${KSRC:-$REPO/build/tmp/work-shared/raspberrypi5/kernel-source}
@@ -30,21 +37,28 @@ KSRC=${KSRC:-$REPO/build/tmp/work-shared/raspberrypi5/kernel-source}
 [ -r "$DOTCONFIG" ] || { echo "ERROR: no .config at $DOTCONFIG (build the kernel first)"; exit 2; }
 [ -d "$KSRC" ] || { echo "ERROR: no kernel source at $KSRC"; exit 2; }
 
-# Default = fragments applied by the current dev build:
-# base set + default-on gates (panic-on-oops, rtc, vcio) + local.yml
-# IOTGW_KERNEL_FEATURES (igw_compute_media igw_containers
-# igw_networking_iot igw_security_prod igw_ima) + recipe thermal append.
-# Keep in sync with classes/iotgw-kernel-fragments.bbclass; or pass an
-# explicit list, e.g.:
-#   kas shell -c 'bitbake -e linux-iotgw-mainline-fit' kas/local.yml \
-#     | sed -n 's/^IOTGW_KERNEL_FRAGMENTS="//p'
-DEFAULT_SET="branding.cfg trim.cfg storage-filesystems.cfg ikconfig.cfg
-audit.cfg panic-recovery.cfg panic-on-oops.cfg rtc-rpi.cfg vcio-rpi.cfg
-compute-media.cfg containers-cgroups.cfg networking-iot.cfg
-security-prod.cfg ima.cfg thermal-rpi5.cfg
-pstore-persist.cfg tpm-slb9672.cfg"
+# The fragment list is the recipe's, not a copy kept here: a hardcoded list
+# drifts from iotgw-kernel-fragments.bbclass and the kas overlays, and then
+# audits fragments the image never applied.
+recipe_fragments() {
+    local base chain out
+    if [ -f "$REPO/kas/local.yml" ]; then base=kas/local.yml; else base=kas/rauc.yml; fi
+    chain=${IOTGW_AUDIT_KAS:-$base:kas/deepx.yml}
+    echo "fragments: IOTGW_KERNEL_FRAGMENTS in $chain (bitbake-getvar)" >&2
+    out=$(cd "$REPO" && env -u KAS_WORK_DIR -u KAS_BUILD_DIR -u KAS_REPO_REF_DIR \
+        bash -c '. scripts/env.sh >/dev/null && kas shell "$1" -c "bitbake-getvar -r linux-iotgw-mainline --value IOTGW_KERNEL_FRAGMENTS"' _ "$chain" 2>/dev/null \
+        | tail -n1)
+    case "$out" in *.cfg*) printf '%s\n' "$out" ;; *) return 1 ;; esac
+}
 
-FRAGS="${*:-$DEFAULT_SET}"
+if [ "$#" -gt 0 ]; then
+    FRAGS="$*"
+else
+    FRAGS=$(recipe_fragments) || {
+        echo "ERROR: could not read IOTGW_KERNEL_FRAGMENTS via bitbake-getvar; pass the fragments explicitly"
+        exit 2
+    }
+fi
 
 total=0; ok=0; mism=0; unmet=0; removed=0
 

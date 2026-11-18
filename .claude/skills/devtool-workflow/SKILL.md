@@ -36,7 +36,7 @@ What `devtool finish` does now (`_export_local_files` in
   the recipe's non-patch `file://` list and copied directly over the
   files in recipe space.
 
-For BSP recipes here (`u-boot`, `linux-iotgw-mainline-fit`) the
+For BSP recipes here (`u-boot`, `linux-iotgw-mainline`) the
 workspace source tree is the upstream git checkout. Your layer's `.cfg`
 fragments unpack to `UNPACKDIR`, not into that tree, so devtool neither
 sees nor rewrites them — **edit fragments directly in the layer**. That
@@ -144,7 +144,7 @@ Destinations in this layer:
 | Recipe | Patches land in |
 |---|---|
 | `u-boot` | `meta-iot-gateway/recipes-bsp/u-boot/files/` |
-| `linux-iotgw-mainline-fit` | `meta-iot-gateway/recipes-kernel/linux/files/` |
+| `linux-iotgw-mainline` | `meta-iot-gateway/recipes-kernel/linux/files/` |
 
 Kernel config fragments live in
 `meta-iot-gateway/recipes-kernel/linux/files/fragments/` and are edited

@@ -16,18 +16,20 @@ Temperature conversion: T(mC) = -550 * adc + 450000.
 Critical trip at 110 C matches the RPi firmware default policy.
 
 Upstream-Status: Pending [BCM2712 thermal not yet in mainline 6.18]
+Assisted-by: claude-code:claude-opus-5-5
 ---
- .../boot/dts/broadcom/bcm2712-rpi-5-b.dts     | 38 +++++++++++++++++++
+ arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts |   38 ++++++++++++++++++++++
  1 file changed, 38 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts
-index 5a6d531fd7d6..ad96fb439bd2 100644
+index 3e0319fdb93f..4ccacb6f05cc 100644
 --- a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts
 +++ b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b.dts
-@@ -67,6 +67,44 @@ &rp1_usb1 {
+@@ -66,3 +66,41 @@ &rp1_usb0 {
+ &rp1_usb1 {
  	status = "okay";
  };
- 
++
 +/*
 + * BCM2712 AVS ring-oscillator temperature sensor.
 + * Physical base: 0x107d542000 (soc child addr 0x7d542000).
@@ -65,10 +67,6 @@ index 5a6d531fd7d6..ad96fb439bd2 100644
 +		};
 +	};
 +};
-+
- &rp1_spi0 {
- 	pinctrl-names = "default";
- 	pinctrl-0 = <&rp1_spi0_gpio9 &rp1_spi0_cs_gpio7>;
 -- 
 2.43.0
 

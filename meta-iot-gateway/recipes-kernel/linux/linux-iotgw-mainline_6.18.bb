@@ -2,9 +2,8 @@ require recipes-kernel/linux/linux-iotgw-mainline-common.inc
 
 # CVE exclusions
 include recipes-kernel/linux/cve-exclusion.inc
-include recipes-kernel/linux/cve-exclusion_6.18.inc
 
-LINUX_VERSION ?= "6.18.37"
+LINUX_VERSION ?= "6.18.59"
 KERNEL_VERSION_SANITY_SKIP = "1"
 PV = "${LINUX_VERSION}+git${SRCPV}"
 
@@ -12,49 +11,35 @@ BRANCH ?= "linux-6.18.y"
 KMETA = "kernel-meta"
 
 # SRCREV_machine / SRCREV_meta / SRCREV_FORMAT live in
-# linux-iotgw-mainline-common.inc so all three kernel providers stay in lockstep.
+# linux-iotgw-mainline-common.inc with the rest of the shared kernel policy.
 
 SRC_URI = " \
     git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git;name=machine;branch=${BRANCH};protocol=https \
     git://git.yoctoproject.org/yocto-kernel-cache;type=kmeta;name=meta;branch=yocto-6.6;destsuffix=${KMETA};protocol=https \
 "
 
-# Wrynose split-FIT model: the kernel recipe no longer assembles the FIT
-# itself (kernel-fitimage.bbclass / do_assemble_fitimage were removed in
-# OE-Core wrynose). It builds a plain arm64 Image and PUBLISHES the FIT input
-# artifacts (linux.bin + linux_comp) via kernel-fit-extra-artifacts. The
-# separate linux-iotgw-fit recipe (inherit kernel-fit-image) consumes those to
-# assemble and sign the FIT. See docs/FIT_BOOT_SIGNING.md.
+# Split-FIT model: this recipe builds a plain arm64 Image and PUBLISHES the FIT
+# input artifacts (linux.bin + linux_comp) via kernel-fit-extra-artifacts; the
+# iotgw-fit-image recipe assembles and signs the FIT. See
+# docs/FIT_BOOT_SIGNING.md.
 KERNEL_IMAGETYPE = "Image"
 KERNEL_CLASSES:append = " kernel-fit-extra-artifacts"
 
-# FIT DTB trust roots — see kas/local.yml.example fit_dtb_*_trust blocks for
-# the rotation pattern. The file-key gate defaults on so a developer without a
-# YubiKey or SoftHSM can still build normally. The YK and SoftHSM gates default
-# off; flip them on in kas/local.yml only when the corresponding key material
-# is present. The SoftHSM gate is dev-only — do not enable it on production.
+# FIT DTB trust roots — IOTGW_FIT_TRUST_* and the YK/SoftHSM key names default
+# in the distro include (iotgw-common.inc), so the image-side FIT trust gate
+# checks the same set this recipe injects. Flip the YK / SoftHSM gates on in
+# kas/local.yml only when the corresponding key material is present.
 #
 # These control-DTB pubkeys let U-Boot's control FDT enforce FIT config
 # signatures at runtime; they are injected into the deployed board DTBs here
 # (this recipe owns the DTBs), independent of the FIT signing done by the
-# linux-iotgw-fit recipe with the same file key.
-IOTGW_FIT_TRUST_FILE_KEY    ?= "1"
-IOTGW_FIT_TRUST_YK_KEY      ?= "0"
-IOTGW_FIT_YK_KEYDIR         ?= ""
-IOTGW_FIT_YK_KEYNAME        ?= "iotgw-fit-yk-2026"
-IOTGW_FIT_TRUST_SOFTHSM_KEY ?= "0"
-IOTGW_FIT_SOFTHSM_KEYDIR    ?= ""
-IOTGW_FIT_SOFTHSM_KEYNAME   ?= "iotgw-fit-softhsm-dev"
+# iotgw-fit-image recipe with the same file key.
 
-# fdt_add_pubkey lands in the native sysroot via meta-iot-gateway's
-# u-boot-tools bbappend. Used uniformly for all three trust roots (in the
-# split-FIT model the fitImage no longer lives in this recipe, so the former
-# `mkimage -F -K <dtb> -r <fit>` file-key path is replaced by fdt_add_pubkey,
-# which writes the same /signature/key-<name> node from the signing cert).
-#
-# Dropping kernel-fitimage (split-FIT re-arch) also dropped its implicit
-# u-boot-tools-native DEPENDS, so declare it explicitly — do_deploy:append
-# below invokes fdt_add_pubkey from the native sysroot.
+# fdt_add_pubkey lands in the native sysroot via the u-boot-tools bbappend and
+# is used uniformly for all three trust roots; it writes the
+# /signature/key-<name> node from the signing cert. u-boot-tools-native is
+# declared explicitly in DEPENDS because do_deploy:append calls it from the
+# native sysroot.
 DEPENDS += "u-boot-tools-native"
 UBOOT_FDT_ADD_PUBKEY ?= "${STAGING_BINDIR_NATIVE}/fdt_add_pubkey"
 

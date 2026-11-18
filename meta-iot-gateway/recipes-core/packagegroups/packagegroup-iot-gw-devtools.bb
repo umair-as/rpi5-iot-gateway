@@ -26,6 +26,6 @@ RDEPENDS:${PN} = " \
     pkgconf \
 "
 
-# bpftool from the mainline kernel tools (linux-iotgw-mainline-fit is the only
+# bpftool from the mainline kernel tools (linux-iotgw-mainline is the only
 # kernel provider).
 RDEPENDS:${PN}:append = " bpftool"

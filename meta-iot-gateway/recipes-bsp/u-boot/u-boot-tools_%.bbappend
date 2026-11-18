@@ -2,7 +2,7 @@
 # but only installs mkimage, mkenvimage, dumpimage, and fit_check_sign.
 #
 # We need fdt_add_pubkey at ${STAGING_BINDIR_NATIVE}/fdt_add_pubkey for the
-# FIT DTB key-rotation step in linux-iotgw-mainline-fit_6.18.bb, which adds
+# FIT DTB key-rotation step in linux-iotgw-mainline_6.18.bb, which adds
 # a YubiKey-resident public certificate to the runtime control FDT without
 # requiring the corresponding private key on the build host.
 
