@@ -36,9 +36,9 @@ graph LR
 
 | Component | Type | Purpose |
 |-----------|------|---------|
-| **Root Filesystem** | A/B (dual ext4) | Only one active at boot |
-| **/boot Partition** | Shared FAT | FIT images, DTBs, U-Boot, config.txt |
-| **Bundle Format** | dm-verity | Signed, integrity-protected, optionally encrypted |
+| **Root Filesystem** | A/B (ext4 + dm-verity hash tree) | Only one active at boot; mounted read-only through dm-verity |
+| **/boot Partition** | Shared FAT | Per-slot FITs (`fitImage-a` / `-b`), DTBs, U-Boot, config.txt |
+| **Bundle Format** | `crypt` (default) or `verity` | Signed, integrity-protected, encrypted by default |
 | **Bootloader** | U-Boot | Env-based slot selection with bootcount rollback |
 
 ---
@@ -57,8 +57,7 @@ sequenceDiagram
     R->>R: Verify signature + mount verity
     R->>R: Write rootfs to inactive slot
     R->>Hook: Run slot-post-install hook
-    Hook->>Boot: Update FIT image, DTBs, overlays if changed
-    Hook->>Hook: Run overlay reconciliation
+    Hook->>Boot: Install the slot's FIT (fitImage-a/-b); update U-Boot, DTBs, firmware if changed
     R->>U: Activate inactive slot (fw_setenv BOOT_ORDER)
     T->>T: Reboot
     U->>U: Select slot, decrement boot counter
@@ -69,7 +68,7 @@ sequenceDiagram
 
 ✅ **Synchronized Update Path** — Bundle hook updates `/boot` in the same install transaction
 ✅ **Per-Slot FIT Naming** — Each slot writes its own kernel (`fitImage-a` / `fitImage-b`) on the shared boot partition
-✅ **Overlay Reconciliation** — Post-install hook manages `/etc` overlay entries according to policy
+✅ **Verity-bound root** — Each slot's signed FIT carries that slot's dm-verity root hash, so a rootfs boots only with its matching FIT
 
 ---
 
@@ -85,7 +84,7 @@ RAUC's bootchooser provides automatic failsafe via U-Boot bootcount:
 
 ### ⚠️ Important
 
-> The `/boot` partition is **not A/B**. Kernel and DTB updates are applied in-place by the bundle hook. On rollback, the rootfs reverts but boot assets remain. This requires kernel ABI compatibility across releases.
+> The kernel is per slot (`fitImage-a` / `-b`), so a rollback boots the previous slot's kernel with its own root. U-Boot, firmware, `config.txt` and the control DTB (which holds the FIT trust anchors) are shared and updated in place, so they must stay compatible with both slots.
 
 ---
 
@@ -94,7 +93,7 @@ RAUC's bootchooser provides automatic failsafe via U-Boot bootcount:
 | Feature | Description |
 |---------|-------------|
 | **Bundle Signing** | Cryptographic signatures verified on-device before installation |
-| **Integrity Protection** | dm-verity format provides tamper detection |
+| **Integrity Protection** | Bundle: RAUC `verity`/`crypt` format; root: runtime dm-verity with the root hash in the signed FIT |
 | **Boot Integrity Chain** | U-Boot FIT signature verification + signed RAUC bundles |
 | **Bundle Encryption** | `crypt` format by default; decryption key held per device. Opt out to `verity`. |
 | **mTLS Streaming** | Device identity verified via client certificate |
@@ -143,7 +142,8 @@ build-time files (CA cert, `openssl-tpm2.cnf`, `updater.conf`).
    ```bash
    ./scripts/ota/ota-certs-sync.sh
    ```
-2. **Reboot** so the `/etc` overlay mounts cleanly with new files.
+2. **Reboot** so `ota-certs-provision.service` copies the new material from
+   `/data/ota/certs` into `/etc/ota` (volatile, rebuilt every boot).
 3. **Verify** cert chain on target:
    ```bash
    openssl verify -CAfile /etc/ota/ca.crt /etc/ota/device.crt
@@ -174,8 +174,8 @@ private key. Configure `/etc/ota/updater.conf`:
 
 Notes:
 - `device_key_uri` takes precedence over `device_key`.
-- TPM mode is build-gated by `IOTGW_ENABLE_OTA_TPM_MTLS = "1"` (default `0`,
-  preserving non-TPM file-key flow).
+- TPM mode is build-gated by `IOTGW_ENABLE_OTA_TPM_MTLS`, which follows the TPM
+  switch `IOTGW_ENABLE_TPM` (default `0`, the file-key flow).
 - Current curl builds use OpenSSL engine mode (`tpm2tss`) for TPM handles.
   Provider-based key support is deferred to future curl builds.
 - With TPM mode enabled, `ota-updater.service` gets supplementary `iotgwtpm`
@@ -270,13 +270,19 @@ It is **not** per-device encryption, and it does **not** provide key
 revocation. Revoking one device means re-issuing to everyone still in the
 recipient set. A production fleet needs per-device re-encryption performed
 *outside* the BSP — upstream meta-rauc says the same in
-`classes-recipe/bundle.bbclass`. This change does not add such a pipeline, so
-no claim of production-scale per-device revocation should be made on the basis
-of it.
+`classes-recipe/bundle.bbclass`. This layer does not provide such a pipeline;
+it makes no claim of per-device revocation.
+
+**TPM switch** — `IOTGW_ENABLE_TPM = "1"` (set by including `kas/tpm.yml`)
+turns on the TPM hardware profile, OTA updater TPM mTLS and PKCS#11 RAUC
+streaming with the `tpm2` backend together. The profiles below are the
+individual overrides, for diverging from the switch.
 
 **Updater TPM only** — `ota-updater` uses a TPM key URI for manifest
 polling; RAUC streaming still uses the file key.
 ```
+IOTGW_ENABLE_TPM              = "1"
+IOTGW_RAUC_STREAMING_KEY_MODE = "file"
 IOTGW_ENABLE_OTA_TPM_MTLS = "1"
 IOTGW_OTA_TPM_KEY_URI     = "handle:0x81000001"
 IOTGW_OTA_TPM_KEY_ENGINE  = "tpm2tss"
@@ -289,6 +295,10 @@ IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
 IOTGW_RAUC_PKCS11_BACKEND    = "tpm2"
 IOTGW_RAUC_PKCS11_TLS_KEY    = "pkcs11:token=iotgw;object=rauc-client-key;type=private;pin-source=file:/etc/ota/pkcs11-pin"
 ```
+The `tpm2` backend also needs `IOTGW_ENABLE_TPM_SLB9672 = "1"`. Without it
+the build falls back to the file key (`/etc/ota/device.key`) for streaming,
+because a board without a TPM cannot load the PKCS#11 key and every streaming
+install would fail with "server not responding".
 
 **Unencrypted bundles (opt-out)** — the only way to get a `verity` bundle.
 Independent of streaming key mode. Produces a signed but unencrypted bundle,
@@ -311,8 +321,7 @@ variables from the profiles above; crypt needs nothing added.
 
 > 💡 **Compatibility notes:**
 > - PKCS#11 streaming and encrypted bundle decryption are independent.
-> - To return to baseline: set `IOTGW_ENABLE_OTA_TPM_MTLS = "0"` and
->   `IOTGW_RAUC_STREAMING_KEY_MODE = "file"`. Leave
+> - To return to baseline: set `IOTGW_ENABLE_TPM = "0"` (or drop `kas/tpm.yml`). Leave
 >   `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION` alone — encryption *is* the baseline.
 
 ### 🔒 PKCS#11 PIN Handling
@@ -326,14 +335,14 @@ variables from the profiles above; crypt needs nothing added.
 
 ## ⚠️ Design Considerations
 
-**Shared /boot partition** — kernel and DTB updates are applied in-place
-by the bundle hook. On rollback, the rootfs reverts but boot assets
-remain. Maintain kernel ABI compatibility across releases.
+**Shared /boot partition** — the kernel is per slot, but U-Boot, firmware,
+`config.txt` and the control DTB are shared and updated in place by the bundle
+hook. On rollback they remain, so they must stay compatible with both slots.
 
-**Overlay reconciliation** — OTA updates trigger the overlay reconciler
-which manages `/etc` overlay entries according to policy (`enforce`,
-`replace_if_unmodified`, `preserve`, `absent`). See
-[Overlay Reconciliation](OVERLAY_RECONCILIATION.md).
+**No persistent `/etc`** — `/etc` and `/root` are the slot's content with a
+tmpfs upper, so an OTA delivers configuration with nothing to reconcile; state
+that must persist lives on `/data`
+([Persistent State Architecture](PERSISTENT_STATE.md)).
 
 ---
 
@@ -342,6 +351,6 @@ which manages `/etc` overlay entries according to policy (`enforce`,
 - [RAUC Update Runbook](RAUC_UPDATE.md) — on-target operations and troubleshooting
 - [U-Boot Hardening](UBOOT_HARDENING.md) — bootloader hardening and env-based slot selection
 - [Partition Layouts](PARTITIONS.md) — A/B partition sizing
-- [Overlay Reconciliation](OVERLAY_RECONCILIATION.md) — post-OTA config management
+- [Persistent State Architecture](PERSISTENT_STATE.md) — what persists across an OTA
 - [RAUC Documentation](https://rauc.readthedocs.io/)
 - [dm-verity](https://www.kernel.org/doc/html/latest/admin-guide/device-mapper/verity.html)

@@ -53,8 +53,6 @@ IMAGE_INSTALL += " \
     iotgw-rauc-install \
     iotgw-machine-id \
     boot-backup-prune \
-    overlayfs-setup \
-    rauc-grow-data-part \
 "
 
 # Read-only rootfs pairs well with slot updates
@@ -171,7 +169,7 @@ addtask iotgw_validate_wic_alignment after do_image_wic before do_image_complete
 # -----------------------------------------------------------------------------
 # Under kas/fit-release-trust.yml, the U-Boot control DTB embeds only the
 # YubiKey pubkey. The kernel recipe still signs the fitImage with the file
-# key at build time (linux-iotgw-mainline-fit_6.18.bb do_deploy:append), and
+# key at build time (linux-iotgw-mainline_6.18.bb do_deploy:append), and
 # the WIC bootimg-partition plugin copies that file-key-signed fitImage to
 # /boot/fitImage via IMAGE_BOOT_FILES. Flashing the produced .wic.zst fails
 # U-Boot FIT verification on first boot.

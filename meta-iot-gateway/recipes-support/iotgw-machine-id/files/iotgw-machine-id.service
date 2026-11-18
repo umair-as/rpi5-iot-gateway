@@ -1,7 +1,7 @@
 [Unit]
 Description=Persist and bind machine-id for immutable rootfs
 DefaultDependencies=no
-After=data.mount overlayfs-setup.service
+After=data.mount
 # Bind-mount the persistent machine-id over /etc/machine-id BEFORE journald
 # starts. journald reads /etc/machine-id once at service start and writes
 # its persistent storage to /var/log/journal/<that-id>/. Without this
@@ -10,7 +10,6 @@ After=data.mount overlayfs-setup.service
 # looks under the persistent id and finds nothing -- "No journal files
 # were found" while journald is in fact writing under the baked id.
 Before=sysinit.target systemd-journald.service
-Wants=data.mount overlayfs-setup.service
 RequiresMountsFor=/data
 ConditionPathIsMountPoint=/data
 

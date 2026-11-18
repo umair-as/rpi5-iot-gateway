@@ -69,57 +69,138 @@ BOOT_DEV="/dev/mmcblk0p1"
 BOOT_MP="/boot"
 VERBOSE="${IOTGW_VERBOSE:-0}"
 VERBOSE_OVERLAYS="${IOTGW_VERBOSE_OVERLAYS:-0}"
-RECONCILE_TOOL="/usr/libexec/rauc/overlay-reconcile.py"
-RECONCILE_TOOL_BUNDLE="${BUNDLE_MNT}/overlay-reconcile.py"
 
-for cmd in tar mount mountpoint umount install cmp sed awk sync grep sha256sum cp rm mkdir mktemp; do
+for cmd in tar mount mountpoint umount install cmp sed awk sync grep cp rm mkdir mktemp mv; do
   command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
 done
 
-run_overlay_reconcile() {
-  local stage="$1"
-  local tool=""
-
-  if [ -x "$RECONCILE_TOOL" ]; then
-    tool="$RECONCILE_TOOL"
-  elif [ -x "$RECONCILE_TOOL_BUNDLE" ]; then
-    tool="$RECONCILE_TOOL_BUNDLE"
+# A boot without a usable /data (iotgw-preinit marker) runs in a restricted
+# recovery mode and must not take an update: bundle staging and RAUC's slot
+# status live on /data. Checked here, the one step every install path (CLI,
+# D-Bus, streaming, ota-updater) goes through.
+DEGRADED_MARKER="/run/iotgw/degraded"
+refuse_if_degraded() {
+  if [ -e "$DEGRADED_MARKER" ]; then
+    die "Refusing to install: this boot is degraded ($(cat "$DEGRADED_MARKER" 2>/dev/null || echo unknown)); repair /data and reboot first"
   fi
+}
 
-  if [ -z "$tool" ]; then
-    die "Missing overlay reconcile tool (checked: $RECONCILE_TOOL and $RECONCILE_TOOL_BUNDLE)"
+# The installed slot is on trial until its first healthy boot: a degraded boot
+# of it is not marked good (iotgw-mark-good-gate). The record sits on the
+# U-Boot environment partition, which stays readable when /data is not.
+# Without a durable record the install fails: the gate cannot tell a new slot
+# from a committed one, and a slot switch needs /uboot-env writable anyway.
+TRIAL_RECORD="/uboot-env/iotgw-trial-slot"
+record_trial_slot() {
+  local bootname="${RAUC_SLOT_BOOTNAME:-}"
+  if [ -z "$bootname" ]; then
+    case "${RAUC_SLOT_NAME:-}" in
+      rootfs.0) bootname="A" ;;
+      rootfs.1) bootname="B" ;;
+    esac
   fi
-
-  if ! command -v python3 >/dev/null 2>&1; then
-    die "python3 is required for overlay reconciliation"
+  case "$bootname" in
+    A|B) ;;
+    *) log_error "Unknown bootname '${bootname}' for ${RAUC_SLOT_NAME:-?}"; return 1 ;;
+  esac
+  if ! mountpoint -q /uboot-env; then
+    log_error "/uboot-env is not mounted"
+    return 1
   fi
+  if printf '%s\n' "$bootname" > "${TRIAL_RECORD}.new" && sync && mv -f "${TRIAL_RECORD}.new" "$TRIAL_RECORD" && sync; then
+    log_info "Slot ${bootname} on trial until its first healthy boot"
+  else
+    rm -f "${TRIAL_RECORD}.new" 2>/dev/null || true
+    log_error "Could not write ${TRIAL_RECORD}"
+    return 1
+  fi
+}
 
-  python3 "$tool" "$stage"
+ARCHIVE="${BUNDLE_MNT}/bootfiles-fit.tar.gz"
+
+# Each root slot boots its own signed FIT: /boot/fitImage-a or /boot/fitImage-b.
+# The bundle carries both (<image>.fitImage-a / <image>.fitImage-b); their
+# device trees hold the dm-verity table for exactly this rootfs.
+case "${RAUC_SLOT_NAME:-}" in
+  rootfs.0) FIT_DEST_NAME="fitImage-a" ;;
+  rootfs.1) FIT_DEST_NAME="fitImage-b" ;;
+  *) FIT_DEST_NAME="" ;;
+esac
+
+find_slot_fit() {
+  local candidate found=""
+  [ -n "$FIT_DEST_NAME" ] || return 0
+  for candidate in "$BUNDLE_MNT"/*."$FIT_DEST_NAME"; do
+    [ -f "$candidate" ] && found="$candidate"
+  done
+  printf '%s' "$found"
+}
+
+# Root slots are raw dm-verity slots. A filesystem slot means a device still on
+# the pre-verity layout, which can only move to verity by reflashing. The root
+# hash lives only in the per-slot FIT, so a bundle that cannot deliver it would
+# leave the slot unbootable. Checked in pre-install, before RAUC writes the
+# slot, and again in post-install before anything in the shared /boot is
+# touched.
+require_verity_slot() {
+  [ -n "$FIT_DEST_NAME" ] || die "Unsupported RAUC slot '${RAUC_SLOT_NAME:-}'"
+  [ "${RAUC_SLOT_TYPE:-}" = "raw" ] \
+    || die "Root slot ${RAUC_SLOT_NAME} is type '${RAUC_SLOT_TYPE:-unknown}', not a raw dm-verity slot; this device predates runtime dm-verity and must be reflashed"
+  [ -r "$ARCHIVE" ] \
+    || die "Bundle has no bootfiles-fit.tar.gz; it cannot update dm-verity slot ${RAUC_SLOT_NAME}"
+  [ -n "$(find_slot_fit)" ] \
+    || die "Bundle carries no *.${FIT_DEST_NAME} for dm-verity slot ${RAUC_SLOT_NAME}"
+}
+
+# RAUC does not mount a raw slot for post-install, but the module check reads
+# the new slot. Mount the (ext4 + appended hash tree) slot read-only; noload
+# skips journal replay, which would write to the data blocks and invalidate the
+# root hash.
+SLOT_MNT=""
+release_slot_mount() {
+  [ -n "$SLOT_MNT" ] || return 0
+  umount "$SLOT_MNT" || log_warn "failed to unmount $SLOT_MNT"
+  rmdir "$SLOT_MNT" 2>/dev/null || true
+  SLOT_MNT=""
+}
+mount_raw_slot() {
+  [ -n "${RAUC_SLOT_DEVICE:-}" ] || die "RAUC_SLOT_DEVICE not set for raw slot ${RAUC_SLOT_NAME:-unknown}"
+  SLOT_MNT=$(mktemp -d /run/iotgw-slot.XXXXXX)
+  trap release_slot_mount EXIT
+  mount -t ext4 -o ro,noload "$RAUC_SLOT_DEVICE" "$SLOT_MNT" \
+    || die "Failed to mount raw slot $RAUC_SLOT_DEVICE read-only"
+  export RAUC_SLOT_MOUNT_POINT="$SLOT_MNT"
+}
+
+# Release of the first kernel module tree in the new slot, or empty.
+slot_modules_release() {
+  local modpath
+  [ -n "${RAUC_SLOT_MOUNT_POINT:-}" ] || return 0
+  for modpath in "${RAUC_SLOT_MOUNT_POINT}/lib/modules"/*; do
+    [ -d "$modpath" ] || continue
+    basename "$modpath"
+    return 0
+  done
 }
 
 case "${HOOK_TYPE:-}" in
   pre-install)
     log_info "Hook type: pre-install"
-    run_overlay_reconcile pre
+    refuse_if_degraded
+    require_verity_slot
     log_success "Bundle pre-install hook completed successfully"
     exit 0
     ;;
   post-install)
     log_info "Hook type: post-install"
-    run_overlay_reconcile post
+    require_verity_slot
+    mount_raw_slot
     ;;
   *)
     log_warn "Unknown or unset hook type '${HOOK_TYPE:-}' (expected pre-install or post-install)"
     exit 0
     ;;
 esac
-
-ARCHIVE="${BUNDLE_MNT}/bootfiles-fit.tar.gz"
-if [ ! -r "$ARCHIVE" ]; then
-  log_skip "No bootfiles-fit.tar.gz in bundle; skipping /boot update"
-  log_success "Bundle post-install hook completed successfully"
-  exit 0
-fi
 
 if [ ! -d "$BUNDLE_MNT" ]; then
   die "Bundle mount point missing: $BUNDLE_MNT"
@@ -151,6 +232,7 @@ cleanup() {
     fi
   fi
   rm -rf "$tmpdir" || true
+  release_slot_mount
 }
 trap cleanup EXIT INT TERM
 
@@ -159,26 +241,17 @@ tar -C "$tmpdir" -xzf "$ARCHIVE" || die "Failed to extract bootfiles"
 
 # Validate module/kernel release alignment if possible
 log_check "Validating kernel/module version alignment..."
-mods_release=""
-if [ -n "${RAUC_SLOT_MOUNT_POINT:-}" ]; then
-  MODS_DIR="${RAUC_SLOT_MOUNT_POINT}/lib/modules"
-  if [ -d "$MODS_DIR" ]; then
-    for modpath in "$MODS_DIR"/*; do
-      [ -d "$modpath" ] || continue
-      mods_release=$(basename "$modpath")
-      break
-    done
-  fi
-fi
+mods_release=$(slot_modules_release)
 expected_release=""
 if [ -f "$tmpdir/kernel.release" ]; then
   expected_release="$(cat "$tmpdir/kernel.release" 2>/dev/null || true)"
 fi
-if [ -n "$expected_release" ] && [ -n "$mods_release" ] && [ "$expected_release" != "$mods_release" ]; then
+[ -n "$expected_release" ] || die "Bundle bootfiles archive carries no kernel.release; cannot pair the kernel with the slot's modules"
+if [ -n "$mods_release" ] && [ "$expected_release" != "$mods_release" ]; then
   log_error "Kernel/module mismatch: expected '$expected_release' but rootfs has modules for '$mods_release'"
   exit 1
 fi
-if [ -n "$expected_release" ] && [ -n "$mods_release" ]; then
+if [ -n "$mods_release" ]; then
   log_success "Kernel release validation passed: $expected_release"
 fi
 
@@ -233,13 +306,6 @@ install_if_changed() {
   return 0
 }
 
-# Slot-specific FIT installation: each slot writes its own named FIT image so
-# U-Boot can load the correct one without touching the other slot's kernel.
-FIT_DEST_NAME="fitImage"
-case "${RAUC_SLOT_NAME:-}" in
-  rootfs.0) FIT_DEST_NAME="fitImage-a" ;;
-  rootfs.1) FIT_DEST_NAME="fitImage-b" ;;
-esac
 log_info "FIT destination: ${FIT_DEST_NAME} (slot=${RAUC_SLOT_NAME:-unknown})"
 
 # FIT variant: fitImage handled separately above; keep Image/kernel_2712 for
@@ -259,12 +325,24 @@ for f in "${FILES[@]}"; do
   fi
 done
 
-# Install FIT image under slot-specific name (fitImage-a or fitImage-b)
-if [ -f "$tmpdir/fitImage" ]; then
-  if install_if_changed "$tmpdir/fitImage" "$BOOT_MP/$FIT_DEST_NAME" 0644 "$FIT_DEST_NAME"; then
-    updated=1
-  fi
+# Install the slot's verity FIT (fitImage-a or fitImage-b). The generic
+# fitImage in the archive has no verity table and is never installed. Write a
+# temporary file and rename it, so a power cut leaves the old FIT or the new
+# one, never a torn file.
+slot_fit=$(find_slot_fit)
+fit_target="$BOOT_MP/$FIT_DEST_NAME"
+if [ -f "$fit_target" ] && cmp -s "$slot_fit" "$fit_target"; then
+  bootfiles_skipped=$((bootfiles_skipped + 1))
+else
+  log_install "Updating $FIT_DEST_NAME"
+  install -m 0644 "$slot_fit" "$BOOT_MP/.$FIT_DEST_NAME.new"
+  sync
+  mv -f "$BOOT_MP/.$FIT_DEST_NAME.new" "$fit_target"
+  sync
+  bootfiles_changed=$((bootfiles_changed + 1))
+  updated=1
 fi
+record_trial_slot || die "Trial record not written; refusing the install (slot left inactive)"
 
 # Include any additional Raspberry Pi 5 family DTBs shipped in bundle.
 for dtb in "$tmpdir"/bcm2712-rpi-*.dtb; do

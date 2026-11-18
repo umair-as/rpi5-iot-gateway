@@ -4,7 +4,6 @@ Documentation=man:auditd(8)
 DefaultDependencies=no
 After=data.mount var-volatile.mount iotgw-log-persist-prep.service
 Requires=iotgw-log-persist-prep.service
-Wants=data.mount
 RequiresMountsFor=/data
 ConditionPathIsMountPoint=/data
 ConditionPathIsDirectory=/data/log/audit

@@ -52,8 +52,6 @@ echo "[rollback] remote_root=${REMOTE_ROOT}"
 ssh "${TARGET}" "rm -f /run/systemd/system/otbr-webui.service.d/override.conf"
 ssh "${TARGET}" "rmdir /run/systemd/system/otbr-webui.service.d 2>/dev/null || true"
 
-ssh "${TARGET}" "rm -f /data/overlays/etc/upper/systemd/system/otbr-webui.service.d/override.conf"
-ssh "${TARGET}" "rmdir /data/overlays/etc/upper/systemd/system/otbr-webui.service.d 2>/dev/null || true"
 
 # Optional cleanup of dev workspace. Keep user data conservative: remove symlink only.
 ssh "${TARGET}" "if [ -L '${REMOTE_ROOT}/node_modules' ]; then rm -f '${REMOTE_ROOT}/node_modules'; fi"

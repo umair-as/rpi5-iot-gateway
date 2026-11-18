@@ -4,7 +4,6 @@ set -euo pipefail
 TARGET="${TARGET:-iotgw}"
 LOCAL_WEBUI_DIR="${LOCAL_WEBUI_DIR:-$HOME/GitRepos/otbr-webui}"
 REMOTE_ROOT="${REMOTE_ROOT:-/data/otbr-webui}"
-APPLY_PERSISTENT=1
 RESTART_SERVICE=1
 
 usage() {
@@ -18,7 +17,7 @@ Options:
   -t, --target <host>       SSH target (default: iotgw or $TARGET)
   -s, --source <dir>        Local otbr-webui checkout (default: ~/GitRepos/otbr-webui)
   -r, --remote-root <dir>   Remote root path (default: /data/otbr-webui)
-      --no-persistent       Skip persistent drop-in under /data/overlays (runtime only)
+      --no-persistent       Accepted for compatibility; /etc is rebuilt every boot, so the override is always runtime only
       --no-restart          Do not restart service after deploy
   -h, --help                Show this help
 EOF
@@ -39,7 +38,7 @@ while [ "$#" -gt 0 ]; do
             shift 2
             ;;
         --no-persistent)
-            APPLY_PERSISTENT=0
+            :
             shift
             ;;
         --no-restart)
@@ -99,12 +98,6 @@ EOF
 printf '%s\n' "${OVERRIDE_CONTENT}" | ssh "${TARGET}" \
     "mkdir -p /run/systemd/system/otbr-webui.service.d && cat > /run/systemd/system/otbr-webui.service.d/override.conf"
 
-if [ "${APPLY_PERSISTENT}" -eq 1 ]; then
-    # Persistent drop-in in overlay upperdir; takes effect after reboot.
-    printf '%s\n' "${OVERRIDE_CONTENT}" | ssh "${TARGET}" \
-        "mkdir -p /data/overlays/etc/upper/systemd/system/otbr-webui.service.d && cat > /data/overlays/etc/upper/systemd/system/otbr-webui.service.d/override.conf"
-fi
-
 # ESM resolution from /data path needs node_modules in or above that tree.
 ssh "${TARGET}" "ln -sfn /usr/share/otbr-webui/node_modules '${REMOTE_ROOT}/node_modules'"
 
@@ -117,6 +110,4 @@ if [ "${RESTART_SERVICE}" -eq 1 ]; then
 fi
 
 echo "[deploy] completed"
-if [ "${APPLY_PERSISTENT}" -eq 1 ]; then
-    echo "[note] persistent override written to /data/overlays/... and will be visible after reboot"
-fi
+echo "[note] the override is runtime only: /etc is rebuilt at every boot, so re-run after a reboot"

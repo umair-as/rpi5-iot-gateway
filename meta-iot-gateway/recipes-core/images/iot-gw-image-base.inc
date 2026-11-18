@@ -2,7 +2,12 @@
 
 # Core inheritance shared by all image variants
 inherit core-image iotgw-rootfs iotgw-listen-guard extrausers
-inherit iotgw-rauc-image
+inherit iotgw-rauc-image iotgw-fit-gate iotgw-module-sig-gate
+
+# Runtime root dm-verity: the only root flow (see iotgw-verity-image.bbclass).
+inherit iotgw-verity-image
+
+require iotgw-preinit-boot.inc
 
 # Label the rootfs with SELinux file contexts at do_rootfs (runs setfiles
 # against refpolicy-mcs's file_contexts). Without this, files ship as
@@ -27,22 +32,29 @@ IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
 
 # Keep upstream RAUC mark-good flow enabled.
 IOTGW_DISABLE_RAUC_MARK_GOOD ?= "0"
-IOTGW_UBOOT_BOOTDELAY ?= "2"
-# U-Boot feature tokens (surface_reduce fit_enforce watchdog) default distro-wide
-# in conf/distro/include/iotgw-common.inc; iotgw_write_uboot_policy below emits
-# the resolved value into /etc/default/iotgw-uboot-policy. prod image overrides
-# to append appliance/prompt lockdown.
 IOTGW_AUDIT_RULE_IMMUTABLE ?= "1"
 
 # Desktop profile can include splash
 IMAGE_FEATURES:append:desktop = " splash"
 
-# Common packages across all variants
+# Common packages across all variants. packagegroup-iot-gw-security (sysctl
+# hardening, module blacklist, core-dump/limits policy, tmpfs mount options,
+# service hardening drop-ins, audit rules) belongs to the base, not to a tier:
+# a tier-level install leaves the other tiers unhardened. The prod hygiene gate
+# requires its files (iotgw-rootfs.bbclass).
+#
+# The DX-M1 driver and runtime (not the demos) go into every image built with
+# IOTGW_ENABLE_DEEPX_DXM1 = 1: base, dev and desktop compose kas/deepx.yml
+# through the Makefile. Prod does not compose it until the module-signing key
+# is protected (docs/DEEPX_DXM1.md).
 CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-base \
+    ${@bb.utils.contains('IOTGW_ENABLE_DEEPX_DXM1', '1', 'packagegroup-iot-gw-deepx', '', d)} \
     packagegroup-iot-gw-hwtools \
     packagegroup-iot-gw-apps \
     packagegroup-iot-gw-selinux \
+    packagegroup-iot-gw-containers \
+    packagegroup-iot-gw-security \
     iotgw-banner \
     iotgw-network-units \
     iotgw-sysctl \
@@ -51,7 +63,6 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     ${@bb.utils.contains('DISTRO_FEATURES', 'bluetooth', 'iotgw-bluetooth-persist', '', d)} \
     iotgw-firewall \
     iotgw-systemd-presets \
-    iotgw-provision \
     iotgw-nftables \
     iotgw-sshd-hardening \
     nftables \
@@ -69,14 +80,3 @@ CORE_IMAGE_EXTRA_INSTALL += " \
 # carries exactly one such notice; filter it. NB: IMAGE_LOG_CHECK_EXCLUDES splits
 # on literal spaces, so the regex uses \s, never a literal space.
 IMAGE_LOG_CHECK_EXCLUDES += "Failed\sto\spreset\sall\sunit.*is\smasked"
-
-iotgw_write_uboot_policy () {
-    install -d ${IMAGE_ROOTFS}${sysconfdir}/default
-    cat > ${IMAGE_ROOTFS}${sysconfdir}/default/iotgw-uboot-policy <<EOF
-# Managed by image build. Applied on target by iotgw-provision.sh.
-IOTGW_UBOOT_BOOTDELAY=${IOTGW_UBOOT_BOOTDELAY}
-IOTGW_UBOOT_EXTRA_KERNEL_ARGS=${IOTGW_UBOOT_EXTRA_KERNEL_ARGS}
-IOTGW_UBOOT_FEATURES=${IOTGW_UBOOT_FEATURES}
-EOF
-}
-ROOTFS_POSTPROCESS_COMMAND += " iotgw_write_uboot_policy; "

@@ -2,7 +2,6 @@
 Description=Bind /data-backed Thread dataset over /var/lib/thread
 DefaultDependencies=no
 After=data.mount var-volatile-lib.service systemd-tmpfiles-setup.service
-Wants=data.mount
 RequiresMountsFor=/data
 ConditionPathIsMountPoint=/data
 ConditionPathIsDirectory=/data/lib/thread
