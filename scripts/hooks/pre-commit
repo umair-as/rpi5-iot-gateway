@@ -30,3 +30,18 @@ if [ -n "$blocked" ]; then
     printf 'Unstage it (git restore --staged <file>). Override only if certain: git commit --no-verify\n\n' >&2
     exit 1
 fi
+
+# Optional per-clone patterns (see commit-patterns.sh), checked against the
+# lines this commit adds only, so existing content never trips them.
+. "$(dirname "$0")/commit-patterns.sh"
+pat="$(commit_patterns)"
+if [ -n "$pat" ]; then
+    hits="$(git diff --cached -U0 --no-color --diff-filter=ACMR \
+        | awk '/^\+\+\+ /{f=substr($0,7); next} /^\+/{print "  " f ": " substr($0,2)}' \
+        | grep -aEi -e "$pat" | head -10 || true)"
+    if [ -n "$hits" ]; then
+        printf '\nCOMMIT BLOCKED — added lines match a local commit pattern:\n%s\n' "$hits" >&2
+        printf 'Override only if certain: git commit --no-verify\n\n' >&2
+        exit 1
+    fi
+fi

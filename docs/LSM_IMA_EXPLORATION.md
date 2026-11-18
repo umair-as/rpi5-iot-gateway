@@ -1,326 +1,23 @@
-# LSM and IMA Exploration Notes
+# IMA and TPM Notes
 
-> **⚠️ Historical — superseded.** These are dated field notes from the era
-> when **AppArmor was the default MAC** and SELinux was a dormant,
-> compiled-in candidate. That is no longer true: SELinux is now the
-> always-on active MAC, AppArmor is not carried, and `CONFIG_LSM` is
-> `lockdown,yama,bpf,landlock,selinux`. Statements below such as "AppArmor
-> holds the exclusive slot" or "SELinux does not initialise" describe the
-> old build and **do not reflect current images**. For the current design,
-> wiring, and command reference see **[SELINUX.md](SELINUX.md)**. Kept for
-> the on-target observations and the IMA/TPM-PCR notes, which remain useful.
-
-Practical field notes from bringing up SELinux, AppArmor, and IMA on the RPi5 IoT Gateway.
-Covers concepts, observed behaviour on target, and annotated commands with their actual output.
-
-**Branch:** `feat/selinux-ima-apparmor`
-**Kernel:** `6.18.13-v8-16k-igw` (RPi5 downstream, Scarthgap build)
-**Date:** 2026-04-10
-
-> **Historical snapshot.** Commands and output below were captured as-is on the
-> pre-wrynose scarthgap baseline (NetworkManager, systemd 255). The distro has
-> since moved to wrynose with systemd-networkd — substitute process/service
-> names accordingly when re-running; the LSM/IMA findings themselves are
-> unaffected.
+Notes on the Integrity Measurement Architecture (IMA) and its interaction with the
+SPI-attached TPM on the Raspberry Pi 5: concepts, the kernel configuration, the PCR10
+limitation, and target commands. IMA is opt-in (`IOTGW_ENABLE_IMA`). For the MAC (SELinux)
+see [SELINUX.md](SELINUX.md); for TPM requirements see
+[TPM_REQUIREMENTS.md](TPM_REQUIREMENTS.md).
 
 ---
 
 ## Table of Contents
 
-1. [LSM — Linux Security Modules](#1-lsm--linux-security-modules)
-2. [AppArmor](#2-apparmor)
-3. [SELinux](#3-selinux)
-4. [IMA — Integrity Measurement Architecture](#4-ima--integrity-measurement-architecture)
-5. [TPM Interaction with IMA](#5-tpm-interaction-with-ima)
-6. [Target Command Reference](#6-target-command-reference)
-7. [Known Issues / Open Items](#7-known-issues--open-items)
+1. [IMA — Integrity Measurement Architecture](#1-ima--integrity-measurement-architecture)
+2. [TPM Interaction with IMA](#2-tpm-interaction-with-ima)
+3. [Target Command Reference](#3-target-command-reference)
+4. [Known Issues / Open Items](#4-known-issues--open-items)
 
 ---
 
-## 1. LSM — Linux Security Modules
-
-### What it is
-
-The Linux kernel has a hook-based framework called LSM (Linux Security Modules) that allows
-security subsystems to intercept kernel operations — file open, process exec, socket connect,
-capability checks — and apply their own policy. Multiple LSMs can be compiled in, but only
-one "major" MAC (Mandatory Access Control) LSM can be active as the enforcing system at a time.
-
-Two categories:
-
-| Category | LSMs | Notes |
-|----------|------|-------|
-| Always-on (minor) | `capability`, `lockdown`, `yama`, `ima` | Always initialised, not exclusive |
-| MAC (exclusive) | `apparmor`, `selinux`, `smack`, `tomoyo` | Only one can hold the exclusive slot |
-
-### CONFIG_LSM — the critical string
-
-`CONFIG_SECURITY_SELINUX=y` compiles SELinux into the kernel but does **not** initialise it.
-`CONFIG_LSM` controls which LSMs are initialised at boot and in what order:
-
-```
-CONFIG_LSM="lockdown,yama,apparmor,selinux"
-```
-
-Without an LSM in this string it is compiled in but completely dormant.
-
-### LSM_FLAG_EXCLUSIVE — why only one MAC runs
-
-Both AppArmor and SELinux carry `LSM_FLAG_EXCLUSIVE` in their kernel registration. The kernel's
-`ordered_lsm_init()` enforces a single exclusive slot:
-
-1. Processes `CONFIG_LSM` left to right
-2. First exclusive LSM encountered claims the slot → initialised
-3. Second exclusive LSM → slot already taken → **silently skipped**
-
-With `CONFIG_LSM="lockdown,yama,apparmor,selinux"`:
-
-```
-lockdown  → not exclusive → initialised
-yama      → not exclusive → initialised
-apparmor  → EXCLUSIVE → claims slot → initialised  ✓
-selinux   → EXCLUSIVE → slot taken  → skipped       ✗
-```
-
-This is **by design** — both are compiled in, AppArmor is the default because it is listed first.
-SELinux is dormant but ready: switch it on at runtime via the `lsm=` cmdline parameter, which
-replaces `CONFIG_LSM` entirely for that boot.
-
-### Actual boot output (kernel dmesg)
-
-```
-[    0.000201] LSM: initializing lsm=capability,lockdown,yama,apparmor,ima
-[    0.000323] AppArmor: AppArmor initialized
-[    0.076758] AppArmor: AppArmor Filesystem Enabled
-[    0.168083] ima: No TPM chip found, activating TPM-bypass!
-[    0.168085] ima: Allocated hash algorithm: sha256
-[    0.168100] ima: No architecture policies found
-```
-
-Note: `ima` appears in the runtime list even though it is not in `CONFIG_LSM` — IMA is a
-minor LSM added to the init list automatically by the kernel regardless of that string.
-`selinux` does not appear because it lost the exclusive slot to AppArmor.
-
-### Verifying the active LSM stack at runtime
-
-```bash
-# Active LSMs (what actually initialised)
-cat /sys/kernel/security/lsm
-# Actual output on our target:
-# capability,lockdown,yama,apparmor,ima
-
-# LSM-specific sysfs directories (only present when active)
-ls /sys/kernel/security/
-# Output: apparmor  ima  lockdown
-
-# SELinux filesystem — only mounted if SELinux is the active MAC
-ls /sys/fs/selinux/
-# Output: ls: cannot access '/sys/fs/selinux': No such file or directory
-# (expected — AppArmor is the active MAC, not SELinux)
-```
-
-### Switching the MAC LSM at runtime (without rebuild)
-
-`lsm=` on the kernel cmdline replaces `CONFIG_LSM` for that boot. Non-exclusive LSMs
-(capability, yama, lockdown, ima) are still loaded via the unordered path.
-
-```bash
-# Activate SELinux as the MAC at next boot:
-fw_setenv EXTRA_KERNEL_ARGS 'lsm=selinux'
-
-# Revert to AppArmor (default):
-fw_setenv EXTRA_KERNEL_ARGS ''
-
-# Verify current cmdline:
-cat /proc/cmdline
-```
-
-**Prerequisite before switching to SELinux:** SELinux userspace must be present —
-`policycoreutils`, `libselinux`, and a base policy (`meta-selinux` layer). Without a
-policy loaded, SELinux will operate in enforcing mode with no rules and will likely
-block everything.
-
----
-
-## 2. AppArmor
-
-### What it does
-
-AppArmor is a path-based MAC system. It confines processes using *profiles* — each profile
-specifies what files, capabilities, and network operations a process is allowed. A process
-running under a profile that does not permit an operation gets denied; without a profile,
-the process runs *unconfined* (no restriction from AppArmor).
-
-### What we observed on target
-
-```bash
-aa-status
-# apparmor module is loaded.
-# 60 profiles are loaded.
-# 60 profiles are in complain mode.
-# 0 profiles are in enforce mode.
-# 0 processes have profiles defined.
-# 0 processes are in enforce mode.
-# 0 processes are in complain mode.
-# 0 processes are unconfined but have a profile defined.
-```
-
-All 60 profiles are upstream defaults for services like apache2, dovecot, cups, php-fpm —
-none of which run on this gateway. All IoT gateway processes are **unconfined**.
-
-In dmesg these load as:
-```
-[    2.525053] audit: type=1400 ... apparmor="STATUS" operation="profile_load" name="lsb_release"
-[    2.573291] audit: type=1400 ... apparmor="STATUS" operation="profile_load" name="ping"
-[    2.603419] audit: type=1400 ... apparmor="STATUS" operation="profile_load" name="nvidia_modprobe"
-[    2.643125] audit: type=1400 ... apparmor="STATUS" operation="profile_load" name="samba-bgqd"
-...
-```
-
-**Key insight:** AppArmor provides no protection until custom profiles exist for the
-binaries you care about. Loading 60 irrelevant profiles in `complain` mode is pure overhead.
-
-### Boot overhead
-
-```
-apparmor.service  ~2.5s
-```
-
-Cost of loading 60 upstream profiles. Purpose-built minimal profiles would be much lighter
-but require significant policy authoring effort.
-
-### Checking individual process confinement
-
-```bash
-# Check confinement of a running process
-cat /proc/$(pgrep NetworkManager)/attr/current
-# "unconfined" means no AppArmor profile applied
-
-# Via aa-status (lists all confined processes)
-aa-status
-```
-
-### AppArmor kernel config — fragment comment vs kconfig directive
-
-Our `security-prod.cfg` contains:
-```
-# CONFIG_SECURITY_APPARMOR=y
-# CONFIG_DEFAULT_SECURITY_APPARMOR=y
-```
-
-These are **comments**, not kconfig directives. The RPi base kernel config has AppArmor
-enabled, and our fragment comments do not disable it. To actually disable a config option
-via a `.cfg` fragment the syntax must be:
-
-```
-# CONFIG_SECURITY_APPARMOR is not set
-```
-
-AppArmor is enabled on this build (`CONFIG_SECURITY_APPARMOR=y` visible in `/proc/config.gz`).
-This is intentional — AppArmor is the current default MAC while SELinux userspace is pending.
-
-Confirmed on target:
-```bash
-zcat /proc/config.gz | grep CONFIG_SECURITY_APPARMOR
-# CONFIG_SECURITY_APPARMOR=y
-# CONFIG_SECURITY_APPARMOR_INTROSPECT_POLICY=y
-# CONFIG_SECURITY_APPARMOR_HASH=y
-# CONFIG_SECURITY_APPARMOR_HASH_DEFAULT=y
-# CONFIG_SECURITY_APPARMOR_EXPORT_BINARY=y
-# CONFIG_SECURITY_APPARMOR_PARANOID_LOAD=y
-```
-
----
-
-## 3. SELinux
-
-### What it does
-
-SELinux is a label-based MAC system. Every object (file, socket, process, device) gets a
-*security context* (`user:role:type:level`). Policy rules define what types can interact.
-More expressive than path-based AppArmor, but also significantly more complex to write
-policy for.
-
-**Two enforcement modes:**
-- `permissive` — logs all denials, enforces nothing. Safe for policy development.
-- `enforcing` — denials are blocked. Production mode.
-
-**Per-domain permissive** (`CONFIG_SECURITY_SELINUX_DEVELOP=y`): individual domains can
-be set permissive while the rest enforce. Useful for incremental policy bring-up.
-
-### Current state after rebuild (2026-04-10)
-
-```bash
-zcat /proc/config.gz | grep -E 'CONFIG_LSM=|CONFIG_SECURITY_SELINUX'
-# CONFIG_SECURITY_SELINUX=y
-# # CONFIG_SECURITY_SELINUX_BOOTPARAM is not set
-# CONFIG_SECURITY_SELINUX_DEVELOP=y
-# CONFIG_SECURITY_SELINUX_AVC_STATS=y
-# CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS=9
-# CONFIG_SECURITY_SELINUX_SID2STR_CACHE_SIZE=256
-# CONFIG_LSM="lockdown,yama,apparmor,selinux"
-```
-
-SELinux is compiled in — confirmed by kernel symbol count:
-```bash
-grep -c selinux /proc/kallsyms
-# 273
-```
-
-But it is **not initialised** because AppArmor claimed the exclusive MAC slot first
-(see section 1). No SELinux messages in dmesg. `/sys/fs/selinux` does not exist.
-
-Also note: `systemd` on this image is built without SELinux or AppArmor userspace bindings:
-```
-systemd[1]: systemd 255.21 running in system mode (-PAM +AUDIT -SELINUX -APPARMOR +IMA ...)
-```
-The `-SELINUX -APPARMOR` flags are **systemd compile-time flags**, not kernel state.
-They indicate systemd was not linked against `libselinux` or `libapparmor`. The kernel
-AppArmor LSM is still active and functional — systemd just doesn't call the library hooks.
-
-### SELinux kernel config (`selinux.cfg`)
-
-```
-CONFIG_SECURITY_SELINUX=y
-# CONFIG_SECURITY_SELINUX_BOOTPARAM is not set   ← no selinux=0 cmdline escape
-CONFIG_SECURITY_SELINUX_DEVELOP=y                 ← per-domain permissive for policy dev
-CONFIG_SECURITY_SELINUX_AVC_STATS=y               ← AVC cache hit/miss stats
-CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS=9        ← SID table size (512 buckets)
-CONFIG_SECURITY_SELINUX_SID2STR_CACHE_SIZE=256    ← label string cache entries
-CONFIG_LSM="lockdown,yama,apparmor,selinux"       ← adds selinux to the candidate list
-```
-
-### Why `BOOTPARAM` is disabled
-
-`CONFIG_SECURITY_SELINUX_BOOTPARAM=y` would allow `selinux=0` on the kernel cmdline to
-disable SELinux at boot. Kept off so the compiled-in state is deterministic and cannot be
-silently bypassed. Since SELinux is not currently the active MAC anyway, this is moot
-for now but is the right posture for when it becomes the default.
-
-### Path to activating SELinux
-
-Prerequisites before using `lsm=selinux`:
-1. `meta-selinux` layer integrated (provides `policycoreutils`, `libselinux`, `checkpolicy`)
-2. Base SELinux policy compiled and installed to `/etc/selinux/`
-3. Filesystem labelling run at first boot or during image build (`fixfiles` / `setfiles`)
-4. Start with `enforcing=0` (permissive) to collect AVC denials before enforcing
-
-```bash
-# Once prerequisites are met, activate SELinux at next boot:
-fw_setenv EXTRA_KERNEL_ARGS 'lsm=selinux enforcing=0'
-
-# Check AVC denials:
-ausearch -m AVC -ts recent
-
-# getenforce/setenforce (requires policycoreutils):
-getenforce
-setenforce 0   # permissive
-setenforce 1   # enforcing
-```
-
----
-
-## 4. IMA — Integrity Measurement Architecture
+## 1. IMA — Integrity Measurement Architecture
 
 ### What it is
 
@@ -346,7 +43,7 @@ log of every file opened for execution or reading by a privileged process. This 
 In measure-only mode:
 - Every binary executed is hashed and logged
 - Nothing is blocked — a tampered binary still runs
-- PCR10 accumulates the measurement log hash (blocked on RPi5 by SPI ordering — see section 5)
+- PCR10 accumulates the measurement log hash (blocked on RPi5 by SPI ordering — see section 2)
 - `ima_inspect` returns "No such attribute" — correct, no xattrs are set in measure-only mode
 
 In appraise mode:
@@ -374,7 +71,12 @@ IMA behaviour is controlled by a *policy* specifying which files to measure/appr
 **`ima_policy=exec` is not valid** — caused `ima: policy "exec" not found` at boot.
 Valid names are `tcb`, `appraise_tcb`, `secure_boot` (kernel version-dependent).
 
-**Active on our target** (`ima_policy=tcb` set via U-Boot env):
+**Selecting the policy.** The kernel command line is fixed at build time and
+signed into the slot FIT, so `ima_policy=tcb` goes in
+`IOTGW_VERITY_KERNEL_ARGS` (build time); it cannot be set from the U-Boot
+environment.
+
+With `ima_policy=tcb` active:
 
 ```bash
 cat /sys/kernel/security/ima/policy
@@ -394,16 +96,15 @@ cat /sys/kernel/security/ima/policy
 The `dont_measure` rules exclude pseudo-filesystems from the log. Everything on real
 storage (rootfs, /data, kernel modules) is measured.
 
-### Confirmed working on target
+### Checking that IMA is logging
 
 ```bash
 wc -l /sys/kernel/security/ima/ascii_runtime_measurements
-# 895 /sys/kernel/security/ima/ascii_runtime_measurements
 ```
 
-895 files measured since boot. IMA is actively logging all executed files.
+A non-zero count means IMA is logging measured files.
 
-### IMA kernel config (`ima.cfg`)
+### IMA kernel config (`ima.cfg`, `igw_ima`, gated by `IOTGW_ENABLE_IMA`)
 
 ```
 CONFIG_IMA=y
@@ -464,7 +165,7 @@ tpm2_pcrread sha256:10
 
 ---
 
-## 5. TPM Interaction with IMA
+## 2. TPM Interaction with IMA
 
 ### How it is supposed to work
 
@@ -489,7 +190,7 @@ Confirmed in dmesg:
 [    0.168083] ima: No TPM chip found, activating TPM-bypass!
 ```
 
-Result: IMA log is populated (895 entries), but PCR10 is all zeros. Remote attestation
+Result: the IMA log is populated, but PCR10 is all zeros. Remote attestation
 based on PCR10 is not feasible in the current boot topology.
 
 ### All PCRs on target
@@ -511,8 +212,9 @@ by firmware. PCR10 is never extended due to the SPI ordering constraint.
 
 None implemented. Options for future work:
 
-1. **Initramfs extend** — early-boot script reads IMA log and manually extends a PCR after
-   TPM becomes reachable. Requires custom initramfs with tpm2-tools inside.
+1. **Early-userspace extend** — an early-boot step reads the IMA log and extends a PCR
+   once the TPM is reachable. There is no initramfs; this would run from pre-init or an
+   early unit, with tpm2-tools available there.
 2. **U-Boot TPM extend** — U-Boot extends PCRs for FIT blob hashes. RP1 SPI problem exists
    at U-Boot stage too (parked).
 3. **OS-managed PCR** — Seal keys to a PCR the OS controls (e.g. PCR7), rather than relying
@@ -522,68 +224,9 @@ None implemented. Options for future work:
 
 ---
 
-## 6. Target Command Reference
+## 3. Target Command Reference
 
-All commands run as root on `iotgw` via SSH after the second OTA on `feat/selinux-ima-apparmor`.
-
-### LSM stack
-
-```bash
-# What LSMs are actually initialised
-cat /sys/kernel/security/lsm
-# capability,lockdown,yama,apparmor,ima
-
-# LSM sysfs directories (one per active LSM)
-ls /sys/kernel/security/
-# apparmor  ima  lockdown
-
-# Is SELinux filesystem mounted?
-ls /sys/fs/selinux/
-# ls: cannot access '/sys/fs/selinux': No such file or directory
-# (expected — AppArmor holds the exclusive MAC slot)
-
-# Verify what CONFIG_LSM was compiled with
-zcat /proc/config.gz | grep CONFIG_LSM=
-# CONFIG_LSM="lockdown,yama,apparmor,selinux"
-
-# Count SELinux symbols (proves code is compiled in even though not initialised)
-grep -c selinux /proc/kallsyms
-# 273
-```
-
-### SELinux and AppArmor config on target
-
-```bash
-zcat /proc/config.gz | grep -E 'CONFIG_LSM=|CONFIG_SECURITY_SELINUX|CONFIG_SECURITY_APPARMOR|SELINUX_DISABLE|DEFAULT_SECURITY|NETLABEL|NETWORK_SECMARK'
-# # CONFIG_NETLABEL is not set           ← NETLABEL not set (SELinux network labelling)
-# CONFIG_NETWORK_SECMARK=y
-# # CONFIG_DEFAULT_SECURITY_SELINUX is not set
-# CONFIG_DEFAULT_SECURITY_APPARMOR=y
-# CONFIG_LSM="lockdown,yama,apparmor,selinux"
-# CONFIG_SECURITY_SELINUX=y
-# # CONFIG_SECURITY_SELINUX_BOOTPARAM is not set
-# CONFIG_SECURITY_SELINUX_DEVELOP=y
-# CONFIG_SECURITY_SELINUX_AVC_STATS=y
-# CONFIG_SECURITY_SELINUX_SIDTAB_HASH_BITS=9
-# CONFIG_SECURITY_SELINUX_SID2STR_CACHE_SIZE=256
-# CONFIG_SECURITY_APPARMOR=y
-```
-
-### AppArmor
-
-```bash
-# Status summary
-aa-status
-# apparmor module is loaded.
-# 60 profiles are loaded.
-# 60 profiles are in complain mode.
-# 0 profiles are in enforce mode.
-# 0 processes have profiles defined.
-
-# Check confinement status of a specific process
-cat /proc/$(pgrep NetworkManager)/attr/current
-# "unconfined"
-```
+All commands run as root on the target.
 
 ### IMA measurement log
 
@@ -594,7 +237,6 @@ ls /sys/kernel/security/ima/
 
 # How many files measured since boot
 wc -l /sys/kernel/security/ima/ascii_runtime_measurements
-# 895
 
 # Active policy (tcb rules — dont_measure pseudo-fs, measure everything else)
 cat /sys/kernel/security/ima/policy
@@ -643,22 +285,8 @@ tpm-ops pcr-read
 ### Kernel cmdline
 
 ```bash
-# Current cmdline (shows ima_policy=tcb if set)
+# Current cmdline (shows ima_policy=tcb if the build set it)
 cat /proc/cmdline
-# ... ima_policy=tcb
-
-# U-Boot env var driving extra kernel args
-fw_printenv EXTRA_KERNEL_ARGS
-# EXTRA_KERNEL_ARGS=ima_policy=tcb
-
-# Set IMA policy for next boot
-fw_setenv EXTRA_KERNEL_ARGS 'ima_policy=tcb'
-
-# Add SELinux activation alongside IMA policy
-fw_setenv EXTRA_KERNEL_ARGS 'ima_policy=tcb lsm=selinux enforcing=0'
-
-# Clear extra args
-fw_setenv EXTRA_KERNEL_ARGS ''
 ```
 
 ### Kernel config spot-checks
@@ -667,72 +295,17 @@ fw_setenv EXTRA_KERNEL_ARGS ''
 # IMA compiled in?
 zcat /proc/config.gz | grep 'CONFIG_IMA[^_]'
 # CONFIG_IMA=y
-
-# LSM init string
-zcat /proc/config.gz | grep CONFIG_LSM=
-# CONFIG_LSM="lockdown,yama,apparmor,selinux"
-
-# SELinux and its deps
-zcat /proc/config.gz | grep -E 'SELINUX|NETLABEL|SECURITY_NETWORK'
-```
-
-### Boot time (security units)
-
-```bash
-systemd-analyze blame | grep -E 'apparmor|audit|ima|selinux'
-# apparmor.service   ~2.5s  (loading 60 upstream profiles)
 ```
 
 ---
 
-## 7. Known Issues / Open Items
-
-### SELinux skipped by exclusive LSM slot (by design, not a bug)
-
-SELinux is compiled in and present in `CONFIG_LSM`. It does not initialise because AppArmor
-claims the exclusive MAC slot first (AppArmor is listed before selinux in the string).
-
-**To activate SELinux:** `fw_setenv EXTRA_KERNEL_ARGS 'lsm=selinux enforcing=0'`
-
-**Prerequisite:** `meta-selinux` layer + base policy must be integrated first.
+## 4. Known Issues / Open Items
 
 ### IMA TPM PCR10 always zero (hardware constraint)
 
 SPI-attached SLB9672 comes up after IMA kernel subsystem initialises. TPM-bypass active.
 PCR10 remains zero. IMA log is populated and readable; TPM sealing is not.
 No fix in the current boot topology.
-
-### `CONFIG_NETLABEL` not auto-selected
-
-`CONFIG_SECURITY_SELINUX=y` + `CONFIG_NETWORK_SECMARK=y` should trigger
-`select NETLABEL` via Kconfig, but the built config shows `# CONFIG_NETLABEL is not set`.
-This is a fragment/Kconfig interaction issue. SELinux network labelling (`netlabel`) is
-not available; standard socket-based SELinux policy still works without it.
-
-### Fragment comment does not disable a config option
-
-In `security-prod.cfg`:
-```
-# CONFIG_SECURITY_APPARMOR=y      ← just a comment, does NOT disable AppArmor
-```
-
-To disable a config option via a `.cfg` fragment:
-```
-# CONFIG_SECURITY_APPARMOR is not set
-```
-
-AppArmor is intentionally left enabled (it is the current default MAC). This is noted
-here so the syntax distinction is clear for future fragment authors.
-
-### `systemd-machine-id-commit.service` failing (known issue)
-
-`iotgw-machine-id.service` writes a real file to overlayfs. The commit service fails because
-machine-id is not on a transient filesystem. Fix: mask the unit in the image.
-
-### AppArmor 60 upstream profiles, ~2.5s boot overhead
-
-All 60 profiles are irrelevant to the gateway workload. For production either write
-purpose-built profiles or switch to SELinux.
 
 ### `evmctl ima_measurement` fails (IBM TSS missing)
 
@@ -745,10 +318,5 @@ Use `tpm2_pcrread sha256:10` as the equivalent PCR read command.
 
 - [IMA kernel docs](https://www.kernel.org/doc/html/latest/security/IMA-templates.html)
 - [IMA Wiki](https://sourceforge.net/p/linux-ima/wiki/Home/)
-- [KSPP recommended settings](https://kspp.github.io/Recommended_Settings.html)
-- [SELinux Notebook](https://github.com/SELinuxProject/selinux-notebook)
-- Kernel source: `security/integrity/ima/`, `security/selinux/`, `security/apparmor/`
-- Project fragments: `meta-iot-gateway/recipes-kernel/linux/files/fragments/`
-  - `ima.cfg` — IMA measurement config
-  - `selinux.cfg` — SELinux compiled-in + `CONFIG_LSM` string
-  - `security-prod.cfg` — base KSPP hardening
+- Kernel source: `security/integrity/ima/`
+- Project fragment: `meta-iot-gateway/recipes-kernel/linux/files/fragments/ima.cfg`

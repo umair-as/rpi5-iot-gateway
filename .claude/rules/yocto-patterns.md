@@ -5,8 +5,7 @@
 BitBake's shell parser does **not** support POSIX arithmetic expansion
 `$((…))` in recipe shell snippets — parsing fails with
 `NotImplementedError: $((`. Use `case` patterns or `expr` to
-count/increment. (Caught while generalizing the FIT trust-root counting
-in `linux-iotgw-mainline-fit_6.18.bb`.)
+count/increment.
 
 ## Deploy-Artifact Mutations Live Only in DEPLOYDIR
 
@@ -49,6 +48,7 @@ find build/tmp/work -path "*/<recipe>/*/temp/log.do_<task>" | head -1
 | Taskhash / sstate mismatch | Usually a patch-header edit (see below); `-c cleansstate` only as a last resort |
 | Upstream layers appear at repo root | A bare `kas shell` without `. scripts/env.sh` — see AGENTS.md |
 | `abort()ing pseudo client`, `died with SIGABRT` | Stale pseudo DB — see below |
+| `disk space monitor action is "STOPTASKS"` (or `"HALT"`), no task failed | Build host low on space: the preceding `WARNING: The free space of <dir>` names the directory. Floors are in `rpi5.yml` `BB_DISKMON_DIRS`. Free space, then rerun; nothing in the recipes is wrong |
 
 ### Pseudo abort after an unclean shutdown
 
@@ -70,6 +70,51 @@ poisoned pseudo DB while leaving the sstate cache intact, so the rebuild
 usually restores from sstate rather than recompiling. Reach for
 `-c cleansstate` only if the clean rebuild fails too — on a kernel it
 costs a full compile.
+
+## Rootfs provenance: who installs a file, and why
+
+Answer both questions before removing, forbidding (`IOTGW_PROD_FORBIDDEN_PATHS`)
+or accepting a file in an image; every unexplained file is size and attack
+surface. Run the bitbake tools through kas (`. scripts/env.sh && kas shell
+kas/local.yml -c "…"`); pkgdata exists only after a build has packaged the
+recipe.
+
+**Who installs it** (file → package → recipe → layer):
+
+```bash
+oe-pkgdata-util find-path /usr/bin/<file>        # file -> package
+oe-pkgdata-util lookup-recipe <package>          # package -> recipe
+bitbake-layers show-recipes <recipe>             # recipe -> layer
+bitbake-layers show-appends | grep <recipe>      # and who appends to it
+```
+
+`find-path` misses files placed by `update-alternatives`: search the suffixed
+name (`pidof.procps`, `pidof.sysvinit`). Still nothing → postinst or a
+runtime writer; grep the layers.
+
+**Why it is installed**, cheapest first:
+
+1. `bitbake-getvar -r <image> IMAGE_INSTALL` — listed directly?
+2. Buildhistory (enabled in `rpi5.yml`, committed per build) records the
+   resolved runtime graph per image under
+   `build/buildhistory/images/raspberrypi5/glibc/<image>/`:
+   ```bash
+   grep -- '-> "<package>"' depends.dot          # who RDEPENDS on it
+   grep <package> installed-package-sizes.txt    # what it costs
+   ```
+   Dashed edges are automatic shared-library dependencies; solid edges are
+   explicit `RDEPENDS`/`RRECOMMENDS`. Per-package metadata is in
+   `build/buildhistory/packages/<arch>/<recipe>/<package>/latest`.
+   Packagegroups: `bitbake-getvar -r <pg> RDEPENDS:<pg>`.
+3. Distro/machine hooks: `MACHINE_EXTRA_RDEPENDS`/`_RRECOMMENDS`,
+   `DISTRO_EXTRA_RDEPENDS`/`_RRECOMMENDS`, and `IMAGE_FEATURES` (mapped to
+   packages in `core-image.bbclass`).
+4. Build-time chain: `bitbake -g <image>` then
+   `oe-depends-dot -k <recipe> -w task-depends.dot`. A build dependency
+   reaches the image only through the shared-library packages it produces.
+
+Between two builds, `buildhistory-diff` lists what entered or left each image;
+read it before a release, not only the size total.
 
 ## Override Syntax (wrynose 6.0)
 
@@ -95,7 +140,7 @@ Always use variables, never hardcode:
 | `${libdir}` | /usr/lib or /usr/lib64 |
 | `${sysconfdir}` | /etc |
 | `${datadir}` | /usr/share |
-| `${systemd_system_unitdir}` | /lib/systemd/system |
+| `${systemd_system_unitdir}` | /usr/lib/systemd/system (usrmerge) |
 
 ## License Checksums
 
@@ -128,10 +173,10 @@ do_install() {
     install -m 0755 ${B}/myapp ${D}${bindir}/myapp
     
     install -d ${D}${sysconfdir}
-    install -m 0644 ${WORKDIR}/myapp.conf ${D}${sysconfdir}/
+    install -m 0644 ${UNPACKDIR}/myapp.conf ${D}${sysconfdir}/
     
     install -d ${D}${systemd_system_unitdir}
-    install -m 0644 ${WORKDIR}/myapp.service ${D}${systemd_system_unitdir}/
+    install -m 0644 ${UNPACKDIR}/myapp.service ${D}${systemd_system_unitdir}/
 }
 ```
 
@@ -160,7 +205,7 @@ PACKAGECONFIG:append:pn-myapp = " debug"
 *different* recipe in this layer. Rootfs assembly doesn't guarantee recipe
 B's `groupadd` runs before recipe A's `useradd --groups <B-group>`. When
 the ordering loses the race, `useradd` fails *atomically* — recipe A's
-primary user AND group both vanish from the image (see PR #84).
+primary user AND group both vanish from the image.
 
 Safe `--groups` uses: base-passwd groups that land in `/etc/group` very
 early — `dialout`, `tty`, `audio`, `video`, `kvm`, `render`, `disk`,
