@@ -5,7 +5,7 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/base-files:"
 # https://nvd.nist.gov/vuln/detail/CVE-2018-6557
 CVE_STATUS[CVE-2018-6557] = "cpe-incorrect: Ubuntu base-files packaging issue, not OE-Core base-files"
 
-# fstab matches the WKS layout (A/B slots + LABEL=data)
+# fstab matches the WKS layout (A/B slots); /data is mounted by iotgw-preinit, not fstab
 # Set custom hostname
 # Note: issue/motd are shipped by iotgw-banner.
 SRC_URI += "file://fstab file://hostname file://hosts file://profile.d/10-iotgw-path.sh file://skel/.bashrc"
@@ -13,6 +13,9 @@ SRC_URI += "file://fstab file://hostname file://hosts file://profile.d/10-iotgw-
 # Mount point for the persistent data partition. Must exist in the read-only
 # rootfs — systemd cannot mkdir it at mount time.
 dirs755 += "/data"
+
+# fstab asks for fsck on the vfat partitions.
+RDEPENDS:${PN}:append = " dosfstools"
 
 # NOTE: do NOT re-install fstab here. The base recipe's do_install already
 # installs this recipe's fstab (S=UNPACKDIR + FILESEXTRAPATHS:prepend makes it win),

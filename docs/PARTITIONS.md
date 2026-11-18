@@ -20,7 +20,7 @@ This project defaults to a single production layout:
 - `WKS_FILE = "iot-gw-rauc-128g.wks.in"`
 
 The `/data` partition starts at a base size and is expanded to fill remaining
-space on first boot by `rauc-grow-data-partition`.
+space on first boot by the pre-init (`iotgw-preinit`).
 
 ```
  mmcblk0 (128 GiB SD card — default production layout)
@@ -37,15 +37,15 @@ space on first boot by `rauc-grow-data-partition`.
                                       OTA swap ^---------------^
 ```
 
-| # | Device | Label | Size | Type | Mount | Purpose |
+| # | Device | Label / GPT name | Size | Type | Mount | Purpose |
 |---|--------|-------|------|------|-------|---------|
-| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | FIT image, DTBs, config.txt (shared) |
+| 1 | `/dev/mmcblk0p1` | `boot` | 256M | vfat (FAT32) | `/boot` | Per-slot signed FITs (`fitImage-a` / `fitImage-b`), U-Boot, firmware, config.txt (shared) |
 | 2 | `/dev/mmcblk0p2` | `ubootenv` | 16M | vfat (FAT32) | `/uboot-env` | U-Boot env store (`fw_env.config` points here) |
-| 3 | `/dev/mmcblk0p3` | `rootA` | 16G | ext4 | `/` | Root filesystem Slot A |
-| 4 | `/dev/mmcblk0p4` | `rootB` | 16G | ext4 | - | Root filesystem Slot B |
+| 3 | `/dev/mmcblk0p3` | `rootA` (GPT name; no fs label) | 16G | ext4 + dm-verity hash tree | `/` via `/dev/dm-0` | Root filesystem Slot A |
+| 4 | `/dev/mmcblk0p4` | `rootB` (GPT name; no fs label) | 16G | ext4 + dm-verity hash tree | - | Root filesystem Slot B |
 | 5 | `/dev/mmcblk0p5` | `data` | 84G | ext4 | `/data` | Persistent user data |
 
-**After First Boot:** `/data` expands to fill remaining free space via `rauc-grow-data-partition`.
+**After First Boot:** `/data` expands to fill remaining free space (pre-init, see below).
 
 ### Size Variants
 
@@ -66,13 +66,12 @@ space on first boot by `rauc-grow-data-partition`.
 **Format:** FAT32 (vfat)
 **Size:** 256MB
 **Mount:** `/boot`
-**Read/Write:** Read-write (noatime,nodiratime)
+**Read/Write:** Read-write (`nodev,nosuid,noexec,noatime,nodiratime`)
 
 **Contents:**
 - U-Boot bootloader (`u-boot.bin`)
-- FIT image (`fitImage` or per-slot `fitImage-a`/`fitImage-b`)
-- Device tree blobs (`bcm2712-rpi-5-b.dtb`)
-- Device tree overlays (`overlays/`)
+- Per-slot signed FITs `fitImage-a` / `fitImage-b` (kernel + DTB carrying the slot's dm-verity table)
+- Device tree blob for the firmware (`bcm2712-rpi-5-b.dtb`)
 - RPi firmware config (`config.txt`, `cmdline.txt`)
 
 **RAUC Updates:** This partition is updated by the RAUC bundle post-install hook (`bundle-hooks-fit.sh`) from the `bootfiles-fit.tar.gz` archive packed into the bundle.
@@ -100,12 +99,17 @@ space on first boot by `rauc-grow-data-partition`.
 
 **Format:** ext4
 **Mount:** `/` (active slot only)
-**Read/Write:** Read-only (RAUC requirement)
+**Read/Write:** Read-only, mounted through dm-verity (`/dev/dm-0`)
 
 **Contents:**
 - Full root filesystem
 - `/usr`, `/bin`, `/lib`, `/etc`, etc.
 - Applications and system services
+
+Each slot holds the same ext4 image with its dm-verity hash tree appended. The
+root hash is on the kernel command line inside the slot's signed FIT, so a
+modified slot fails to assemble and the boot counter falls back to the other
+slot.
 
 **RAUC Behavior:**
 - Active slot mounted at `/`
@@ -113,7 +117,7 @@ space on first boot by `rauc-grow-data-partition`.
 - OTA updates write to inactive slot
 - Reboot switches slots via U-Boot
 
-**⚠️ Read-only:** Root filesystem is mounted read-only for integrity. Use `/data` for persistent writes.
+**⚠️ Read-only:** Use `/data` for persistent writes.
 
 ---
 
@@ -127,9 +131,16 @@ space on first boot by `rauc-grow-data-partition`.
 **Purpose:**
 - Persistent application data and user data
 - Persistent runtime state re-homed off the read-only rootfs (journald and audit
-  logs, SSH host keys, TPM2 PKCS#11 token DB, provisioning stamps, and more)
-- Writable OverlayFS uppers for `/etc`, `/home`, `/root` (under `overlays/`)
-- Container storage
+  logs, SSH host keys, TPM2 PKCS#11 token DB, and more)
+- `/home` (`/data/home`, bound over `/home` before systemd starts)
+- Rootless container storage (`/data/home/iotgw-ctr/.local/share/containers`, through the `/home` bind)
+
+`/data` is mounted by `iotgw-preinit` before systemd starts, located as the GPT
+partition named `data` on the disk that holds the verity root, after a
+time-limited `e2fsck -p`. If it cannot be mounted the device boots in a
+degraded recovery mode instead of stopping. Nothing on `/data` is an overlay
+layer: `/etc` and `/root` come from the slot with a tmpfs upper layer and are
+reset at every boot.
 
 **Note:** `/var` is **not** overlay-backed. Journald and audit logs persist on
 `/data` (`/data/log/{journal,audit}`) via dedicated bind mounts, not an overlay.
@@ -139,7 +150,7 @@ what survives A/B updates — is documented in
 
 **Survives OTA Updates:** This partition is not touched by RAUC updates.
 
-**Auto-resize:** On first boot, `rauc-grow-data-partition` expands this partition to fill remaining space.
+**Auto-resize:** On first boot, the pre-init expands this partition to fill remaining space.
 
 ---
 
@@ -147,12 +158,14 @@ what survives A/B updates — is documented in
 
 ### At Build Time
 
-Set `WKS_FILE` in your KAS overlay (`kas/local.yml`):
+`iotgw-rauc-image.bbclass` assigns `WKS_FILE` with a strong `=` that is parsed
+after `local.conf`, so a plain `WKS_FILE =` in `kas/local.yml` has no effect.
+Use a per-image override in your KAS overlay (`kas/local.yml`):
 
 ```yaml
 local_conf_header:
   wks_file: |
-    WKS_FILE = "iot-gw-rauc-32g.wks.in"
+    WKS_FILE:pn-iot-gw-image-dev = "iot-gw-rauc-32g.wks.in"
 ```
 
 See the **Size Variants** table above for all available options.
@@ -161,18 +174,24 @@ If `WKS_FILE` is not set, the 128 GiB layout is used automatically.
 
 ## Data Partition Auto-resize
 
-On first boot, the `rauc-grow-data-partition` service automatically expands the `/data` partition to use all available unallocated space.
+The pre-init (`/usr/sbin/iotgw-preinit`, the kernel's `init=`) expands `/data` to
+use all unallocated space at the end of the card. It does this before it mounts
+`/data`: a partition cannot be resized while it is mounted, and the pre-init is
+the only point in the boot where nothing has mounted it yet.
 
-**Systemd Unit:** `rauc-grow-data-partition.service`
+**Behavior** (every boot; decided from the partition table, no stamp file):
+1. Find the partition named `data` on the disk that carries the verity root.
+2. If more than 1 MiB lies between its end and the backup GPT: move the backup
+   GPT to the end of the card (`sgdisk -e`) and extend the partition to 100%
+   (`parted resizepart`).
+3. `e2fsck -p`, mount.
+4. If the filesystem is smaller than its partition: grow it online
+   (`resize2fs` on the mounted ext4).
 
-**Script:** `/usr/sbin/grow-data-partition.sh`
-
-**Behavior:**
-1. Detect `/data` partition (prefer `/dev/disk/by-rauc-slot/data`, fallback to by-label/lsblk)
-2. Expand partition to fill disk
-3. Resize ext4 filesystem
-4. Write stamp file `/boot/.rauc-grow-done`
-5. On subsequent boots, service is skipped via `ConditionPathExists=!/boot/.rauc-grow-done`
+A boot with nothing to grow does nothing; one interrupted half way finishes on
+the next boot. A growth failure is logged in `/run/iotgw/preinit.log` and the
+boot continues on the smaller `/data`; it never marks the boot degraded.
+Host tests: `scripts/preinit/tests/test_data_grow.py` (`make test-boot-scripts`).
 
 ---
 
@@ -189,21 +208,28 @@ cp meta-iot-gateway/files/wic/iot-gw-rauc-16g.wks.in \
 2. Edit partition sizes:
 ```
 # Partition 3: rootA
-part / --source rootfs --rootfs-dir=${IMAGE_ROOTFS} --ondisk mmcblk0 --fstype=ext4 --label rootA --align 4096 --fixed-size 4G --use-uuid
+part / ${IOTGW_WKS_ROOT_A_ARGS} --ondisk mmcblk0 --part-name rootA --align 4096 --fixed-size 4G --uuid <fixed-uuid-a>
 
 # Partition 4: rootB
-part --ondisk mmcblk0 --fstype=ext4 --label rootB --align 4096 --fixed-size 4G --use-uuid
+part   ${IOTGW_WKS_ROOT_B_ARGS} --ondisk mmcblk0 --part-name rootB --align 4096 --fixed-size 4G --uuid <fixed-uuid-b>
 
 # Partition 5: data
-part --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 4G --use-uuid
+part /data --ondisk mmcblk0 --fstype=ext4 --label data --align 4096 --size 4G --fsoptions "defaults" --no-fstab-update
 ```
 
-3. Reference in KAS overlay:
+Root slots must not carry `--label`: the rawcopy plugin would relabel the
+copied ext4 image after its hash tree was computed and invalidate the root
+hash. RAUC selects slots by the GPT name from `--part-name`.
+
+3. Reference it in the KAS overlay with a per-image override (see
+   [At Build Time](#at-build-time)):
 ```yaml
-WKS_FILE = "iot-gw-rauc-custom.wks.in"
+WKS_FILE:pn-iot-gw-image-dev = "iot-gw-rauc-custom.wks.in"
 ```
 
-**⚠️ Important:** Root slots (A and B) must be the same size.
+**⚠️ Important:** Root slots (A and B) must be the same size and at least the
+size of the `.ext4.verity` image. Keep the fixed `--uuid` values (U-Boot reads
+the live PARTUUID).
 
 ---
 

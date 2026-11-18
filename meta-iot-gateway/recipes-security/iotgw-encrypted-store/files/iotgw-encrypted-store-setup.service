@@ -1,7 +1,7 @@
 [Unit]
 Description=IoT Gateway encrypted-store setup (LUKS2 + TPM token)
 After=data.mount
-Requires=data.mount
+ConditionPathIsMountPoint=/data
 Before=data-encstore.mount
 ConditionPathExists=/data
 ConditionPathExists=/dev/tpmrm0

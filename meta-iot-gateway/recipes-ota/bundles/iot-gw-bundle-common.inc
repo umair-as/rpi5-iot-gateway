@@ -3,15 +3,16 @@
 LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda2f7b4f302"
 
-inherit bundle iotgw-rauc-adaptive-guard
+inherit bundle iotgw-rauc-adaptive-guard iotgw-bundle-slot-gate
 
 # Bundle identity (matches device system.conf via rauc-conf)
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 
-# Control whether to update /boot (kernel/DTBs) via bundle hook. FIT is the only
-# boot flow, so the bootfiles archive/hook default to the FIT-aware variants
-# (there is no non-FIT bundle).
-IOTGW_RAUC_UPDATE_BOOTFILES ?= "0"
+# /boot (kernel/DTBs) is always updated by the bundle hook. FIT is the only
+# boot flow and the root slots are raw dm-verity slots whose root hash lives in
+# the per-slot FIT, so a bundle without the bootfiles archive and those FITs
+# cannot update a slot (the hook refuses it). There is no rootfs-only bundle.
+IOTGW_RAUC_UPDATE_BOOTFILES = "1"
 IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE ?= "rpi-bootfiles-archive-fit"
 IOTGW_RAUC_BOOTFILES_HOOK_FILE ?= "bundle-hooks-fit.sh"
 IOTGW_RAUC_BOOTFILES_SOURCE_FILE ?= "bootfiles-fit.tar.gz"
@@ -25,12 +26,23 @@ IOTGW_RAUC_ADAPTIVE ?= "0"
 
 # Use the selected image for the rootfs slot (set BUNDLE_IMAGE in variants)
 RAUC_SLOT_rootfs = "${BUNDLE_IMAGE}"
-RAUC_SLOT_rootfs[fstype] = "ext4"
-# Run pre/post hooks for update-scoped reconciliation and bootfile handling.
+# Runtime dm-verity: the slot image is the ext4+hash-tree file, written to a
+# `raw` slot on the device (see rauc-conf-iotgw).
+RAUC_SLOT_rootfs[fstype] = "ext4.verity"
+# RAUC derives the image type from the file extension and has no mapping for
+# .ext4.verity, so name it: a raw image copied block for block (img_to_raw).
+RAUC_SLOT_rootfs[imagetype] = "raw"
+# Run pre/post hooks: slot/mode checks, trial-slot record, and FIT/bootfile installation.
 RAUC_SLOT_rootfs[hooks] = "pre-install;post-install"
-# Optional RAUC adaptive updates (block-hash-index) to reduce rewritten data
-# when installing near-identical rootfs images.
-RAUC_SLOT_rootfs[adaptive] = "${@bb.utils.contains('IOTGW_RAUC_ADAPTIVE','1','block-hash-index','',d)}"
+# RAUC adaptive updates (block-hash-index) would reduce rewritten data when
+# installing near-identical rootfs images. Not applied: adaptive updates are not
+# validated against a raw dm-verity slot image, so IOTGW_RAUC_ADAPTIVE=1 warns
+# and is ignored.
+python () {
+    if d.getVar('IOTGW_RAUC_ADAPTIVE') == '1':
+        bb.warn("IOTGW_RAUC_ADAPTIVE=1 is ignored: adaptive updates have not been "
+                "validated against a raw dm-verity slot image.")
+}
 
 # Bundle format. Encrypted `crypt` is the DEFAULT posture; `verity` is reached
 # only by the explicit opt-out. No default is declared here on purpose — the
@@ -41,7 +53,11 @@ RAUC_BUNDLE_FORMAT = "${IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE}"
 # Include bootfiles archive and a hook to update /boot (conditional)
 RAUC_BUNDLE_EXTRA_DEPENDS += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' ${IOTGW_RAUC_BOOTFILES_ARCHIVE_RECIPE}','',d)}"
 RAUC_BUNDLE_EXTRA_FILES += "${@bb.utils.contains('IOTGW_RAUC_UPDATE_BOOTFILES','1',' ${IOTGW_RAUC_BOOTFILES_BUNDLE_FILE}','',d)}"
-RAUC_BUNDLE_EXTRA_FILES += " overlay-reconcile.py"
+# Runtime dm-verity: the image's two signed per-slot FITs travel with the bundle
+# as plain extra files (found in the deploy directory, named like the slot image
+# with .fitImage-a / .fitImage-b). The post-install hook installs the one that
+# matches the slot being written; a raw root slot refuses a bundle without it.
+RAUC_BUNDLE_EXTRA_FILES += "${RAUC_SLOT_rootfs}${IMAGE_MACHINE_SUFFIX}${IMAGE_NAME_SUFFIX}.fitImage-a ${RAUC_SLOT_rootfs}${IMAGE_MACHINE_SUFFIX}${IMAGE_NAME_SUFFIX}.fitImage-b"
 RAUC_BUNDLE_HOOKS[file] = "${IOTGW_RAUC_BOOTFILES_HOOK_FILE}"
 
 # meta-rauc bundle.bbclass uses a python do_configure() task and expects plain
@@ -69,7 +85,6 @@ python do_configure:prepend() {
 FILESEXTRAPATHS:prepend := "${THISDIR}/../rauc/files:"
 SRC_URI:append = " \
     file://${IOTGW_RAUC_BOOTFILES_HOOK_FILE};mode=0755 \
-    file://overlay-reconcile.py;mode=0755 \
 "
 
 # Key and cert paths must be provided via local.conf or kas/local.yml

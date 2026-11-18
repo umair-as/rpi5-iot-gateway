@@ -83,47 +83,23 @@ curl --cert /etc/ota/device.crt \
 
 ## ⚙️ U-Boot Environment Controls
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `iotgw_appliance` | `1` | Appliance fast-path in board init |
-| `iotgw_enable_netboot` | `0` | Enable netboot network path |
-| `iotgw_diag` | `0` | Print RAUC vars + MMC info at boot |
-| `iotgw_bootstage` | `1` | Print bootstage timing on serial |
+The boot environment holds only the RAUC slot-selection state (`BOOT_ORDER`,
+`BOOT_A_LEFT`, `BOOT_B_LEFT`, `bootcount`), which RAUC writes through
+`fw_setenv`. There are no runtime feature switches: network boot is not
+compiled in, and the board's factory MAC is read from OTP on every boot.
+Variable list and prod write policy:
+[U-Boot Hardening](UBOOT_HARDENING.md#env-based-rauc-slot-selection).
 
-On dev builds, toggle at the U-Boot prompt (type `igw` during the 2s
-autoboot window). On prod builds (`appliance_lockdown`), appliance
-variables are read-only — see [U-Boot Hardening](UBOOT_HARDENING.md).
-
-```bash
-# Enable field diagnostics
-fw_setenv iotgw_diag 1
-
-# Restore defaults
-fw_setenv iotgw_appliance 1
-fw_setenv iotgw_enable_netboot 0
-fw_setenv iotgw_diag 0
-fw_setenv iotgw_bootstage 1
-```
+On dev builds the U-Boot prompt is reachable by typing `igw` during the 2s
+autoboot window; prod builds have no prompt.
 
 ---
 
 ## 📐 Adaptive Updates (block-hash-index)
 
-When enabled (`IOTGW_RAUC_ADAPTIVE = "1"`), RAUC uses block-hash-index
-mode requiring rootfs slot sizes to be 4 KiB aligned. Build-time guards
-validate alignment automatically.
-
-### Verify slot alignment
-
-```bash
-for p in /dev/mmcblk0p3 /dev/mmcblk0p4; do
-  s=$(blockdev --getsize64 "$p")
-  echo "$p size=$s mod4096=$((s%4096))"
-done
-# Expected: mod4096=0 for both slots
-```
-
-> ⚠️ If deployed devices have non-aligned partitions, keep adaptive mode disabled until they are reflashed.
+Adaptive updates are not applied: they have not been validated against the
+raw dm-verity slot image, and `IOTGW_RAUC_ADAPTIVE = "1"` is ignored with a
+build warning.
 
 ---
 
@@ -142,17 +118,22 @@ fw_printenv BOOT_ORDER
 Check that `/uboot-env` is mounted rw and `fw_env.config` has a single
 entry matching U-Boot's env configuration.
 
-### Stale overlay masks
+### Slot not marked good after an update
 
-If `rauc-mark-good.service` appears masked after update:
+`/etc` comes from the slot image on every boot (tmpfs upper layer, nothing
+persisted on `/data`), so a stale mask cannot hide `rauc-mark-good.service`.
+If the unit was skipped, check whether the boot is degraded and the slot is
+still on trial since its install:
 
 ```bash
-ls -la /data/overlays/etc/upper/systemd/system/rauc-mark-good.service
-journalctl -b -t rauc | grep overlay-reconcile
+cat /run/iotgw/degraded 2>/dev/null
+cat /uboot-env/iotgw-trial-slot 2>/dev/null
+journalctl -b -u rauc-mark-good.service
 ```
 
-The overlay reconciler removes these via the `absent` policy in
-`managed-paths.conf`.
+A degraded boot of a slot on trial is deliberately not marked good, so its
+boot counter falls back to the previous slot
+([Persistent State Architecture](PERSISTENT_STATE.md#degraded-boot-no-usable-data)).
 
 ### OTA'd kernel not booting (kernel ↔ module mismatch)
 
@@ -161,13 +142,14 @@ Symptom after a bundle OTA: the slot boots, but `uname -r` shows the
 empty, network/Bluetooth never come up, and `/lib/modules/$(uname -r)/`
 is missing.
 
-Cause: U-Boot loaded the stale shared `/boot/fitImage` instead of the
-per-slot `fitImage-<a|b>` the post-install hook wrote. On **dev** builds
-the full saved U-Boot env is imported, so a device whose saved env
-predates the per-slot `iotgw_load_boot` keeps the old script (which always
-loads plain `fitImage`), and `bootcmd`'s `saveenv` re-persists it every
-boot. This stays invisible until an OTA ships a *different* kernel version
-to one slot. **Prod is immune** — `CONFIG_ENV_WRITEABLE_LIST` makes the
+Cause: a stale `iotgw_load_boot` in the saved U-Boot env. On **dev**
+builds the full saved env is imported, so a device whose saved env predates
+the current `iotgw_load_boot` keeps the old script, and `bootcmd`'s
+`saveenv` re-persists it every boot. That script may load a FIT other than
+the slot's own `fitImage-<a|b>`; under dm-verity that FIT's command line does
+not match the slot, so the slot either boots the wrong kernel or fails to
+assemble its root. This stays invisible until an OTA ships a *different*
+kernel version to one slot. **Prod is immune** — `CONFIG_ENV_WRITEABLE_LIST` makes the
 boot scripts read-only, so the compiled-in per-slot logic always wins.
 
 A bundle OTA repairs this automatically: the post-install hook reconciles
@@ -180,15 +162,15 @@ Diagnose (on target):
 
 ```bash
 uname -r                                    # running kernel
-sha256sum /boot/fitImage /boot/fitImage-b   # per-slot FIT vs stale shared one
-fw_printenv iotgw_load_boot                 # stale = plain fitImage, no per-slot ${_fit}
+sha256sum /boot/fitImage-a /boot/fitImage-b
+fw_printenv iotgw_load_boot                 # current = per-slot ${_fit}, "no fallback"
 scripts/ota/ota-fit-slot-check.sh           # asserts active-slot FIT == running kernel
 ```
 
 Manual remediation (dev builds): repoint the stale var to the per-slot loader, reboot:
 
 ```bash
-fw_setenv iotgw_load_boot 'if test "x${rauc_slot}" = "xA"; then setenv _fit fitImage-a; elif test "x${rauc_slot}" = "xB"; then setenv _fit fitImage-b; else setenv _fit fitImage; fi; if fatload mmc 0:1 ${iotgw_fit_addr_r} ${_fit}; then echo [IOTGW] FIT ${_fit} loaded; elif fatload mmc 0:1 ${iotgw_fit_addr_r} fitImage; then echo [IOTGW] FIT fallback fitImage loaded; else echo [IOTGW] FIT load failed; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset; fi'
+fw_setenv iotgw_load_boot 'if test "x${rauc_slot}" = "xA"; then setenv _fit fitImage-a; elif test "x${rauc_slot}" = "xB"; then setenv _fit fitImage-b; else setenv _fit fitImage-none; fi; if fatload mmc 0:1 ${iotgw_fit_addr_r} ${_fit}; then echo [IOTGW] FIT ${_fit} loaded; else echo [IOTGW] FIT ${_fit} load failed, no fallback; setenv BOOT_${rauc_slot}_LEFT 0; saveenv; reset; fi'
 reboot
 ```
 
@@ -214,8 +196,10 @@ grep -A3 '^\[encryption\]' /etc/rauc/system.conf; ls -l /etc/ota/device.key
 rauc info --no-verify <bundle>.raucb
 ```
 
-Re-provision with `scripts/ota/ota-certs-sync.sh` and reboot so the `/etc`
-overlay picks the new files up.
+Re-provision with `scripts/ota/ota-certs-sync.sh`: it uploads the material to
+`/data/ota/certs` and restarts `ota-certs-provision.service`, which copies it
+into `/etc/ota`. `/etc` is volatile (tmpfs upper), so the service repeats the
+copy on every boot.
 
 ### mTLS CA mismatch
 
@@ -234,5 +218,5 @@ Ensure `RAUC_OTA_CA_DIR` in `kas/local.yml` matches the OTA server's CA.
 
 - [OTA Updates](OTA_UPDATE.md) — architecture, feature-gating profiles
 - [U-Boot Hardening](UBOOT_HARDENING.md) — env lockdown, boot flow
-- [Overlay Reconciliation](OVERLAY_RECONCILIATION.md) — post-OTA config management
-- [Partition Layouts](PARTITIONS.md) — slot sizing and alignment
+- [Persistent State Architecture](PERSISTENT_STATE.md) — what persists across an OTA
+- [Partition Layouts](PARTITIONS.md) — slot sizing

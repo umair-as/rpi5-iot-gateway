@@ -28,11 +28,6 @@ alias jx='journalctl -xe'
 alias nm='nmcli'
 alias k='kubectl 2>/dev/null || true'
 
-# Persistent tmux socket for remote agent/operator collaboration.
-if [ -d /data ] && mkdir -p /data/tmux 2>/dev/null; then
-    alias tmux='tmux -S /data/tmux/gateway.sock'
-fi
-
 alias t='tmux'
 alias ta='tmux attach -t main || tmux new -s main'
 alias tn='tmux new -s main'
