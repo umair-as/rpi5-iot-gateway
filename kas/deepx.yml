@@ -2,14 +2,16 @@ header:
   version: 18
 
 # DEEPX DX-M1 PCIe AI accelerator (M.2, Geekworm-style carrier on the RPi5
-# FFC connector). Opt-in overlay — compose it explicitly:
-#   kas/local.yml:kas/deepx.yml
+# FFC connector). Part of the platform: the Makefile composes this overlay for
+# base, dev and their bundles (IMAGE_KAS), and kas/desktop.yml includes it.
+# Prod does not compose it until the module-signing key is protected
+# (docs/DEEPX_DXM1.md).
 #
 # Upstream layer provides the out-of-tree NPU kernel module (dx-driver), the
 # DXRT userspace runtime (dx-rt), a GStreamer stack (dx-stream) and demos.
-# This overlay only makes the layer available and parseable; the accelerator
-# packagegroup is gated separately on IOTGW_ENABLE_DEEPX_DXM1, which this file
-# sets. See docs/DEEPX_DXM1.md for the build gates and device policy.
+# It makes the layer available and sets IOTGW_ENABLE_DEEPX_DXM1, which puts the
+# driver and runtime into every image (iot-gw-image-base.inc) and the demos into
+# the desktop. See docs/DEEPX_DXM1.md for the build gates and device policy.
 repos:
   meta-deepx-m1:
     url: https://github.com/DEEPX-AI/meta-deepx-m1.git
@@ -19,7 +21,7 @@ repos:
     # four, and carries a newer driver SRCREV. Neither branch is
     # wrynose-compatible on its own — see the patches: block below.
     branch: walnascar
-    commit: 703831e7aacd7a6d18b0291a94e99aa59bf9113e
+    commit: 189b59246151669c81c21ea75501bd129fe1db9e
     layers:
       # Layer sits at the repo root (no sub-layer directory).
       .:
@@ -56,25 +58,19 @@ local_conf_header:
 
   deepx_enable: |
     # Enable the DX-M1 feature. Same shape as kas/tpm.yml, which composes
-    # meta-secure-core and sets IOTGW_ENABLE_TPM_SLB9672 in one overlay.
+    # meta-secure-core and sets IOTGW_ENABLE_TPM in one overlay.
     #
     # The gate is still the VARIABLE, not this file: IOTGW_ENABLE_DEEPX_DXM1
-    # defaults to "0" in iotgw-common.inc and is exported by the Makefile, so
-    # `IOTGW_ENABLE_DEEPX_DXM1=0 make ...` turns the feature off while the
-    # layer stays composed. This line is the convenient default for anyone who
-    # composed this overlay deliberately.
+    # defaults to "0" in iotgw-common.inc and is passed through by the
+    # Makefile, so `IOTGW_ENABLE_DEEPX_DXM1=0 make ...` turns the feature off
+    # while the layer stays composed. Weak assignment on purpose: the
+    # environment value is set before local.conf, and a hard `=` here would
+    # override it.
     #
-    # It pulls in fragments/deepx-dxm1-ksyms.cfg and stages the symbol
-    # whitelist into the kernel srctree. It does NOT install any package into
-    # an image yet — the packagegroup wiring is still outstanding.
-    IOTGW_ENABLE_DEEPX_DXM1 = "1"
-
-  deepx_bundle_identity: |
-    # Keep accelerator bundles distinguishable from ordinary dev bundles in
-    # DEPLOY_DIR_IMAGE. Both build iot-gw-image-dev, so without a variant in
-    # BUNDLE_BASENAME the last build silently replaces the identically named
-    # .raucb from the other configuration.
-    BUNDLE_BASENAME:pn-iot-gw-bundle-full-fit = "${BUNDLE_IMAGE}-deepx-bundle-full-fit"
+    # It pulls in fragments/deepx-dxm1-ksyms.cfg (symbol whitelist, no
+    # TRIM_UNUSED_KSYMS), pcie_aspm=off on the kernel command line, and
+    # packagegroup-iot-gw-deepx into the image.
+    IOTGW_ENABLE_DEEPX_DXM1 ?= "1"
 
   deepx_rm_work: |
     # Keep the DeepX workdirs. This distro inherits rm_work globally
@@ -89,18 +85,3 @@ local_conf_header:
     # kernel is already excluded in kas/local.yml, which the signing class
     # depends on separately (it needs ${STAGING_KERNEL_BUILDDIR}/certs).
     RM_WORK_EXCLUDE += "dx-driver dx-rt"
-
-  deepx_notes: |
-    # NOT YET WIRED, and deliberately so. Two prerequisites are unmet:
-    #
-    #  1. Module signing. This distro sets CONFIG_MODULE_SIG_FORCE=y on every
-    #     image (igw_security_prod is in the default IOTGW_KERNEL_FEATURES),
-    #     and dx-driver has no signing step. Its .ko is rejected with EKEYREJECTED
-    #     until one exists. Verified on target: sig_enforce=Y.
-    #
-    #  2. CONFIG_TRIM_UNUSED_KSYMS=y strips exported symbols unused by the
-    #     in-tree build, which an out-of-tree module compiled afterwards then
-    #     cannot resolve.
-    #
-    # Adding dx-driver to an image before those are solved produces a package
-    # that installs cleanly and never loads.

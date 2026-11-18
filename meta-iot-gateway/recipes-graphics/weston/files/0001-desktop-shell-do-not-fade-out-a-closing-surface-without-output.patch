@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Fri, 30 Oct 2026 15:20:00 +0100
+Subject: [PATCH] desktop-shell: do not fade out a closing surface without an
+ output
+
+With no output enabled (require-outputs=none and no display connected), a
+mapped view has no output. When such a window closes and the close
+animation is the default fade, desktop_surface_removed() dereferences
+view->output to read its power state, and the compositor crashes with
+SIGSEGV:
+
+  desktop_surface_removed            desktop-shell/shell.c
+  weston_desktop_xdg_toplevel_destroy libweston/desktop/xdg-shell.c
+  weston_desktop_client_destroy      libweston/desktop/client.c
+  wl_client_destroy
+
+Skip the fade when the view has no output and destroy the surface
+immediately, as is already done when the output is powered off.
+
+Upstream-Status: Pending
+Assisted-by: claude-code:claude-opus-5-5
+---
+ desktop-shell/shell.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/desktop-shell/shell.c b/desktop-shell/shell.c
+--- a/desktop-shell/shell.c
++++ b/desktop-shell/shell.c
+@@ -2018,6 +2018,7 @@
+ 	    shsurf->shell->win_close_animation_type == ANIMATION_FADE) {
+ 
+ 		if (shsurf->shell->compositor->state == WESTON_COMPOSITOR_ACTIVE &&
++		    shsurf->view->output &&
+ 		    shsurf->view->output->power_state == WESTON_OUTPUT_POWER_NORMAL) {
+ 			struct weston_coord_global pos;
+ 

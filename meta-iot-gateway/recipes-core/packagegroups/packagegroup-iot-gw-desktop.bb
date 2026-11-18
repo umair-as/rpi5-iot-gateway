@@ -55,10 +55,14 @@ RDEPENDS:${PN}-core = " \
 # back here — not by adding the name alone, which is how this broke.
 # The ttf-dejavu-* entries ARE valid: they come from meta-oe's ttf-dejavu
 # recipe via FONT_PACKAGES, so a recipe-name search misleadingly misses them.
+# No pavucontrol: it is the only thing that pulls in pulseaudio-server, and no
+# client on this image uses the sound server (hdmi-wave-demo plays through
+# ALSA directly). Under enforcing the server cannot even start in a user
+# session (staff_systemd_t/user_systemd_t -> pulseaudio_t is refused under
+# NoNewPrivileges), so it only added failing user units and denials.
 RDEPENDS:${PN}-utils = " \
     polkit \
     udisks2 \
-    pavucontrol \
     hicolor-icon-theme \
     ttf-dejavu-sans \
     ttf-dejavu-sans-mono \

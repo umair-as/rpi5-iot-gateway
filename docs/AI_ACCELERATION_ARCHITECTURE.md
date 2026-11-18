@@ -7,9 +7,9 @@ using DEEPX DX-M1 as the concrete, currently-integrated example. Read
 familiar.
 
 **Status note:** the target path shown below is hardware-validated. The project
-image completed real inference with non-zero DX-M1 utilization, passed 25
-acceptance checks with zero failures from a clean full-FIT RAUC installation on
-slot B, and required no target-side hand edits. The dashed host-side DX-COM
+image completes real inference with non-zero DX-M1 utilization, passes the
+acceptance suite with zero failures after a clean full-FIT RAUC installation,
+and needs no target-side hand edits. The dashed host-side DX-COM
 workflow remains outside this repository and has not been exercised here.
 [DEEPX_DXM1.md](DEEPX_DXM1.md) is the authoritative source for versions,
 evidence, and remaining production work.
@@ -97,7 +97,7 @@ won't discover on their own.
 | Layer | Provides | Maintained by |
 |---|---|---|
 | `meta-deepx-m1` (upstream) | Driver source, DX-RT runtime source, GStreamer plugin, demo apps | DeepX — pinned, never edited in place |
-| `meta-iot-gateway` (this repo) | Signature verification, kernel symbol whitelist, Raspberry Pi MSI mode, PCIe/ASPM policy, service/device policy, feature gate, acceptance tooling, and matched full-FIT bundles | This project |
+| `meta-iot-gateway` (this repo) | Signature verification, ksyms-trim override (`deepx-dxm1-ksyms.cfg`), Raspberry Pi MSI mode, PCIe/ASPM policy, service/device policy, feature gate, acceptance tooling, and matched full-FIT bundles | This project |
 | Off-device entirely | DX-COM, training pipeline, calibration data | Not this repo's concern — host tooling |
 
 The project-side work exists because a hardened, FIT-signed, module-signing-
@@ -115,12 +115,16 @@ to have it:
 | Gate | Mechanism | What it controls |
 |---|---|---|
 | Layer availability | `kas/deepx.yml` composed | Whether `meta-deepx-m1` parses at all |
-| Feature enablement | `IOTGW_ENABLE_DEEPX_DXM1` (default `0`) | Whether the kernel symbol whitelist and the packagegroup actually apply |
+| Feature enablement | `IOTGW_ENABLE_DEEPX_DXM1` (default `0`) | Whether the ksyms-trim override, `pcie_aspm=off` and the packagegroup actually apply |
 
 Both live in the same `kas/deepx.yml` overlay (one file doing both jobs is
 this repo's established convention — see `kas/tpm.yml` for the precedent),
 but they're semantically distinct: composing the layer with the feature
 toggle at `0` still builds, with the driver absent.
+
+Which images get it is a Makefile decision, not a recipe one: base, dev and
+desktop compose `kas/deepx.yml`; prod does not until its module-signing key
+is under hardware protection.
 
 ## Extending this to a second accelerator vendor
 
@@ -133,11 +137,11 @@ pieces are:
   `IOTGW_ENABLE_<VENDOR>` toggle, same shape, no special-casing.
 - **`iotgw-kernel-module-signing.bbclass`** — already written generically;
   any future out-of-tree driver recipe just `inherit`s it.
-- **The `CONFIG_TRIM_UNUSED_KSYMS` fix pattern** — the *specific* symbols
-  a different driver needs would differ, but the surgical
-  `CONFIG_UNUSED_KSYMS_WHITELIST` approach (scoped to that vendor's
-  feature flag, not dropped globally) is the template, not a DX-M1-only
-  fix.
+- **The `CONFIG_TRIM_UNUSED_KSYMS` pattern** — a fragment scoped to the
+  vendor's feature flag turns the trim off (merged after
+  `security-prod.cfg`), so images without that accelerator keep it. A
+  per-symbol allowlist is not used: it breaks on every driver re-pin and
+  kernel-surface change.
 - **`dynamic-layers/<upstream-layer>/`** — the mechanism (`BBFILES_DYNAMIC`
   scoped bbappends, inert when the overlay isn't composed) that lets this
   repo's glue target an optional upstream layer without a hard dependency.
@@ -149,8 +153,10 @@ abstraction risks building the wrong one), and, if on-device inference
 needed sandboxing per accelerator, a rootless-container device-passthrough
 pattern for the consuming service — a dedicated non-interactive service
 account plus a systemd Quadlet passing the device node through, rather than
-running the runtime with interactive-user privileges. Neither exists in
-this repo today; recorded here as the shape to reach for, not as a promise
+running the runtime with interactive-user privileges. The second half exists
+now (the `iotgw-ctr` principal and its Quadlet directory, docs/CONTAINERS.md);
+the accelerator abstraction does not. Recorded here as the shape to reach
+for, not as a promise
 either is imminent.
 
 ## See also
@@ -158,8 +164,10 @@ either is imminent.
 - [AI_ACCELERATION_101.md](AI_ACCELERATION_101.md) — vocabulary and the
   two-machine mental model, for readers new to this domain.
 - [DEEPX_DXM1.md](DEEPX_DXM1.md) — the technical reference: exact build
-  commands, acceptance evidence, firmware boundary, the ksym-whitelist trap,
+  commands, acceptance evidence, firmware boundary, the ksyms-trim override,
   licensing, and remaining production work.
 - [FIT_BOOT_SIGNING.md](FIT_BOOT_SIGNING.md) — the operator-held signing-key
-  model a future persistent module-signing key is meant to mirror.
+  model; the persistent module-signing key (`IOTGW_MODULE_SIG_KEY_FILE`,
+  [KERNEL.md](KERNEL.md)) is a file key today and is meant to move to the same
+  custody.
 - [KERNEL.md](KERNEL.md) — kernel config, fragments, device-tree policy.

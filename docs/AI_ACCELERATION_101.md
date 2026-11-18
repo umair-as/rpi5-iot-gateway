@@ -134,10 +134,9 @@ when reading vendor documentation against a specific integration:
 - **What's actually been demonstrated on hardware**: driver autoload and bind,
   enforced module signatures, `/dev/dxrt0`, an unprivileged `dxrtd`, device
   telemetry, real inference with the bundled sample, and non-zero utilization
-  on all three NPU cores. The acceptance gate passed 25 checks with no failures
-  from a clean full-FIT RAUC installation on slot B, with no target-side hand
-  edits. See
-  [DEEPX_DXM1.md](DEEPX_DXM1.md#2-hardware-acceptance-milestone) for the
+  on all three NPU cores. The acceptance suite passes with no failures after a
+  clean full-FIT RAUC installation, with no target-side hand edits. See
+  [DEEPX_DXM1.md](DEEPX_DXM1.md#2-validated-configuration) for the
   precise versions and caveats.
 
 ## 6. Where this layer's responsibility starts and ends
@@ -147,7 +146,7 @@ when reading vendor documentation against a specific integration:
   written or maintained here.
 - `meta-iot-gateway` (this repo, project-specific): everything needed to
   make that upstream layer work *on this hardened distro* — signature
-  verification for the driver, the symbol-whitelist fix, Raspberry Pi MSI
+  verification for the driver, the ksyms-trim override, Raspberry Pi MSI
   mode, deterministic PCIe initialization, ASPM policy, service/device
   ownership, the feature gate, acceptance tooling, and matched full-FIT OTA
   packaging. This is the delta a hardened Yocto BSP has to pay that a generic

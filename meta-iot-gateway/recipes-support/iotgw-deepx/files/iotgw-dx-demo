@@ -1,0 +1,25 @@
+#!/bin/sh
+# Run the vendor sample pipeline once; the unit restarts it at end of stream.
+#   iotgw-dx-demo probe [seconds]  instead reports the runtime's device status
+#   and runs a timed inference (run_model) in this same confined domain, for the
+#   acceptance check (iotgw-dx-probe.service). The model is the one an operator
+#   pushed into the cache directory, else the shipped sample: a headless image
+#   ships the probe but no model.
+PUSHED_MODEL=/var/cache/dxdemo/probe-model.dxnn
+SAMPLE_MODEL=/etc/dx-stream-sample/YoloV5S_PPU.dxnn
+if [ "$1" = probe ]; then
+    secs=${2:-10}
+    case "$secs" in ''|*[!0-9]*) echo "probe: seconds must be a number" >&2; exit 2 ;; esac
+    if [ -r "$PUSHED_MODEL" ]; then model=$PUSHED_MODEL; else model=$SAMPLE_MODEL; fi
+    [ -r "$model" ] || { echo "probe: no model ($PUSHED_MODEL or $SAMPLE_MODEL)" >&2; exit 3; }
+    echo "=== dxrt-cli -s"
+    timeout 30 dxrt-cli -s
+    echo "=== dxrt-cli -s rc=$?"
+    echo "=== run_model -m $model -t $secs"
+    timeout $((secs + 180)) run_model -m "$model" -t "$secs"
+    rc=$?
+    echo "=== run_model rc=$rc"
+    exit $rc
+fi
+cd /etc/dx-stream-sample || exit 1
+exec ./run.sh

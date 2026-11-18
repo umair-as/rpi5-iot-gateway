@@ -20,11 +20,9 @@ IOTGW_DISABLE_VCONSOLE_SETUP = "0"
 #        SYSTEMD_DEFAULT_TARGET ?= '${@bb.utils.contains_any("IMAGE_FEATURES",
 #            [ "x11-base", "weston" ], "graphical.target", "multi-user.target", d)}'
 #
-# Previously Weston was pulled ONLY through packagegroup-iot-gw-desktop-core's
-# RDEPENDS, so that contains_any() saw no "weston", default.target stayed
-# multi-user.target, and upstream weston.service (WantedBy=graphical.target)
-# was never started. The compositor would not have come up even once the
-# packagegroup's missing packages were fixed.
+# Weston pulled only through packagegroup-iot-gw-desktop-core's RDEPENDS leaves
+# contains_any() without "weston", so default.target stays multi-user.target
+# and upstream weston.service (WantedBy=graphical.target) never starts.
 IMAGE_FEATURES += "weston"
 
 # --- Lab/bench ergonomics ---------------------------------------------------
@@ -54,21 +52,26 @@ CORE_IMAGE_EXTRA_INSTALL += " packagegroup-iot-gw-desktop iotgw-dev-ssh-keys iot
 
 # DEEPX DX-M1 demo stack — the whole point of this variant.
 #
-# Same IOTGW_ENABLE_DEEPX_DXM1 gate as iot-gw-image-dev.bb (which takes the
-# BASE packagegroup, not -demo), so composing kas/deepx.yml is what
-# enables it; the toggle alone is not enough (packagegroup-iot-gw-deepx.bb
-# bb.fatal's if the layer is absent, which is the intended fail-fast).
+# Same IOTGW_ENABLE_DEEPX_DXM1 gate as the driver and runtime, which every
+# image takes from iot-gw-image-base.inc. kas/desktop.yml composes
+# kas/deepx.yml, which sets the toggle; the toggle alone is not enough
+# (packagegroup-iot-gw-deepx.bb bb.fatal's if the layer is absent).
 #
-# -demo rather than the base group: it adds dx-stream (the GStreamer elements
+# -demo on top of the base group: it adds dx-stream (the GStreamer elements
 # dxpreprocess/dxinfer/dxpostprocess/dxosd) and the sample payload. Those
 # elements need a Wayland compositor, which is why the demo belongs HERE and
 # not in the headless dev image.
 #
 # Developer toolchain, matching iot-gw-image-dev.bb: gdb/strace/perf, build
-# essentials, editors. Months of driver and pipeline work need these on the
-# machine itself.
+# essentials, editors.
+# The demo launcher account also needs the compositor socket group (wayland),
+# created by weston-init, so membership goes through the rootfs reconciler
+# rather than useradd --groups. Its device group (dxrt) is a distro entry.
+IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'dxdemo:wayland' if d.getVar('IOTGW_ENABLE_DEEPX_DXM1') == '1' else ''}"
+
 CORE_IMAGE_EXTRA_INSTALL += " \
     ${@bb.utils.contains('IOTGW_ENABLE_DEEPX_DXM1', '1', 'packagegroup-iot-gw-deepx-demo', '', d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_HDMI_APPS', '1', 'hdmi-wave-demo', '', d)} \
     packagegroup-iot-gw-dev \
     packagegroup-iot-gw-devtools \
     packagegroup-core-buildessential \

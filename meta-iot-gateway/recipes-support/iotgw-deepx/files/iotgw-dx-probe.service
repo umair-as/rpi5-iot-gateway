@@ -1,0 +1,30 @@
+[Unit]
+Description=DX-M1 inference probe in the launcher's confined domain (acceptance)
+Documentation=file:///usr/share/doc/iotgw-dx-demo
+Requires=dxrtd.service
+After=dxrtd.service
+
+[Service]
+# One timed run_model plus the runtime's device status, as the demo account and
+# through the launcher binary, so it runs in iotgw_dxdemo_t like the demo does.
+# Started by the acceptance check (systemctl start blocks until it exits);
+# output goes to the journal.
+Type=oneshot
+User=dxdemo
+Group=dxdemo
+CacheDirectory=dxdemo
+# The cache directory exists on every image that ships the probe;
+# /etc/dx-stream-sample only where the sample is installed.
+WorkingDirectory=/var/cache/dxdemo
+Environment=ORC_CODE=backup
+ExecStart=/usr/libexec/iotgw-dx-demo probe 10
+TimeoutStartSec=240
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes

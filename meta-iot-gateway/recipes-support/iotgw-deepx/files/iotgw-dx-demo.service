@@ -1,0 +1,34 @@
+[Unit]
+Description=DX-M1 on-screen inference demo (desktop)
+Documentation=file:///usr/share/doc/iotgw-dx-demo
+Requires=dxrtd.service
+After=dxrtd.service weston.service
+Wants=weston.service
+
+[Service]
+User=dxdemo
+Group=dxdemo
+# Absolute socket path: weston.socket owns /run/wayland-0 (group wayland).
+Environment=WAYLAND_DISPLAY=/run/wayland-0
+Environment=GST_REGISTRY=/var/cache/dxdemo/gst-registry.bin
+# ORC's JIT writes code into a file and maps it executable; its portable C
+# path keeps the writable cache non-executable (SELinux grants no execute there).
+Environment=ORC_CODE=backup
+CacheDirectory=dxdemo
+WorkingDirectory=/etc/dx-stream-sample
+ExecStart=/usr/libexec/iotgw-dx-demo
+# The sample clip ends (EOS) after ~25 s; relaunching it is the demo loop.
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=graphical.target

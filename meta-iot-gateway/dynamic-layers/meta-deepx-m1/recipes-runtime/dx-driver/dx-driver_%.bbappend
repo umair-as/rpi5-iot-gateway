@@ -1,30 +1,10 @@
-# --- Version pin: the upstream recipe's is wrong ---------------------------
+# --- Version pin ------------------------------------------------------------
 #
-# meta-deepx-m1 ships this recipe as dx-driver_2.6.0.bb, but its
-# SRCREV c05be168ea0c28757737035ea58aab6e59f03256 is the commit tagged
-# "v2.4.1" (2026-04-17). The module built from it reports MODULE_VERSION
-# 2.2.0. Three version numbers, none of which agree, and the tree is three
-# releases behind main.
-#
-# Repinned to the real v2.6.0 tip. This is not a routine bump — the older tree
-# is missing code that directly concerns this board:
-#
-#   * dx_link_health.c — PCIe link-health monitoring and auto-recovery, keyed
-#     on config-read status, Vendor ID != 0xFFFF, the DLLLA (Data Link Layer
-#     Link Active) bit, and negotiated speed/width. Our 2026-08-31 PCIe
-#     baseline recorded DLActive- while LnkSta still reported a speed and
-#     width, i.e. exactly the state this code exists to detect.
-#   * An MMIO guard, `mmio_safe = link_state == DX_LINK_UP && ret ==
-#     PCIBIOS_SUCCESSFUL && (command & PCI_COMMAND_MEMORY)`. On 2026-09-01
-#     the old driver reached "Probe Done!!" with Mem- and BusMaster- clear
-#     and BARs disabled; the runtime's first MMIO was an unclaimed PCIe
-#     transaction and the board took a fatal SError. Comm: dxrtd, UID 992.
-#   * RPI_BUILD — see the CONFIG_RPI_BUILD block below.
-#   * softdep changed from `pre:` to `post:` — see the autoload block below.
-#
-# Upstream file size for the PCIe driver alone: 773 lines at the old pin,
-# 1229 at v2.6.0.
-SRCREV = "7074748e7104f470b02f517583abba652b3f05fa"
+# dx-driver_2.6.0.bb builds the v2.6.0 tip (SRCREV 7074748e) from
+# meta-deepx-m1 189b592 on. v2.6.0 adds dx_link_health.c (PCIe link-health
+# monitoring and recovery) and an MMIO guard against the runtime's first MMIO
+# hitting a disabled BAR (fatal SError). kas/deepx.yml pins the layer at or
+# after that commit; no SRCREV override here.
 
 # LIC_FILES_CHKSUM is unchanged across the bump — LICENSE still md5
 # df0ebe3edba67d21cb2e798ef0ee2905, verified against the v2.6.0 tree, so the
@@ -71,12 +51,9 @@ S = "${UNPACKDIR}/${BP}/modules"
 # and kernel are only valid as a matched pair from the same build.
 inherit iotgw-kernel-module-signing
 
-# TRIM_UNUSED_KSYMS: resolved. The 2026-08-31 build failed at modpost with
-# get_user_pages_fast and sched_set_normal undefined; both are EXPORT_SYMBOL_GPL
-# in-tree but were trimmed out of Module.symvers. Fixed surgically via
-# CONFIG_UNUSED_KSYMS_WHITELIST (fragments/deepx-dxm1-ksyms.cfg +
-# files/deepx-dxm1-ksyms.txt), gated on igw_deepx_dxm1 so other images keep
-# trimming at full strength. Requires IOTGW_ENABLE_DEEPX_DXM1=1.
+# Kernel exports: the driver links only against a kernel without
+# TRIM_UNUSED_KSYMS. fragments/deepx-dxm1-ksyms.cfg turns the trim off, gated on
+# igw_deepx_dxm1 (IOTGW_ENABLE_DEEPX_DXM1=1) so other images keep it.
 
 # Device policy moved OUT of this bbappend. The 0660 root:root placeholder
 # that lived here is superseded by iotgw-deepx-runtime, which owns the whole
@@ -108,7 +85,7 @@ inherit iotgw-kernel-module-signing
 # systemd-modules-load modprobes it unconditionally and early. But this kernel
 # inherits CONFIG_PCIE_BRCMSTB=m from the mainline arm64 defconfig, so the
 # BCM2712 host bridge is ITSELF a module and does not load until later.
-# Measured on hardware 2026-09-01:
+# Boot log from hardware:
 #
 #   [3.116199] dx_dma: loading out-of-tree module        <- forced, too early
 #   [3.161570] dxrt_driver_cdev_init: 0 devices          <- nothing to find
@@ -184,10 +161,19 @@ RDEPENDS:${PN} += " \
 # MAKEFLAGS. NOT a kernel Kconfig symbol despite the CONFIG_ prefix — it is
 # upstream's own build flag, so it cannot collide with Kconfig.
 #
-# VERIFY, do not assume: the single-MSI log string must be present in the
-# built object, otherwise this silently did nothing —
-#   ${TARGET_PREFIX}strings dx_dma.ko | grep 'forcing single MSI'
+# The single-MSI log string must be present in the built object, otherwise
+# this silently did nothing; do_install below fails the build if it is absent.
 EXTRA_OEMAKE:append = " CONFIG_RPI_BUILD=1"
+
+do_install:append() {
+    ko=$(find ${D} -name dx_dma.ko | head -n 1)
+    if [ -z "$ko" ]; then
+        bbfatal "dx-driver: dx_dma.ko not found under ${D}"
+    fi
+    if ! grep -a -q 'forcing single MSI' "$ko"; then
+        bbfatal "dx-driver: $ko lacks the RPi single-MSI path (CONFIG_RPI_BUILD did not reach pci_deepx/Kbuild)"
+    fi
+}
 
 # buildpaths QA: strip the recorded GCC command line from debug info.
 #

@@ -6,7 +6,7 @@ This document describes the kernel configuration system and available feature se
 
 The distribution uses **modular kernel configuration** based on feature fragments.
 
-**Kernel provider:** `linux-iotgw-mainline-fit` (Linux 6.18 series) — the only
+**Kernel provider:** `linux-iotgw-mainline` (Linux 6.18 series) — the only
 provider. FIT signed boot is mandatory (see `docs/FIT_BOOT_SIGNING.md`); there is
 no non-FIT / `linux-raspberrypi` option.
 
@@ -27,6 +27,19 @@ no non-FIT / `linux-raspberrypi` option.
   with `panic-recovery.cfg` this covers kernel-thread/driver oopses, not
   just init-killing ones.
 - `rtc-rpi.cfg` — Raspberry Pi RTC support (gated by `IOTGW_ENABLE_RPI_RTC`)
+- `thermal-rpi5.cfg`, `pcie-rpi5.cfg`, `surface-rpi5.cfg` — board fragments
+  appended by `linux-iotgw-mainline-common.inc`
+- `rootfs-verity.cfg` — runtime root dm-verity (`igw_rootfs_verity`, appended
+  unconditionally by the distro)
+
+> **Kernel command line and device tree are fixed at build time.** The kernel
+> boots the device tree inside the slot's signed FIT, whose `/chosen/bootargs`
+> is the complete command line (firmware `cmdline.txt` content,
+> `IOTGW_VERITY_KERNEL_ARGS` and the dm-verity table). U-Boot clears its own
+> `bootargs`, so `fw_setenv EXTRA_KERNEL_ARGS` and `config.txt`
+> `dtoverlay=` / `dtparam=` lines do not reach the kernel on any image. Change
+> kernel arguments with `IOTGW_VERITY_KERNEL_ARGS` and rebuild; peripherals that
+> need device-tree changes get a DTS patch on the board DTB.
 
 **Optional Feature Sets:** Controlled via `IOTGW_KERNEL_FEATURES` variable
 
@@ -44,18 +57,9 @@ Graphics, video, and media processing support.
 
 **Use for:** GPU acceleration, camera/video processing, display output
 
-**CMA Configuration:**
-```bash
-# Increase CMA for camera/video if needed (dev images only — see note below)
-fw_setenv EXTRA_KERNEL_ARGS "cma=256M"
-reboot
-```
-
-> **Note:** `EXTRA_KERNEL_ARGS` is honoured on **dev images** only. Production
-> images with `appliance_lockdown` reject writes to this variable via the
-> U-Boot env writeable-list (intentional — runtime cmdline tuning is a
-> boot-policy override). See [U-Boot Hardening](UBOOT_HARDENING.md) for the
-> full dev/prod asymmetry and OTA env-refresh caveat.
+**CMA Configuration:** to increase CMA for camera/video, add `cma=256M` to
+`IOTGW_VERITY_KERNEL_ARGS` and rebuild. The command line lives in the slot's
+signed FIT; there is no runtime override.
 
 ---
 
@@ -227,18 +231,17 @@ deployments**.
   support varies per platform/watchdog
 
 **Userspace wiring:**
-- `iotgw-crash-debug-sysctl` drops `/etc/sysctl.d/95-iotgw-crash-debug.conf`:
-  `kernel.panic = ${IOTGW_CRASH_PANIC_TIMEOUT}`,
-  `kernel.panic_on_oops = 1`, `kernel.sysrq = 1`.
-- `IOTGW_UBOOT_EXTRA_KERNEL_ARGS` sets the U-Boot runtime cmdline policy:
-  `panic=${IOTGW_CRASH_PANIC_TIMEOUT} oops=panic sysrq_always_enabled=1`
-  (the cmdline value governs the kernel phase before `sysctl.d` applies;
-  both are driven by the same variable).
+- `iotgw-crash-debug-sysctl` stages `/etc/sysctl.d/95-iotgw-crash-debug.conf`
+  (`kernel.panic_on_oops = 1`).
 
-**Layer gates:**
-- `IOTGW_ENABLE_CRASH_DEBUG_DEV` (default `"0"`) — opt-in.
-  Setting this to `"1"` implies `IOTGW_ENABLE_PSTORE_PERSIST=1`.
-- `IOTGW_CRASH_PANIC_TIMEOUT` (default `"5"`) — seconds.
+**Command line:** the profile adds `panic=<IOTGW_CRASH_PANIC_TIMEOUT>`
+(default 5), `oops=panic` and `sysrq_always_enabled=1` to
+`IOTGW_VERITY_KERNEL_ARGS` at build time, so they are signed into the slot FIT
+with the rest of the command line (see the note under Overview). Nothing on the
+device can add kernel arguments.
+
+**Layer gate:** `IOTGW_ENABLE_CRASH_DEBUG_DEV` (default `"0"`) — opt-in.
+Setting this to `"1"` implies `IOTGW_ENABLE_PSTORE_PERSIST=1`.
 
 **What ships where:**
 
@@ -249,8 +252,7 @@ deployments**.
 | `systemd` `pstore` PACKAGECONFIG + `systemd-pstore.service` | ✓ | ✓ |
 | `iotgw-pstore-persist` (`.mount` + tmpfiles + prune) | ✓ | ✓ |
 | `CONFIG_DYNAMIC_DEBUG`, `MAGIC_SYSRQ`, `DETECT_HUNG_TASK`, `SOFTLOCKUP_DETECTOR`, `PSTORE_FTRACE` | ✗ | ✓ |
-| `iotgw-crash-debug-sysctl` (panic/oops/sysrq sysctls) | ✗ | ✓ |
-| U-Boot cmdline policy `panic= oops=panic sysrq_always_enabled=1` | ✗ | ✓ |
+| `iotgw-crash-debug-sysctl` (`kernel.panic_on_oops`) | ✗ | ✓ |
 
 ---
 
@@ -283,20 +285,11 @@ TPM2 baseline for SPI-attached Infineon SLB9672 class devices.
 **Developer note:** `SPI_SPIDEV` is intentionally left commented in the
 fragment. Avoid enabling spidev on the same SPI chip-select used by TPM.
 
-**Runtime wiring:** enabling `IOTGW_ENABLE_TPM_SLB9672 = "1"` appends:
-- `dtoverlay=${IOTGW_TPM_DTO_OVERLAY}` (default `tpm-slb9670`)
-
-If board wiring requires a different overlay parameterization, override
-`IOTGW_TPM_DTO_OVERLAY` in `kas/local.yml`.
-
-**Mainline RPi5 note (important):**
-- `dtparam=` keys work only when exported in DTB `__overrides__`.
-- On our current mainline `bcm2712-rpi-5-b.dtb`, classic keys such as
-  `spi`, `i2c1`, and `i2c_arm` are not exported, so firmware logs
-  `Unknown dtparam ... - ignored`.
-- Use explicit `dtoverlay=` and DTS changes for peripheral enablement on
-  this path instead of relying on generic `ENABLE_SPI_BUS`/`ENABLE_I2C`.
-- `dtparam=rtc_bbat_vchg=...` is valid here because the RTC overlay exports it.
+**Device tree:** the kernel boots the device tree inside the slot's signed
+FIT, so `config.txt` `dtoverlay=` / `dtparam=` lines do not reach it.
+Peripheral enablement is a DTS patch on the board DTB (TPM:
+`0004-arm64-dts-broadcom-bcm2712-rpi-5-b-add-TPM-on-RP1-SPI0-CS1.patch`; RTC:
+`0002-arm64-dts-broadcom-bcm2712-add-rpi-rtc-node.patch`).
 
 **TPM reset via GPIO (dev only):** If the TPM enters a bad state during
 development, toggle the reset pin (GPIO 24 on LetsTrust-style wiring):
@@ -323,6 +316,30 @@ Opt-in kernel EFI surface reduction for non-UEFI Raspberry Pi boot flow.
 
 ---
 
+### `igw_desktop`
+
+Desktop image peripherals: HDMI-CEC, USB audio, UHID/HIDRAW (Bluetooth LE
+input), Logitech and Wacom HID drivers (`desktop.cfg`). Set by
+`kas/desktop.yml`.
+
+---
+
+### `igw_deepx_dxm1`
+
+Turns `CONFIG_TRIM_UNUSED_KSYMS` off (`deepx-dxm1-ksyms.cfg`, merged last) so
+the out-of-tree DX-M1 driver links against the full export set. Appended when
+`IOTGW_ENABLE_DEEPX_DXM1 = "1"`. See [DEEPX DX-M1](DEEPX_DXM1.md).
+
+---
+
+### `igw_rootfs_verity`
+
+Runtime root dm-verity (`rootfs-verity.cfg`: `CONFIG_DM_INIT`, built-in
+`CONFIG_CRYPTO_SHA256`). Always on: the kernel builds `/dev/dm-0` from the
+`dm-mod.create=` argument in the slot FIT's command line.
+
+---
+
 ## Enabling Feature Sets
 
 ### Via KAS Overlay
@@ -333,12 +350,6 @@ In `kas/local.yml`:
 local_conf_header:
   kernel_features: |
     IOTGW_KERNEL_FEATURES = "igw_containers igw_networking_iot igw_security_prod"
-```
-
-### Via Environment Variable
-
-```bash
-IOTGW_KERNEL_FEATURES="igw_containers igw_networking_iot" make dev
 ```
 
 ### RTC Backport Gate (Mainline Providers)
@@ -364,14 +375,16 @@ local_conf_header:
 
 ### TPM SPI Gate
 
-Enable TPM2-over-SPI profile and firmware overlay:
+The TPM2-over-SPI profile follows the TPM feature switch,
+`IOTGW_ENABLE_TPM`. Including `kas/tpm.yml` sets it to `"1"` (and composes
+the TPM layers); the same switch also turns on the TPM crypto providers, OTA
+TPM mTLS and PKCS#11 RAUC streaming. `IOTGW_ENABLE_TPM_SLB9672` stays
+available to override the hardware profile alone.
 
 ```yaml
 local_conf_header:
   tpm_spi: |
-    IOTGW_ENABLE_TPM_SLB9672 = "1"
-    # Optional override (default "tpm-slb9670")
-    # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
+    IOTGW_ENABLE_TPM = "1"
 ```
 
 ### Kernel EFI Surface Gate
@@ -430,29 +443,14 @@ IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw
 
 ---
 
-## Runtime Kernel Parameters
+## Kernel Command Line
 
-### U-Boot Environment
+### Build-time command line
 
-```bash
-# View current args
-fw_printenv bootargs
-
-# Add custom args (dev images only — see U-Boot Hardening doc)
-fw_setenv EXTRA_KERNEL_ARGS "cma=256M quiet loglevel=3"
-
-# Clear custom args
-fw_setenv EXTRA_KERNEL_ARGS ""
-
-# Reboot to apply
-reboot
-```
-
-> **OTA-updated devices**: if `fw_setenv EXTRA_KERNEL_ARGS=...` doesn't
-> appear in `/proc/cmdline` after reboot, the persisted env still has an
-> older `iotgw_set_bootargs` from before the fix landed. One-time recovery
-> from the U-Boot prompt: `env default iotgw_set_bootargs; saveenv`.
-> Fresh WIC flashes pick up the new behaviour automatically.
+`cat /proc/cmdline` shows the running command line. To change it, set
+`IOTGW_VERITY_KERNEL_ARGS` (and the `cmdline.txt` content via `rpi-cmdline`)
+and rebuild. U-Boot clears its `bootargs`, so `fw_setenv` cannot change the
+command line.
 
 ### Common Parameters
 
