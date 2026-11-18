@@ -74,7 +74,7 @@ space on first boot by the pre-init (`iotgw-preinit`).
 - Device tree blob for the firmware (`bcm2712-rpi-5-b.dtb`)
 - RPi firmware config (`config.txt`, `cmdline.txt`)
 
-**Updates:** A RAUC install writes only the target slot's FIT (`fitImage-a` or `-b`), from the bundle (`bundle-hooks-fit.sh`). The shared files (`u-boot.bin`, `config.txt` and the DTB that holds U-Boot's FIT trust anchor) are single-copy, so no slot switch can roll them back; they change only through `iotgw-rpi-bootfiles-update`, run by an operator. That tool refuses a DTB that does not trust both installed slot FITs, backs up what it replaces to `/data/rpi-boot/backup/` and has `--restore`. See [RAUC Update](RAUC_UPDATE.md#shared-boot-files).
+**Updates:** A RAUC install writes only the target slot's FIT (`fitImage-a` or `-b`), from the bundle (`bundle-hooks-fit.sh`). The shared files (U-Boot as `kernel_2712.img`, `config.txt` and the DTB that holds U-Boot's FIT trust anchor) are single-copy, so no slot switch can roll them back; they change only through `iotgw-rpi-bootfiles-update`, run by an operator. That tool refuses a DTB that does not trust both installed slot FITs, backs up what it replaces to `/data/rpi-boot/backup/` and has `--restore`. See [RAUC Update](RAUC_UPDATE.md#shared-boot-files).
 
 ---
 

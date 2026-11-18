@@ -2,8 +2,8 @@ SUMMARY = "Guards for the shared Raspberry Pi 5 /boot: RAUC pre-install handler 
 DESCRIPTION = "iotgw-boot-guard: the RAUC system pre-install handler that refuses a \
 bundle which cannot deliver and install the target slot's signed FIT, and the FIT \
 trust-anchor checks it shares with the updater. \
-iotgw-boot-guard-bootfiles-update: the operator-run updater for config.txt, the board \
-DTB (FIT trust anchor) and u-boot.bin on the single-copy /boot, with the staged files, \
+iotgw-boot-guard-bootfiles-update: the operator-run updater for U-Boot \
+(kernel_2712.img), the board DTB (FIT trust anchor) and config.txt on the single-copy /boot, with the staged files, \
 backup and --restore. RAUC installs never write those files."
 HOMEPAGE = "https://github.com/umair-as/rpi5-iot-gateway"
 LICENSE = "MIT"
@@ -21,7 +21,8 @@ S = "${UNPACKDIR}"
 
 # The staged boot files are the deploy artifacts the WIC places on /boot: the
 # board DTB with the FIT public keys injected by the kernel's do_deploy,
-# config.txt and u-boot.bin.
+# config.txt, and u-boot.bin installed as kernel_2712.img (IMAGE_BOOT_FILES
+# "u-boot.bin;kernel_2712.img"), the firmware's default kernel.
 do_install[depends] += "virtual/kernel:do_deploy u-boot:do_deploy rpi-bootfiles:do_deploy rpi-config:do_deploy"
 do_install[vardeps] += "BOOTFILES_DIR_NAME"
 
@@ -44,7 +45,7 @@ do_install() {
     }
     collect ${DEPLOY_DIR_IMAGE}/${BOOTFILES_DIR_NAME}/config.txt config.txt
     collect ${DEPLOY_DIR_IMAGE}/bcm2712-rpi-5-b.dtb bcm2712-rpi-5-b.dtb
-    collect ${DEPLOY_DIR_IMAGE}/u-boot.bin u-boot.bin
+    collect ${DEPLOY_DIR_IMAGE}/u-boot.bin kernel_2712.img
 }
 
 PACKAGES =+ "${PN}-bootfiles-update"

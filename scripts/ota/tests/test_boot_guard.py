@@ -237,7 +237,7 @@ def test_handler_refuses_system_state(fx, tmp_path, kw, expect):
 
 
 UPDATER = FILES / "iotgw-rpi-bootfiles-update.sh"
-ARTIFACTS = ("config.txt", "bcm2712-rpi-5-b.dtb", "u-boot.bin")
+ARTIFACTS = ("kernel_2712.img", "bcm2712-rpi-5-b.dtb", "config.txt")
 needs_userns = pytest.mark.skipif(
     subprocess.run(["unshare", "-r", "true"], capture_output=True).returncode != 0,
     reason="needs unprivileged user namespaces (unshare -r)")
@@ -248,18 +248,20 @@ def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
-def updater_env(tmp, fx, *, cand_anchor, fits=("a", "b"), rw=True):
+def updater_env(tmp, fx, *, cand_anchor, fits=("a", "b"), rw=True, config="arm_64bit=1\n# new\n"):
     boot, stage, shim = tmp / "boot", tmp / "stage", tmp / "shim"
     for d in (boot, stage, shim):
         d.mkdir()
     shutil.copy(fx["a_dev"], boot / "bcm2712-rpi-5-b.dtb")
+    # A device updated by older bundles: Linux in kernel_2712.img, U-Boot via kernel=.
     (boot / "config.txt").write_text("kernel=u-boot.bin\n")
     (boot / "u-boot.bin").write_bytes(b"old-u-boot")
+    (boot / "kernel_2712.img").write_bytes(b"linux-image")
     for s in fits:
         shutil.copy(fx["fit_dev"], boot / f"fitImage-{s}")
     shutil.copy(fx[cand_anchor], stage / "bcm2712-rpi-5-b.dtb")
-    (stage / "config.txt").write_text("kernel=u-boot.bin\n# new\n")
-    (stage / "u-boot.bin").write_bytes(b"new-u-boot")
+    (stage / "config.txt").write_text(config)
+    (stage / "kernel_2712.img").write_bytes(b"new-u-boot")
     rows = ["artifact\tsha256\tsize\tboot_target"]
     for a in ARTIFACTS:
         rows.append(f"{a}\t{sha(stage / a)}\t{(stage / a).stat().st_size}\t{a}")
@@ -345,3 +347,30 @@ def test_updater_refuses_restore_of_incompatible_anchor(fx, tmp_path):
     rc, out = updater(env, "--restore", run.name, "--yes")
     assert rc != 0 and "would not boot" in out, out
     assert boot_state(boot) == before
+
+
+@needs_userns
+@pytest.mark.parametrize("config,ok", [
+    ("arm_64bit=1\n", True),
+    ("kernel=kernel_2712.img\n", True),
+    ("kernel=u-boot.bin\n", True),
+    ("kernel=Image\n", False),
+    ("kernel=kernel_2712.img\nkernel=Image  # later line wins\n", False),
+])
+def test_updater_config_must_boot_u_boot(fx, tmp_path, config, ok):
+    boot, _, env = updater_env(tmp_path, fx, cand_anchor="a_dev", config=config)
+    before = boot_state(boot)
+    rc, out = updater(env, "--yes")
+    assert (rc == 0) == ok, out
+    if not ok:
+        assert "only U-Boot" in out, out
+        assert boot_state(boot) == before
+
+
+@needs_userns
+def test_updater_writes_u_boot_first_config_last(fx, tmp_path):
+    boot, _, env = updater_env(tmp_path, fx, cand_anchor="a_dual_any")
+    rc, out = updater(env, "--yes")
+    assert rc == 0, out
+    order = [l.split()[1] for l in out.splitlines() if l.endswith("written and verified")]
+    assert order == ["kernel_2712.img", "bcm2712-rpi-5-b.dtb", "config.txt"], order

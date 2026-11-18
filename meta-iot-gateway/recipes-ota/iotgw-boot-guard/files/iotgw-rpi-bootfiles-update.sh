@@ -4,10 +4,12 @@
 # A RAUC install writes only the target slot's signed FIT. The files below
 # are single-copy on the FAT /boot (no A/B), so they change only through this
 # tool, never unattended:
-#   config.txt           read by the firmware first
+#   kernel_2712.img      U-Boot, the firmware's default kernel (as the WIC
+#                        installs it)
 #   bcm2712-rpi-5-b.dtb  firmware control FDT and U-Boot's FIT trust anchor;
 #                        it must still trust both installed slot FITs
-#   u-boot.bin           loaded by the firmware (config.txt kernel=u-boot.bin)
+#   config.txt           read by the firmware first; it must not name a kernel
+#                        other than U-Boot
 # Every check runs before the first write, and the current files are backed
 # up to /data first. Each file is copied to a temporary name, synced, read
 # back from the medium, renamed over the target and read back again. FAT has
@@ -27,9 +29,11 @@ ANCHOR=bcm2712-rpi-5-b.dtb
 # Tests point this at a scratch file; on the device it is the kernel's.
 DROP_CACHES=${IOTGW_DROP_CACHES:-/proc/sys/vm/drop_caches}
 
-# Firmware reads config.txt and the DTB, then runs u-boot.bin: written in that
-# order so the execution entry changes last.
-ARTIFACTS=(config.txt bcm2712-rpi-5-b.dtb u-boot.bin)
+# Written U-Boot first and config.txt last. A device whose config.txt still
+# says kernel=u-boot.bin (set by older OTA hooks) keeps booting that file until
+# the new config.txt, without that line, lands; by then kernel_2712.img is
+# U-Boot. Every interrupted state therefore still boots U-Boot.
+ARTIFACTS=(kernel_2712.img bcm2712-rpi-5-b.dtb config.txt)
 
 RESTORE=""
 ASSUME_YES=0
@@ -50,7 +54,7 @@ Usage:
   iotgw-rpi-bootfiles-update [--yes] [--dry-run]
   iotgw-rpi-bootfiles-update --restore <run-id> [--yes] [--dry-run]
 
-Writes the staged config.txt, board DTB and u-boot.bin to the FAT /boot after
+Writes the staged U-Boot (kernel_2712.img), board DTB and config.txt to the FAT /boot after
 verifying them against the manifest and checking that the new DTB still trusts
 both installed slot FITs, backing up the current files and reading each back.
 Reboot after a successful run.
@@ -101,6 +105,17 @@ check_anchor_compat() {
             || die "anchor guard: slot ${slot} would not boot with the candidate ${ANCHOR}: ${why}; refusing"
         log "anchor guard: slot ${slot} FIT trusted by the candidate ${ANCHOR}"
     done
+}
+
+# check_config_kernel <config.txt>: the firmware must run U-Boot. A kernel=
+# line may name only kernel_2712.img (written by this tool) or u-boot.bin.
+check_config_kernel() {
+    local k
+    k="$(sed -n 's/^[[:space:]]*kernel[[:space:]]*=[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$1" | tail -n1)"
+    case "$k" in
+        ""|kernel_2712.img|u-boot.bin) ;;
+        *) die "config.txt names kernel=${k}; only U-Boot (kernel_2712.img or u-boot.bin) is supported; refusing" ;;
+    esac
 }
 
 check_boot() {
@@ -171,6 +186,7 @@ do_update() {
         [ "$(sha_of "$src")" = "$exp" ] || die "$a artifact hash != manifest"
     done
     check_anchor_compat "${ROOT_DIR}/${ANCHOR}"
+    check_config_kernel "${ROOT_DIR}/config.txt"
     log "boot-file update for ${BOOT_MP}$([ "$DRY_RUN" -eq 1 ] && echo ' (dry-run)')"
     for a in "${ARTIFACTS[@]}"; do log "  $a ($(manifest_col "$a" 2))"; done
     if [ "$ASSUME_YES" -ne 1 ] && [ "$DRY_RUN" -ne 1 ]; then
@@ -199,6 +215,9 @@ do_restore() {
         [ "$(meta_get "$meta" present)" = "1" ] \
             || die "anchor guard: run ${RESTORE} would remove ${ANCHOR}, the FIT trust anchor; refusing"
         check_anchor_compat "${dir}/${ANCHOR}"
+    fi
+    if [ -f "${dir}/config.txt" ]; then
+        check_config_kernel "${dir}/config.txt"
     fi
     if [ "$ASSUME_YES" -ne 1 ] && [ "$DRY_RUN" -ne 1 ]; then
         printf 'Restore %s files from backup run %s? [y/N]: ' "$BOOT_MP" "$RESTORE"; read -r ans
