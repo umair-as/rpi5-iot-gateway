@@ -262,6 +262,16 @@ iotgw_rootfs_selinux_permissive_gate() {
         fi
         found="$found $doms"
     done
+    # Prod ships no permissive domain at all: neither one in the policy nor an
+    # allowlist that would let one through.
+    if [ "${IOTGW_PROD_HYGIENE_GATE}" = "1" ]; then
+        if [ -n "$(echo ${IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED})" ]; then
+            bbfatal "SELinux: IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED is not empty in a prod image:$(echo ${IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED} | sed 's/^/ /')"
+        fi
+        if [ -n "$(echo $found)" ]; then
+            bbfatal "SELinux: a prod image may not ship permissive domains:$(echo $found | sed 's/^/ /')"
+        fi
+    fi
     unexpected=""
     for d in $found; do
         case " ${IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED} " in
