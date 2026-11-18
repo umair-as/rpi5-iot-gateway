@@ -98,9 +98,10 @@ autoboot window; prod builds have no prompt.
 ## Shared boot files
 
 An install writes the target root slot and that slot's signed FIT
-(`/boot/fitImage-a` or `-b`), nothing else on `/boot`. `u-boot.bin`,
-`config.txt` and `bcm2712-rpi-5-b.dtb` (U-Boot's FIT trust anchor) are
-single-copy: a slot switch cannot roll them back, so a bad write there would
+(`/boot/fitImage-a` or `-b`), nothing else on `/boot`. U-Boot
+(`kernel_2712.img`, the firmware's default; devices updated by older bundles
+also carry `u-boot.bin`, named by `kernel=` in `config.txt`), `config.txt` and
+`bcm2712-rpi-5-b.dtb` (U-Boot's FIT trust anchor) are single-copy: a slot switch cannot roll them back, so a bad write there would
 take both slots down.
 
 **Before any slot is written**, the system pre-install handler
@@ -130,8 +131,11 @@ sudo iotgw-rpi-bootfiles-update --restore <run-id>   # roll back a run (ls /data
 ```
 
 It refuses before the first write if a staged file does not match its
-manifest, `/boot` is not a mounted read-write FAT, or the new DTB would not
-accept an installed slot FIT. Each file is written to a temporary name, read
+manifest, `/boot` is not a mounted read-write FAT, the new DTB would not
+accept an installed slot FIT, or the new `config.txt` names a kernel other
+than U-Boot. It writes U-Boot first and `config.txt` last, so a device that
+still boots `u-boot.bin` through `kernel=` keeps booting U-Boot at every
+step. Each file is written to a temporary name, read
 back from the medium, renamed and read back again. A `--restore` goes through
 the same checks. Moving a device from dual trust to YubiKey-only trust is
 staged: [FIT Boot Signing](FIT_BOOT_SIGNING.md).
