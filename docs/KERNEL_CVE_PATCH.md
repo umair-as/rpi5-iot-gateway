@@ -6,7 +6,7 @@ Yocto layer, when the upstream fix isn't yet in your pinned `SRCREV`.
 **Worked example (illustrative):** CVE-2026-31431 (`crypto: algif_aead`
 write-to-page-cache, CISA KEV), stable backport `fafe0fa2` for `linux-6.18.y`,
 applied against an example pin of `v6.18.13`. The commands and workflow are
-real; the specific CVE, SRCREV, and the `0011-…` patch are a teaching example,
+real; the specific CVE, SRCREV, and the `00NN-…` patch are a teaching example,
 not shipped in the tree. Substitute the current pin (see
 `linux-iotgw-mainline-common.inc`) and your actual CVE.
 
@@ -26,18 +26,10 @@ For the scanning and triage that *finds* applicable CVEs, see
 field guide is what you do **after** triage has established that a CVE applies
 to your pin and you have decided to carry a fix.
 
-> **Era note — read before following the steps below.** This guide was written
-> against scarthgap, where OE-Core's `cve-check` was the tool and CVE work was
-> done by hand. The wrynose migration replaced that flow wholesale with
-> `sbom-cve-check` over the SPDX 3.0 image SBOM, and `cve-check` is no longer
-> inherited anywhere in this repo. Two consequences:
->
-> - **Steps 2 and 3 have been retracted in place.** They described the manual
->   identification method of that era; parts of it are now known to give wrong
->   answers. The retractions say what replaced them.
-> - **The decision framework and the patch mechanics (§§4–8) are unaffected**
->   by the tooling change and remain current — they are about carrying a commit
->   into a recipe, which wrynose did not alter.
+> Applicability (does the CVE affect this pin, which release fixes it) is
+> decided before this guide, by
+> [Kernel CVE Applicability](KERNEL_CVE_APPLICABILITY.md). Steps 2–3 here only
+> find the fix commit for your branch.
 
 ### Patch vs `SRCREV` bump — picking between them
 
@@ -72,10 +64,8 @@ equivalent — pick deliberately:
    stable release that contains the upstream fix, dropping the carry
    patch in the same commit.
 
-The CVE-2026-31431 work in this repo took option (1) under CISA-KEV
-pressure with the v0.4.0 release fresh, and queued a follow-up for the
-6.18.13 → current-tip bump. Both moves are valid; the failure mode is
-treating the carry-patch as permanent.
+Both moves are valid; the failure mode is treating the carry-patch as
+permanent.
 
 ---
 
@@ -88,19 +78,16 @@ Before touching anything, two facts:
 grep -rE "BRANCH|SRCREV_machine|LINUX_VERSION" meta-iot-gateway/recipes-kernel/linux/
 
 # (b) What's actually running on the device
-ssh iotgw "uname -r"
+ssh <target> uname -r
 ```
 
 For our example: `linux-6.18.y`, `SRCREV_machine = 25e0b1c2…` (= `v6.18.13`).
 
 ## 2. Read the CVE record as JSON, not prose
 
-The instinct is right and still stands. The **source** has changed.
-
-> **Retracted: NVD as the version-range oracle.** This step previously read
-> `configurations[].nodes[].cpeMatch[]` from the NVD REST API to learn "which
-> release closes it", and reported a single range like `6.13 ≤ x < 6.18.22`.
-> For kernel CVEs, NVD flattens every stable branch into one crude span and
+> **Do not use NVD version ranges for kernel CVEs.** NVD's
+> `configurations[].nodes[].cpeMatch[]` reports a single range like
+> `6.13 ≤ x < 6.18.22`: for kernel CVEs it flattens every stable branch into one crude span and
 > hides the per-branch boundaries that actually decide whether *your* pin is
 > affected. A record can present as "6.6.48 up to excluding 6.19.4" while the
 > real fix boundaries are 6.12.101 and 6.18.42 on their respective branches —
@@ -115,25 +102,21 @@ The instinct is right and still stands. The **source** has changed.
 
 What this step is still good for, and why you are here: the CVE record lists
 the **fix commit SHAs**, one mainline plus N stable backports, as
-`git.kernel.org/stable/c/<sha>` reference URLs. Read them from the CVE record
-in the shared CVE-data clone rather than fetching over the network. Which of
+`git.kernel.org/stable/c/<sha>` reference URLs. Read them from a local clone
+of `CVEProject/cvelistV5` (or the kernel `vulns` repo) rather than fetching
+over the network. Which of
 those SHAs is *yours* is step 3.
 
 ## 3. Identify which backport is for your branch
 
 The stable backports for one CVE all carry the same `Subject:` and an
 `[ Upstream commit <sha> ]` trailer — you can't tell them apart from the
-patch headers alone. This part is unchanged and is the reason the step exists.
+patch headers alone.
 
-> **Retracted: identifying the branch by grepping a cgit file log.** This step
-> previously fetched
-> `.../log/<file>?h=linux-6.18.y` and treated a SHA appearing in both that log
-> and the CVE references as "your backport". Do not rely on it. A closely
-> related cgit URL form carrying `?h=<branch>` was found **not to filter by
-> branch at all**, which produced several confidently wrong "already fixed"
-> conclusions before it was caught. Whether the `/log/` endpoint shares that
-> defect has not been established — which is precisely why it should not be
-> the basis of a security decision.
+> **Do not identify the branch from a cgit log listing.** A SHA appearing in
+> both `.../log/<file>?h=linux-6.18.y` and the CVE references is not proof of
+> "your backport": the `?h=<branch>` URL form does not reliably filter by
+> branch, so a SHA appearing in it proves nothing.
 >
 > **Require ancestry proof instead.** The question is not "does this SHA appear
 > in a listing" but "is this commit an ancestor of my branch". Ask git that
@@ -141,9 +124,8 @@ patch headers alone. This part is unchanged and is the reason the step exists.
 > is offline and authoritative:
 >
 > **Resolve `DL_DIR` from the build configuration, never from your shell.** An
-> ambient `$DL_DIR` may be a leftover export pointing at a mirror this project
-> no longer uses — on this host it has pointed at an abandoned clone stopping
-> at a release *older than the current pin*. Derive it, print it, and print the
+> ambient `$DL_DIR` may be a leftover export pointing at an abandoned mirror
+> older than the current pin. Derive it, print it, and print the
 > branch tip before making any claim:
 >
 > `DL_DIR` is a **bitbake** variable set in `kas/local.yml`, not a shell
@@ -177,15 +159,12 @@ patch headers alone. This part is unchanged and is the reason the step exists.
 > for yes and 1 for no, but **128 when the commit is not in the clone at all** —
 > and a two-branch idiom collapses 128 into the "no" arm. That turns "I have not
 > fetched this commit" into "this commit is not on your branch", which is a
-> confident false negative and the same shape of error as the retracted method
+> confident false negative and the same shape of error as the listing method
 > above.
 >
-> This is not hypothetical. A download mirror is only as fresh as its last
-> fetch, which tracks your *pinned* `SRCREV` — so the fix commit you are
-> researching, being newer than your pin by definition, is exactly the commit
-> most likely to be missing. Verified on this repo's mirror: its `linux-6.18.y`
-> tip was `v6.18.38` while the commits under investigation landed in `v6.18.42`,
-> so both were absent and the naive idiom reported them as "not on branch".
+> A download mirror is only as fresh as its last fetch, which tracks your
+> *pinned* `SRCREV` — so the fix commit you are researching, being newer than
+> your pin by definition, is exactly the commit most likely to be missing.
 > Confirm the mirror actually reaches past your target before trusting a
 > negative:
 >
@@ -282,7 +261,7 @@ awk 'BEGIN{a=0} /^---$/ && !a {
        print ""
        print; a=1; next
      } {print}' /tmp/fix.patch \
-  > meta-iot-gateway/recipes-kernel/linux/files/0011-CVE-2026-31431-...patch
+  > meta-iot-gateway/recipes-kernel/linux/files/00NN-CVE-2026-31431-...patch
 ```
 
 Valid `Upstream-Status:` values: `Backport`, `Pending`, `Inappropriate`,
@@ -291,14 +270,14 @@ Valid `Upstream-Status:` values: `Backport`, `Pending`, `Inappropriate`,
 
 ## 6. Wire it into the recipe
 
-The `linux-iotgw-mainline-fit` provider consumes patches via the shared
+The `linux-iotgw-mainline` provider consumes patches via the shared
 `linux-iotgw-mainline-common.inc`. Add the patch there once:
 
 ```bitbake
 # Security: CVE-2026-31431 (algif_aead in-place write-to-page-cache; CISA KEV).
 # Stable 6.18.y backport (fafe0fa2) lands in 6.18.22; we pin 6.18.13 so apply
 # the patch directly. Drop this line on the next SRCREV bump past v6.18.22.
-SRC_URI:append = " file://0011-CVE-2026-31431-crypto-algif_aead-revert-to-out-of-place.patch"
+SRC_URI:append = " file://00NN-CVE-2026-31431-crypto-algif_aead-revert-to-out-of-place.patch"
 ```
 
 Unconditional — security patches don't go behind feature flags. Even if
@@ -322,7 +301,7 @@ make parse
 
 # 2. Re-run just do_patch for the kernel recipe
 . scripts/env.sh && kas shell kas/local.yml \
-  -c "bitbake linux-iotgw-mainline-fit -c patch -f"
+  -c "bitbake linux-iotgw-mainline -c patch -f"
 
 grep -E "Applying patch|FAILED|Hunk" \
   build/tmp/work/*-poky-linux/linux-iotgw-mainline*/*/temp/log.do_patch
@@ -334,7 +313,7 @@ sstate intact, so the rebuild usually restores from cache. Reach for
 `-c cleansstate` only if that fails: on a kernel it forces a full recompile
 (`.claude/rules/yocto-patterns.md`).
 
-A clean `Applying patch 0011-...` with **no** `FAILED` / `Hunk` lines
+A clean `Applying patch 00NN-...` with **no** `FAILED` / `Hunk` lines
 proves the diff matched your tree exactly.
 
 Belt-and-suspenders after a full build — grep the patched source for a
@@ -414,5 +393,5 @@ If you see the cherry-pick in the log, delete the patch file and the
 - [Kernel CVE Applicability](KERNEL_CVE_APPLICABILITY.md) — the stage before this one: whether the CVE applies to your pin at all, the build-object oracle, CNA re-derivation
 - [CVE Applicability — Decision Model](CVE_APPLICABILITY.md) — the generic stage model and what may suppress a finding
 - [Security guide](SECURITY.md) — distribution-wide security posture, KSPP alignment, audit framework
-- [Kernel driver backport — field guide](KERNEL_DRIVER_BACKPORT.md) — sibling guide for backporting *drivers* (not CVE fixes) into the mainline kernel recipe
+- [Kernel driver backport — field guide](KERNEL_DRIVER_BACKPORT.md) — companion guide for backporting *drivers* (not CVE fixes) into the mainline kernel recipe
 - [Operations guide](OPERATIONS.md) — runbook for rolling a security fix to fleet (build → bundle → RAUC OTA → verify)

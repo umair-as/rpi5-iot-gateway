@@ -1,7 +1,7 @@
 SUMMARY     = "Signed FIT image for the iotgw distro on Raspberry Pi 5"
 DESCRIPTION = "Assembles and signs a U-Boot FIT image (kernel + DTB + signed \
 config node) for raspberrypi5 using the wrynose kernel-fit-image class. \
-Consumes linux.bin / linux_comp published by linux-iotgw-mainline-fit via its \
+Consumes linux.bin / linux_comp published by linux-iotgw-mainline via its \
 kernel-fit-extra-artifacts class. Replaces the pre-wrynose in-kernel \
 do_assemble_fitimage flow (kernel-fitimage.bbclass was removed in OE-Core \
 wrynose). See docs/FIT_BOOT_SIGNING.md."
@@ -31,7 +31,7 @@ FIT_CONF_DEFAULT_DTB = "bcm2712-rpi-5-b.dtb"
 
 # File-key FIT signing: a config-level signature over the kernel + fdt images.
 # The control-DTB public key that verifies this FIT at boot is injected into
-# the deployed board DTB by linux-iotgw-mainline-fit's do_deploy, using the
+# the deployed board DTB by linux-iotgw-mainline's do_deploy, using the
 # same UBOOT_SIGN key material. FIT_HASH_ALG / FIT_SIGN_ALG come from the
 # fitflow config (sha256 / rsa2048).
 FIT_KERNEL_SIGN_ENABLE  = "${UBOOT_SIGN_ENABLE}"
