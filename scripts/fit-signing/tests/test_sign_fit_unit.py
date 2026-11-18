@@ -33,7 +33,7 @@ def test_print_profile_yubikey(tmp_path):
     r = run_sign_fit("print-profile", "--profile", "yubikey-9a")
     assert r.returncode == 0
     assert "yubikey-9a" in r.stdout
-    assert "iotgw-fit-yk-2026" in r.stdout
+    assert "iotgw-fit-yk-2027" in r.stdout
     assert "pkcs11:object=Private%20key%20for%20PIV%20Authentication" in r.stdout
 
 

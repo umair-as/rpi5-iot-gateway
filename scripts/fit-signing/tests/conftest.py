@@ -361,10 +361,12 @@ def fixture_dtb_with_pubkey(tmp_path, softhsm_dev_key):
 
 
 _SYSROOT_GLOBS = (
-    "build/tmp-glibc/sysroots-components/x86_64/u-boot-tools-native/"
+    "build/tmp*/sysroots-components/x86_64/u-boot-tools-native/"
     "usr/bin/{tool}",
-    "build/tmp-glibc/work/x86_64-linux/u-boot-tools-native/*/"
+    "build/tmp*/work/x86_64-linux/u-boot-tools-native/*/"
     "recipe-sysroot-native/usr/bin/{tool}",
+    # Host tools the target u-boot recipe builds; same binaries.
+    "build/tmp*/work/*/u-boot/*/build/tools/{tool}",
 )
 
 

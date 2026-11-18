@@ -422,6 +422,11 @@ def find_fit_check_sign(cli_path: Optional[str]) -> str:
             )
         )
     )
+    # The target u-boot recipe builds the same host tools; often the only copy
+    # left when u-boot-tools-native was never built or was rm_work'd.
+    candidates.extend(
+        sorted(project_root.glob("build/tmp*/work/*/u-boot/*/build/tools/fit_check_sign"))
+    )
     for c in candidates:
         if c.is_file():
             return str(c)
@@ -1050,6 +1055,57 @@ def cmd_sign_bootfiles(args: argparse.Namespace) -> int:
     return 0
 
 
+def _import_slot_fits():
+    """The slot-FIT checks live in the layer (meta-iot-gateway/scripts/), shared
+    with the bundle recipe's assembly gate."""
+    scripts = pathlib.Path(__file__).resolve().parents[2] / "meta-iot-gateway" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    import slot_fits
+    return slot_fits
+
+
+def cmd_sign_slot_fits(args: argparse.Namespace) -> int:
+    slot_fits = _import_slot_fits()
+
+    config_path = resolve_profile_config(args.profile_config)
+    profile = build_profile(
+        name=args.profile,
+        config_path=config_path,
+        key_name_hint_override=args.key_name_hint,
+        uri_override=args.uri,
+        engine_conf_override=args.engine_conf,
+        pkcs11_module_override=args.pkcs11_module,
+        signer_alias_override=args.signer_alias,
+        key_label_legacy=args.key_label,
+    )
+    validate_profile(profile, require_engine_conf=True)
+    preflight = _maybe_preflight(args, profile)
+    checker = args.checker if args.checker != "fit_check_sign" else find_fit_check_sign(None)
+    try:
+        slots = slot_fits.slots_from_args(args)
+        with tempfile.TemporaryDirectory(prefix="sign-slot-fits-") as td:
+            anchor = slot_fits.anchor_from_archive(
+                pathlib.Path(args.archive), args.anchor_member, pathlib.Path(td))
+            summary = slot_fits.sign(
+                slots, anchor, args.keys or slot_fits.anchor_keys(anchor), args.algo, args.bits,
+                key_name=profile.key_name_hint,
+                sign_one=lambda fit: sign_fit_file(
+                    fit, profile, verify=True, rewrite_only=False, verbose=args.verbose),
+                checker=checker,
+                gate_path=pathlib.Path(args.gate),
+                force=args.force,
+                manifest=pathlib.Path(args.deploy_dir) / f"{args.image}.slot-fits.signed",
+            )
+    except slot_fits.SlotFitError as e:
+        raise SignFitError(str(e)) from e
+    if preflight:
+        summary["pkcs11_preflight"] = preflight
+    _write_provenance(args.provenance, command="sign-slot-fits", profile=profile, summary=summary)
+    _print_summary("sign-slot-fits summary", summary)
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     tool = find_fit_check_sign(args.fit_check_sign_path)
     summary = crypto_verify_fit(
@@ -1214,6 +1270,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Write a redacted JSON signing-result document to this path.",
     )
     sp_arch.set_defaults(func=cmd_sign_bootfiles)
+
+    slot_fits = _import_slot_fits()
+
+    sp_slots = sub.add_parser(
+        "sign-slot-fits",
+        help="Sign an image's runtime dm-verity slot FITs (<image>.fitImage-a/-b) as a pair.",
+    )
+    _add_profile_args(sp_slots)
+    slot_fits.add_slot_args(sp_slots)
+    sp_slots.add_argument(
+        "--force",
+        action="store_true",
+        help="Re-sign even when a FIT already verifies against the profile key.",
+    )
+    sp_slots.add_argument("--verbose", action="store_true", help="Forward mkimage stdout.")
+    sp_slots.add_argument(
+        "--pkcs11-preflight",
+        action="store_true",
+        help="Run pkcs11-tool --list-slots for the configured --pkcs11-module before signing.",
+    )
+    sp_slots.add_argument(
+        "--pkcs11-timeout",
+        type=float,
+        default=PKCS11_PREFLIGHT_TIMEOUT_DEFAULT,
+        help=f"Timeout (seconds) for the --pkcs11-preflight slot enumeration. Default: {PKCS11_PREFLIGHT_TIMEOUT_DEFAULT:g}.",
+    )
+    sp_slots.add_argument(
+        "--provenance",
+        help="Write a redacted JSON signing-result document to this path.",
+    )
+    sp_slots.set_defaults(func=cmd_sign_slot_fits)
 
     sp_verify = sub.add_parser(
         "verify",

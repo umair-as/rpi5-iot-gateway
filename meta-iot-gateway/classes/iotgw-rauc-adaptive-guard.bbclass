@@ -55,7 +55,10 @@ python do_iotgw_rauc_alignment_check() {
                 if not stripped or stripped.startswith("#") or not stripped.startswith("part "):
                     continue
 
-                label_match = re.search(r"--label\s+([^\s]+)", stripped)
+                # The slot name is --part-name (always present on the root
+                # lines), or --label on layouts that still use the filesystem
+                # label as the GPT name.
+                label_match = re.search(r"--(?:label|part-name)\s+([^\s]+)", stripped)
                 if not label_match:
                     continue
 

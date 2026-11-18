@@ -115,18 +115,20 @@ do_deploy() {
     fi
 
     cd "$workdir"
-    # Write kernel.release based on modules archive if available (helps post-install validation)
+    # Write kernel.release from the modules archive. The bundle post-install
+    # hook refuses an archive without it: it is how the hook proves the FIT's
+    # kernel and the slot's /lib/modules belong together. The first archive
+    # entries are the bare lib/ and lib/modules/ directories, so scan for the
+    # first lib/modules/<release>/ entry instead of reading line one.
     modules_tgz="${DEPLOY_DIR_IMAGE}/modules-${MACHINE}.tgz"
     if [ ! -f "$modules_tgz" ]; then
         # Backward-compatible fallback
         modules_tgz="${DEPLOY_DIR_IMAGE}/modules-raspberrypi5.tgz"
     fi
-    if [ -f "$modules_tgz" ]; then
-        rel=$(tar -tzf "$modules_tgz" | head -1 | sed -n 's#^\.?/*lib/modules/\([^/]*\)/.*#\1#p')
-        if [ -n "$rel" ]; then
-            echo "$rel" > "$workdir/kernel.release"
-        fi
-    fi
+    [ -f "$modules_tgz" ] || bbfatal "Kernel modules archive not found: $modules_tgz"
+    rel=$(tar -tzf "$modules_tgz" | sed -n 's#^\(\./\)\{0,1\}lib/modules/\([^/][^/]*\)/.*#\2#p' | head -1)
+    [ -n "$rel" ] || bbfatal "Cannot read the kernel release from $modules_tgz"
+    echo "$rel" > "$workdir/kernel.release"
 
     # Emit uboot-env.txt: the boot-critical U-Boot env vars with the exact values
     # compiled into u-boot.bin, so the RAUC post-install hook can self-heal a
