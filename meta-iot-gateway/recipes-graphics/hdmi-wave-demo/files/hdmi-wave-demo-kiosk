@@ -1,0 +1,3 @@
+#!/bin/sh
+# Weston's [autolaunch] runs path= with no arguments; this supplies them.
+exec @BINDIR@/hdmi-wave-demo --fullscreen "$@"

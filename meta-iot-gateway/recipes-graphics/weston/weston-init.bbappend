@@ -3,9 +3,8 @@
 # It belongs on weston-init, NOT on weston: weston-init is the recipe that owns
 # ${sysconfdir}/xdg/weston/weston.ini (weston-init.bb:62,99-100) and that also
 # seds PACKAGECONFIG-derived settings into it (backend=, xwayland, idle-time,
-# use-pixman). Attaching a second copy to the `weston` recipe — which this layer
-# previously did — produced two packages owning one path and a fatal
-# do_rootfs RPM conflict.
+# use-pixman). Attaching a second copy to the `weston` recipe produces two
+# packages owning one path and a fatal do_rootfs RPM conflict.
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 # Filename note: this is `weston-init.bbappend`, NOT `weston-init_%.bbappend`.
@@ -20,12 +19,19 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 # the compositor cannot start on this distro at all (status=224/PAM) — see the
 # file itself for the full diagnosis and why the fix is here rather than in the
 # password-aging policy.
-SRC_URI += "file://iotgw-weston-no-pam.conf"
+SRC_URI += "file://iotgw-weston-no-pam.conf file://iotgw-weston-seatd.conf \
+            file://iotgw-weston-no-shader-cache.conf"
 
 do_install:append() {
     install -d ${D}${systemd_system_unitdir}/weston.service.d
     install -m 0644 ${UNPACKDIR}/iotgw-weston-no-pam.conf \
         ${D}${systemd_system_unitdir}/weston.service.d/iotgw-weston-no-pam.conf
+    install -m 0644 ${UNPACKDIR}/iotgw-weston-seatd.conf \
+        ${D}${systemd_system_unitdir}/weston.service.d/iotgw-weston-seatd.conf
+    install -m 0644 ${UNPACKDIR}/iotgw-weston-no-shader-cache.conf \
+        ${D}${systemd_system_unitdir}/weston.service.d/iotgw-weston-no-shader-cache.conf
 }
 
-FILES:${PN} += "${systemd_system_unitdir}/weston.service.d/iotgw-weston-no-pam.conf"
+FILES:${PN} += "${systemd_system_unitdir}/weston.service.d/iotgw-weston-no-pam.conf \
+                 ${systemd_system_unitdir}/weston.service.d/iotgw-weston-seatd.conf \
+                 ${systemd_system_unitdir}/weston.service.d/iotgw-weston-no-shader-cache.conf"

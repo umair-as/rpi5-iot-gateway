@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Fri, 30 Oct 2026 16:00:00 +0100
+Subject: [PATCH] drm/display: hdmi: warn once when the sink reports no RGB
+ support
+
+When the EDID cannot be read but the connector is still reported as
+connected (for example a panel that is powered off while its cable keeps
+hot-plug detect asserted), color_formats is empty. The helper already
+assumes RGB in that case and keeps the display going, but it emits the
+warning on every atomic check, flooding the kernel log and the console
+with thousands of identical lines per hour.
+
+Warn once instead; the condition is still visible and the behaviour is
+unchanged.
+
+Upstream-Status: Pending
+Assisted-by: claude-code:claude-opus-5-5
+---
+ drivers/gpu/drm/display/drm_hdmi_state_helper.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/gpu/drm/display/drm_hdmi_state_helper.c b/drivers/gpu/drm/display/drm_hdmi_state_helper.c
+--- a/drivers/gpu/drm/display/drm_hdmi_state_helper.c
++++ b/drivers/gpu/drm/display/drm_hdmi_state_helper.c
+@@ -429,7 +429,7 @@
+ 		 * the display.
+ 		 */
+ 		if (!(info->color_formats & DRM_COLOR_FORMAT_RGB444))
+-			drm_warn(dev, "HDMI Sink doesn't support RGB, something's wrong.\n");
++			drm_warn_once(dev, "HDMI Sink doesn't support RGB, something's wrong.\n");
+ 
+ 		if (bpc == 10 && !(info->edid_hdmi_rgb444_dc_modes & DRM_EDID_HDMI_DC_30)) {
+ 			drm_dbg_kms(dev, "10 BPC but sink doesn't support Deep Color 30.\n");

@@ -1,0 +1,36 @@
+[Unit]
+Description=HDMI wave demo, fullscreen on the Weston display
+After=weston.service
+Wants=weston.service
+# One fullscreen client at a time: starting either unit stops the other.
+Conflicts=iotgw-dx-demo.service
+
+[Service]
+# No account to create: a transient user that is only in the compositor
+# socket group (wayland, owner of /run/wayland-0) and the audio group.
+DynamicUser=yes
+SupplementaryGroups=wayland audio
+Environment=WAYLAND_DISPLAY=/run/wayland-0
+# A transient user has no home for Mesa's shader cache; do not try.
+Environment=MESA_SHADER_CACHE_DISABLE=true
+RuntimeDirectory=hdmi-wave-demo
+Environment=XDG_RUNTIME_DIR=/run/hdmi-wave-demo
+# No HDMI screen connected: skip quietly (a skipped condition is not a
+# failure, so no error and no restart loop). A screen plugged in later needs
+# a manual `systemctl start hdmi-wave-demo` or a reboot.
+ExecCondition=/bin/sh -c 'grep -qsx connected /sys/class/drm/card*-HDMI-A-*/status'
+ExecStart=@BINDIR@/hdmi-wave-demo --fullscreen
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+
+[Install]
+WantedBy=graphical.target

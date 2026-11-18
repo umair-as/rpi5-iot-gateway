@@ -2,6 +2,8 @@ header:
   version: 18
   includes:
     - "kas/rauc.yml"
+    # The desktop is the on-screen AI demo station: always with the DX-M1 stack.
+    - "kas/deepx.yml"
 
 # Build desktop image with full GUI environment
 target:
@@ -14,6 +16,9 @@ local_conf_header:
   desktop_kernel: |
     # Ensure GPU/V4L2/media features for desktop workloads
     IOTGW_KERNEL_FEATURES = "igw_networking_iot igw_security_prod igw_compute_media"
+    # Desktop peripherals (desktop.cfg). :append, because kas/local.yml's own
+    # IOTGW_KERNEL_FEATURES assignment can land later and replace the line above.
+    IOTGW_KERNEL_FEATURES:append = " igw_desktop"
   desktop_license_flags: |
     # Accept the "commercial" LICENSE_FLAGS for the H.264 decode path only.
     #
