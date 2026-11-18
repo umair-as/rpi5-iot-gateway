@@ -1,0 +1,18 @@
+[Unit]
+Description=sshd host keys in /run (persisted on /data)
+# /data is mounted by the pre-init before PID 1 starts, so no data.mount
+# dependency: the script checks the mount point itself and falls back to keys
+# for this boot only.
+DefaultDependencies=no
+After=local-fs.target
+Before=sshdgenkeys.service sshd.service
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/iotgw/iotgw-sshd-keys
+
+[Install]
+WantedBy=sshd.service

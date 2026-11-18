@@ -1,0 +1,29 @@
+#%PAM-1.0
+# Console login (shadow login), in Fedora's order for pam_selinux.
+#
+# pam_selinux close must be the first session module. pam_selinux open
+# computes the login context (local_login_t -> the user's default role, from
+# /etc/selinux/*/contexts), relabels the tty to the user's context, and sets
+# the exec and key-creation contexts; only modules meant to run for the user's
+# session follow it. pam_loginuid sits between the two so the audit login UID
+# is set before the session starts.
+#
+# pam_unix authenticates through unix_chkpwd when it cannot read /etc/shadow
+# directly, so the login program does not need shadow access of its own.
+auth       optional     pam_faildelay.so delay=3000000
+# Root only on the terminals in /etc/securetty (the serial console is listed
+# through SERIAL_CONSOLES). Fails without prompting, so a root password is
+# never typed on a terminal that is not listed.
+auth       [success=ok ignore=ignore user_unknown=ignore default=die] pam_securetty.so
+auth       include      common-auth
+account    required     pam_nologin.so
+account    include      common-account
+password   include      common-password
+session    required     pam_selinux.so close
+session    required     pam_loginuid.so
+session    required     pam_selinux.so open
+session    optional     pam_keyinit.so force revoke
+session    required     pam_limits.so
+session    required     pam_env.so readenv=1
+session    optional     pam_motd.so
+session    include      common-session

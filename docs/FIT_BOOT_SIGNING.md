@@ -35,17 +35,14 @@ local_conf_header:
     UBOOT_SIGN_KEYNAME = "iotgw-fit-dev"
 ```
 
-**Migrating an older `kas/local.yml`:** drop the `kernel_mode_switch` /
-`IOTGW_BOOT_FLOW` block and convert every `:fitflow`-qualified line to a bare
-assignment — the override no longer exists, so `:fitflow` lines are silently
-inert and the build hard-fails as if unconfigured.
-
-### Split-FIT model (already in this project)
-- `PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline-fit"` builds the raw
+### Split-FIT model
+- `PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline"` builds the raw
   kernel `Image`; `KERNEL_IMAGETYPE = "Image"` (not flipped to `fitImage`).
 - The signed `fitImage` is assembled + signed by the separate `iotgw-fit-image`
-  recipe (upstream `kernel-fit-image` class) and staged onto `/boot` via
-  `IMAGE_BOOT_FILES:append = " fitImage"`.
+  recipe (upstream `kernel-fit-image` class) and is the input to the per-slot
+  FITs: `iotgw-verity-image.bbclass` builds `<image>.fitImage-a` / `-b` (kernel +
+  DTB whose bootargs carry the slot's dm-verity table) and stages them onto
+  `/boot` as `fitImage-a` / `fitImage-b`; the generic `fitImage` is not on `/boot`.
 - Boot is the compiled-in U-Boot env (`iotgw_load_boot` / `iotgw_exec_fit`)
   loading per-slot `fitImage-a` / `fitImage-b`. No `boot.scr` (`CONFIG_CMD_SOURCE`
   disabled by `surface_reduce` hardening).
@@ -56,9 +53,7 @@ The FIT carries a single signed `default` configuration (`FIT_CONF_DEFAULT_DTB`)
 assembled by the upstream `kernel-fit-image` class (`iotgw-fit-image`). U-Boot boots
 that default with a bare `bootm` (no `#conf`); `iotgw_fit_conf` is an operator
 override only, cleared by the OTA hook on every install. If multiple board configs
-are ever needed, use the upstream class's `FIT_CONF_MAPPINGS`. The former
-project-owned custom-ITS / Strategy-A multi-kernel path (`iotgw-fit-custom-its`)
-was removed as dead scarthgap-era code.
+are ever needed, use the upstream class's `FIT_CONF_MAPPINGS`.
 
 ## Generate FIT Signing Keys (Manual)
 Use a dedicated keypair (do not reuse RAUC or mTLS keys):
@@ -77,22 +72,13 @@ chmod 644 "$FIT_KEY_DIR/iotgw-fit-dev.crt"
 ```
 
 ## Enable FIT Signing in Local Config
-In `kas/local.yml` (local-only, gitignored), use the project's `fit_signing_dev` block:
-
-```yaml
-local_conf_header:
-  fit_signing_dev: |
-    # IOTGW_FIT_SIGNING, UBOOT_SIGN_ENABLE, FIT_HASH_ALG/SIGN_ALG and
-    # FIT_GENERATE_KEYS are tracked in the distro (iotgw-common.inc). Only the
-    # operator key path (and optional sign mode) live in local.yml.
-    IOTGW_FIT_SIGN_MODE = "rsa"
-    UBOOT_SIGN_KEYDIR = "/path/to/your/fit-keys"
-    UBOOT_SIGN_KEYNAME = "iotgw-fit-dev"
-```
+Point the `fit_signing` block in `kas/local.yml` (shown above) at the key
+directory. `IOTGW_FIT_SIGNING`, `UBOOT_SIGN_ENABLE`, `FIT_HASH_ALG`/`FIT_SIGN_ALG`
+and `FIT_GENERATE_KEYS` are set by the distro (`iotgw-common.inc`); only the
+operator key path and name live in `kas/local.yml`.
 
 Notes:
 - Key management is manual (`FIT_GENERATE_KEYS = "0"`, set by the distro).
-- Replace `/path/to/your/fit-keys` with your actual key directory.
 - This project currently validates FIT signing/verification with RSA.
 - ECDSA path is not validated in this repository yet; do not treat it as a
   supported/verified production path.
@@ -112,15 +98,15 @@ Relevant options include:
 Force rebuild of U-Boot and kernel artifacts after signing changes:
 
 ```bash
-kas shell kas/local.yml -c 'bitbake -c cleansstate u-boot virtual/kernel'
+. scripts/env.sh && kas shell kas/local.yml -c 'bitbake -c cleansstate u-boot virtual/kernel'
 make bundle-dev-full-fit
 ```
 
 ## Verify Signed FIT on Host
-Check FIT structure:
+Check the structure of a slot FIT (the files U-Boot boots):
 
 ```bash
-dumpimage -l build/tmp/deploy/images/raspberrypi5/fitImage
+dumpimage -l build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-raspberrypi5.rootfs.fitImage-a
 ```
 
 Expected:
@@ -140,14 +126,18 @@ so a stale value cannot persist:
 fw_printenv iotgw_fit_conf          # expect: not defined
 ```
 
-Verify FIT bundle payload uses FIT bootfiles:
+Verify the bundle payload carries both slot FITs and the bootfiles archive.
+Bundles are `crypt` by default, so extract with RAUC rather than an archive
+tool:
 
 ```bash
-tmpd=$(mktemp -d)
-7z x -y -o"$tmpd" build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-bundle-full-fit.raucb >/dev/null
-sed -n '1,200p' "$tmpd/manifest.raucm"
-tar -tzf "$tmpd/bootfiles-fit.tar.gz" | grep -E 'fitImage|u-boot.bin'
-rm -rf "$tmpd"
+OUT=$(mktemp -d)/bundle
+rauc extract --trust-environment \
+  --keyring=/path/to/root-ca-primary.crt \
+  --key=/path/to/device-decryption.key \
+  build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-bundle-full-fit.raucb "$OUT"
+ls "$OUT"/*.fitImage-a "$OUT"/*.fitImage-b
+tar -tzf "$OUT/bootfiles-fit.tar.gz" | grep u-boot.bin
 ```
 
 ## Install and Verify on Target
@@ -163,14 +153,14 @@ is no `boot.scr`), so inspect `u-boot.bin` and the per-slot FIT files:
 
 ```bash
 strings /boot/u-boot.bin | grep -E "iotgw_load_boot|iotgw_exec_fit"
-ls -l /boot/fitImage /boot/fitImage-a /boot/fitImage-b
+ls -l /boot/fitImage-a /boot/fitImage-b
 rauc status
 ```
 
 Expected:
-- `iotgw_load_boot=...` selects the per-slot file (`fitImage-a` / `fitImage-b`) by `${rauc_slot}`, with a plain `fitImage` fallback.
+- `iotgw_load_boot=...` selects the per-slot file (`fitImage-a` / `fitImage-b`) by `${rauc_slot}`; there is no fallback (a missing slot FIT zeroes that slot's boot attempts and resets).
 - `iotgw_exec_fit=... bootm ...` boots the FIT's signed default config.
-- `/boot/fitImage` (factory) exists; `fitImage-a` / `fitImage-b` appear once each slot has been OTA-updated.
+- `fitImage-a` and `fitImage-b` are both present from the flashed image; an OTA rewrites the one for the slot it installs.
 
 Check U-Boot log for verification path:
 - FIT configuration selected
@@ -180,20 +170,24 @@ Check U-Boot log for verification path:
 ## Negative Test (Tamper Protection)
 Goal: confirm tampered FIT does not boot.
 
-Suggested method:
-1. Backup `/boot/fitImage` on target.
-2. Modify one byte in `/boot/fitImage`.
+Suggested method, on the booted slot's FIT (`/boot/fitImage-a` when booted
+from slot A; `rauc status` shows the booted slot):
+1. Back up the FIT on target.
+2. Modify one byte in it.
 3. Reboot and confirm U-Boot verification failure.
-4. Restore backup and reboot.
+4. Restore the backup and reboot.
 
-Example (careful, test device only):
+Example for slot A (careful, test device only):
 
 ```bash
-cp /boot/fitImage /boot/fitImage.bak
-printf '\x00' | dd of=/boot/fitImage bs=1 seek=4096 count=1 conv=notrunc
+cp /boot/fitImage-a /boot/fitImage-a.bak
+printf '\x00' | dd of=/boot/fitImage-a bs=1 seek=4096 count=1 conv=notrunc
 sync
 reboot
 ```
+
+A failed verification zeroes that slot's boot attempts, so the device falls
+back to the other slot; restore the backup from there.
 
 Expected failure symptoms in U-Boot log:
 - hash/signature verification error
@@ -215,11 +209,12 @@ and operator runbooks call it directly.
 ```bash
 uv run python scripts/fit-signing/sign_fit.py sign-fit       --profile NAME --fit PATH     [--verify] [--rewrite-only]
 uv run python scripts/fit-signing/sign_fit.py sign-bootfiles --profile NAME --archive PATH [--force]  [--verify]
+uv run python scripts/fit-signing/sign_fit.py sign-slot-fits --profile NAME --image NAME --deploy-dir DIR --archive PATH [--force]
 uv run python scripts/fit-signing/sign_fit.py verify         --fit PATH --dtb PATH         [--fit-check-sign-path PATH]
 uv run python scripts/fit-signing/sign_fit.py print-profile  --profile NAME                [--profile-config PATH]
 ```
 
-`sign-fit` and `sign-bootfiles` invoke
+`sign-fit`, `sign-bootfiles` and `sign-slot-fits` invoke
 `mkimage -F -N pkcs11 -k <profile.uri>` under the hood; `verify` calls
 `fit_check_sign` against a supplied DTB for a real RSA signature check
 (distinct from the structural `--verify` flag, which only inspects
@@ -237,15 +232,15 @@ with the kas overlay files):
 ```yaml
 fit_signing_profiles:
   yubikey-9a:
-    key_name_hint: "iotgw-fit-yk-2026"
+    key_name_hint: "iotgw-fit-yk-2027"
     uri: "pkcs11:object=Private%20key%20for%20PIV%20Authentication"
-    engine_conf: "~/rauc-keys/rauc-ca/fit/openssl-engine.cnf"
+    engine_conf: "keys/dev/yk/openssl-engine.cnf"
     signer_alias: "YK-PRIMARY"
 
   softhsm-dev:
     key_name_hint: "iotgw-fit-softhsm-dev"
     uri: "pkcs11:object=iotgw-fit-softhsm-dev"
-    engine_conf: "~/rauc-keys/softhsm/fit/openssl-engine.cnf"
+    engine_conf: "keys/dev/softhsm/fit/openssl-engine.cnf"
     signer_alias: "SOFTHSM-DEV"
 ```
 
@@ -284,8 +279,8 @@ sudo apt install uv
 make tools-venv
 
 # Operator signing targets enter this environment via `uv run`.
-make sign-bootfiles-fit-yk
-make sign-bootfiles-fit-softhsm
+make sign-slot-fits-yk
+make sign-slot-fits-softhsm
 
 # Run the test suite. SoftHSM tests skip cleanly when no SoftHSM
 # token is on the host.
@@ -300,15 +295,15 @@ make test-sign-fit-softhsm
 
 | Target | Profile | When to use |
 |--------|---------|-------------|
-| `make sign-bootfiles-fit-yk` | `yubikey-9a` | Production release flow. Requires a YubiKey with slot 9a provisioned. Prompts for PIN, requires touch. |
-| `make sign-bootfiles-fit-softhsm` | `softhsm-dev` | Dev flow for engineers without a YubiKey. Requires the SoftHSM dev key provisioned (see below). |
+| `make sign-slot-fits-yk` | `yubikey-9a` | Release flow: re-signs an image's dm-verity slot FITs (`SLOT_FITS_IMAGE=`, default `iot-gw-image-prod`). Requires a YubiKey with slot 9a provisioned. Prompts for PIN, requires touch. |
+| `make sign-slot-fits-softhsm` | `softhsm-dev` | Dev flow for engineers without a YubiKey. Requires the SoftHSM dev key provisioned (see below). |
+| `make sign-bootfiles-fit-yk` / `-softhsm` | as above | Re-sign the generic `fitImage` inside `bootfiles-fit.tar.gz`. No install hook boots that FIT, so this does not make a bundle bootable under a different trust root. |
 
-Both targets accept `SIGN_BOOTFILES_ARGS` and `SIGN_FIT_ARGS` env vars
-for ad-hoc flags. Example:
+The slot-FIT targets accept `SIGN_SLOT_FITS_ARGS`; the bootfiles targets accept
+`SIGN_BOOTFILES_ARGS` and `SIGN_FIT_ARGS`. Example:
 
 ```bash
-make sign-bootfiles-fit-yk SIGN_FIT_ARGS=--verify
-make sign-bootfiles-fit-softhsm SIGN_BOOTFILES_ARGS=--force
+make sign-slot-fits-yk SLOT_FITS_IMAGE=iot-gw-image-dev SIGN_SLOT_FITS_ARGS=--force
 ```
 
 ### SoftHSM dev provisioning (one-time, dev-only)
@@ -322,7 +317,7 @@ images**; the corresponding DTB trust gate
 The distro `softhsm2` package (Debian/Ubuntu/Fedora 2.6.x) is
 sufficient. Engineers building SoftHSM 2.7.0 locally point the
 operator tooling at it by editing the `MODULE_PATH` line in the
-profile's engine config file (`~/rauc-keys/softhsm/fit/openssl-engine.cnf`
+profile's engine config file (`keys/dev/softhsm/fit/openssl-engine.cnf`
 in the default profile). `sign_fit.py` consumes the path indirectly
 via OpenSSL's engine_pkcs11 — there is no Python-side env var that
 overrides it.
@@ -336,7 +331,7 @@ Initial provisioning:
 
 ```bash
 # 1. Isolated token store under the operator vault.
-SOFTHSM_BASE="$HOME/rauc-keys/softhsm"
+SOFTHSM_BASE="$PWD/keys/dev/softhsm"   # repo root; gitignored
 install -d -m 700 "$SOFTHSM_BASE/tokens" "$SOFTHSM_BASE/fit"
 cat > "$SOFTHSM_BASE/softhsm2.conf" <<EOF
 directories.tokendir = $SOFTHSM_BASE/tokens
@@ -384,15 +379,12 @@ openssl req -new -x509 \
     -out "$SOFTHSM_BASE/fit/iotgw-fit-softhsm-dev.crt"
 ```
 
-After provisioning, persist `SOFTHSM2_CONF` in your shell init — e.g.
-`scripts/env.local.sh` (gitignored, sourced by `scripts/env.sh`) — so every
-subsequent `make sign-bootfiles-fit-softhsm` invocation finds the token. The
-committed target itself sets no `SOFTHSM2_CONF`: the token path is
-operator-local, so it must come from your environment.
+The SoftHSM Make targets default `SOFTHSM2_CONF` to
+`keys/dev/softhsm/softhsm2.conf`; an exported `SOFTHSM2_CONF` overrides it.
 
 The default profile expects the engine config at
-`~/rauc-keys/softhsm/fit/openssl-engine.cnf` and the cert at
-`~/rauc-keys/softhsm/fit/iotgw-fit-softhsm-dev.crt`. To use a
+`keys/dev/softhsm/fit/openssl-engine.cnf` (repo-relative, gitignored) and the
+cert at `keys/dev/softhsm/fit/iotgw-fit-softhsm-dev.crt`. To use a
 different layout, copy `scripts/fit-signing/fit-signing-profiles.yml` to a vault
 location, edit the SoftHSM profile, and export
 `IOTGW_FIT_SIGNING_PROFILES=<path>`.
@@ -403,7 +395,7 @@ The U-Boot **control FDT** (the runtime DTB the RPi firmware passes to
 U-Boot) holds the public keys U-Boot trusts when verifying FIT
 signatures at boot. Rotating from a file-key-only trust root to a
 hardware-resident YubiKey pubkey is the second leg of FIT-signing
-adoption: PR-side HSM signing produces FITs that only verify on devices
+adoption: post-build HSM signing produces FITs that only verify on devices
 whose control FDT carries the corresponding pubkey.
 
 This project ships a three-stage rotation pattern modelled after the
@@ -413,7 +405,7 @@ YubiKey:
 
 | Stage | DTB trust roots | FIT signing key | Notes |
 |-------|-----------------|-----------------|-------|
-| Legacy baseline | file key only | file key | Status quo before this rotation. |
+| File-key only | file key only | file key | Single in-band trust root. |
 | **Rotation window** | **file key + YK pubkey** | file key (build) or YK (post-build, optional) | DTB carries both pubkeys with `/signature/required-mode = "any"`. A FIT signed by either root verifies. |
 | Production cutover | YK pubkey only | YK (post-build, mandatory) | File key retired via the `kas/fit-release-trust.yml` release overlay (`IOTGW_FIT_TRUST_FILE_KEY = "0"`; SoftHSM forced off too). |
 | Dev variant (optional) | adds SoftHSM dev pubkey alongside any of the above | YK (production) or SoftHSM (dev) | `IOTGW_FIT_TRUST_SOFTHSM_KEY = "1"`. **Dev hardware only — never ship.** |
@@ -438,14 +430,14 @@ key is exported, ever.** Capture once into the operator key tree:
 ```bash
 KEY_DIR="${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
 install -d -m 700 "$KEY_DIR"
-ykman piv certificates export 9a "$KEY_DIR/iotgw-fit-yk-2026.crt"
-chmod 644 "$KEY_DIR/iotgw-fit-yk-2026.crt"
-openssl x509 -in "$KEY_DIR/iotgw-fit-yk-2026.crt" -noout -subject -dates
+ykman piv certificates export 9a "$KEY_DIR/iotgw-fit-yk-2027.crt"
+chmod 644 "$KEY_DIR/iotgw-fit-yk-2027.crt"
+openssl x509 -in "$KEY_DIR/iotgw-fit-yk-2027.crt" -noout -subject -dates
 ```
 
 The certificate filename is `<IOTGW_FIT_YK_KEYNAME>.crt`; renaming the
 YubiKey hint string in the project requires renaming this file in
-lockstep. The default `iotgw-fit-yk-2026` is intentionally year-tagged
+lockstep. The default `iotgw-fit-yk-2027` is intentionally year-tagged
 so a future rotation lands at `iotgw-fit-yk-<NEW_YEAR>` without
 clobbering existing trust anchors on already-deployed rotation-window
 devices.
@@ -460,22 +452,23 @@ local_conf_header:
     IOTGW_FIT_TRUST_FILE_KEY = "1"
     IOTGW_FIT_TRUST_YK_KEY = "1"
     IOTGW_FIT_YK_KEYDIR = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
-    IOTGW_FIT_YK_KEYNAME = "iotgw-fit-yk-2026"
+    IOTGW_FIT_YK_KEYNAME = "iotgw-fit-yk-2027"
 ```
 
 Force rebuild of the kernel so the deploy step re-mutates the DTBs:
 
 ```bash
-kas shell kas/local.yml -c 'bitbake -c cleansstate virtual/kernel'
+. scripts/env.sh && kas shell kas/local.yml -c 'bitbake -c cleansstate virtual/kernel'
 make bundle-dev-full-fit
 ```
 
-The kernel-fit recipe's `do_deploy:append` block:
+The kernel recipe's (`linux-iotgw-mainline_6.18.bb`) `do_deploy:append` block:
 
 - Loops over `RPI_KERNEL_DEVICETREE` DTBs.
-- When `IOTGW_FIT_TRUST_FILE_KEY = "1"`: runs `mkimage -F -k -K -r` to
-  sign the FIT with the file key AND inject the file-key public key
-  into the DTB under `/signature/key-<UBOOT_SIGN_KEYNAME>`.
+- When `IOTGW_FIT_TRUST_FILE_KEY = "1"`: runs `fdt_add_pubkey` to inject
+  the file-key public key into the DTB under
+  `/signature/key-<UBOOT_SIGN_KEYNAME>`. (The FIT itself is signed by
+  `iotgw-fit-image`, and the per-slot FITs by `iotgw-verity-image.bbclass`.)
 - When `IOTGW_FIT_TRUST_YK_KEY = "1"`: runs
   `fdt_add_pubkey -a ${FIT_HASH_ALG},${FIT_SIGN_ALG} -k <yk-keydir> -n <yk-keyname> -r conf`
   to add a second key node under `/signature/key-<IOTGW_FIT_YK_KEYNAME>`
@@ -506,7 +499,7 @@ Expected output:
 
 ```
 key-iotgw-fit-dev
-key-iotgw-fit-yk-2026
+key-iotgw-fit-yk-2027
 any
 ```
 
@@ -524,8 +517,8 @@ After flashing a rotation-window build and booting:
 
 ```bash
 # Confirm both trust roots are live in U-Boot's control FDT.
-nsenter -t 1 -m cat /sys/firmware/devicetree/base/signature/required-mode
-nsenter -t 1 -m ls /sys/firmware/devicetree/base/signature/
+cat /sys/firmware/devicetree/base/signature/required-mode
+ls /sys/firmware/devicetree/base/signature/
 ```
 
 Expected: `any` on stdout, and two `key-*` directories.
@@ -536,11 +529,12 @@ Test both signing paths sequentially:
    boot, check U-Boot log for FIT verification success against
    `key-${UBOOT_SIGN_KEYNAME}`. Normal `iotgw-rauc-install` flow works
    as it did pre-rotation.
-2. **YK-signed FIT path** — run `make sign-bootfiles-fit-yk` against the
-   same build to swap the inner FIT signature to slot 9a (see the next
-   section), reassemble the bundle, install on the device that booted
-   step 1, reboot. U-Boot must accept the FIT against
-   `key-iotgw-fit-yk-2026`.
+2. **YK-signed FIT path** — run
+   `make sign-slot-fits-yk SLOT_FITS_IMAGE=iot-gw-image-dev` against the
+   same build to re-sign both slot FITs with slot 9a, reassemble the bundle
+   (`make bundle-dev-full-fit`), install on the device that booted step 1,
+   reboot. U-Boot must accept the FIT against
+   `key-iotgw-fit-yk-2027`.
 
 Both paths must boot cleanly on the same device before promoting the
 rotation-window build to fleet rollout, and before scoping the
@@ -572,7 +566,7 @@ leak the SoftHSM dev key into a release DTB.
 ### Dev profile
 
 The default. `IOTGW_FIT_TRUST_FILE_KEY` defaults to `"1"` in the
-recipe, so no kas overlay change is needed for dev builds. The dev
+distro (`iotgw-common.inc`), so no kas overlay change is needed for dev builds. The dev
 profile is the multi-root rotation-window configuration where a FIT
 signed by any enabled trust root verifies at boot.
 
@@ -606,14 +600,14 @@ local_conf_header:
   fit_dtb_yk_pubkey_trust: |
     IOTGW_FIT_TRUST_YK_KEY = "1"
     IOTGW_FIT_YK_KEYDIR = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
-    IOTGW_FIT_YK_KEYNAME = "iotgw-fit-yk-2026"
+    IOTGW_FIT_YK_KEYNAME = "iotgw-fit-yk-2027"
 ```
 
 Verifying the release DTB output:
 
 ```bash
 DTB=build/tmp/deploy/images/raspberrypi5/bcm2712-rpi-5-b.dtb
-fdtget -l "$DTB" /signature       # exactly one subnode: key-iotgw-fit-yk-2026
+fdtget -l "$DTB" /signature       # exactly one subnode: key-iotgw-fit-yk-2027
 fdtget -p "$DTB" /signature       # property list must NOT include required-mode
 ```
 
@@ -625,25 +619,34 @@ absence is the expected result, not a failure.
 
 Under the release profile, `make prod` does **not** produce a final
 flashable SD image. The `.wic.zst` it deposits in `${DEPLOY_DIR_IMAGE}`
-contains a `/boot/fitImage` that is still **file-key signed** by the
-kernel recipe at build time — the DTB on the same image only trusts the
+contains `/boot/fitImage-a` / `fitImage-b` that are still **file-key
+signed** at build time — the DTB on the same image only trusts the
 YubiKey root, so flashing that WIC fails U-Boot FIT verification on the
 first boot cycle and exhausts both RAUC slots.
 
-The detached HSM signing flow (`make sign-bootfiles-fit-yk`) finalizes
-bootfiles for **RAUC bundle delivery only**. It re-signs the FIT inside
-`bootfiles-fit.tar.gz` so the bundle's OTA install hook
-(`bundle-hooks-fit.sh`) writes a YubiKey-signed `/boot/fitImage-{a,b}`
-to the target's existing boot partition. It does **not** touch the
-WIC's `/boot/fitImage` baked into the SD image.
+With runtime dm-verity, what U-Boot boots is a per-slot FIT,
+`<image>.fitImage-a` / `-b`: its device tree carries that slot's
+dm-verity table, and the bundle's OTA install hook (`bundle-hooks-fit.sh`)
+writes the one matching the slot it installs as `/boot/fitImage-a` or
+`-b`. The generic `fitImage` inside `bootfiles-fit.tar.gz` is not installed
+by that hook, so re-signing it (`make sign-bootfiles-fit-yk`) does **not**
+make a release bundle bootable. The slot FITs have to be re-signed:
+`make sign-slot-fits-yk` (see
+[Runtime dm-verity: signing the slot FITs](#runtime-dm-verity-signing-the-slot-fits)).
+Neither target touches the FITs baked into the WIC's boot partition.
 
-The supported release artifact is therefore the **resigned RAUC bundle**:
+The supported release artifact is therefore the **RAUC bundle assembled
+from YubiKey-signed slot FITs**:
 
 ```bash
-make bundle-prod-full-fit            # build with file-key FIT
-make sign-bootfiles-fit-yk           # YK + PIN + touch; re-signs bootfiles tarball
-make bundle-prod-full-fit-resign     # reassembles .raucb around the re-signed tarball
+make prod                            # stage 1: image; slot FITs are file-key signed intermediates
+make sign-slot-fits-yk               # stage 2: YK + PIN + touch per FIT; re-signs both slot FITs
+make bundle-prod-full-fit            # stage 3: assembly gate verifies the staged FITs, then packs
 ```
+
+Running `make bundle-prod-full-fit` before stage 2 fails at the assembly
+gate by design: it refuses to pack slot FITs that do not verify against the
+release anchor the bundle ships.
 
 The output `iot-gw-image-prod-bundle-full-fit.raucb` is the deliverable
 for field rollout — install it on a device that was previously
@@ -719,10 +722,10 @@ things, in order:
 
 1. **`fdtput` rewrite** — walks every
    `/configurations/conf-*/signature*/key-name-hint` and sets it to the
-   project-controlled hint (default `iotgw-fit-yk-2026`, override with
+   project-controlled hint (default `iotgw-fit-yk-2027`, override with
    `--key-name-hint`). This hint must match the
    `/signature/key-<hint>` node injected into U-Boot's control FDT by
-   the kernel-fit recipe — devices reject FITs whose hint doesn't
+   the kernel recipe (`linux-iotgw-mainline`) — devices reject FITs whose hint doesn't
    resolve to a trusted key. It also drives the resulting `Sign algo:`
    audit line. It is **not** the key-lookup mechanism for signing.
 2. **`mkimage -F -N pkcs11 -k "<uri>" <fit>`** — signs in place via
@@ -783,11 +786,11 @@ DTB (file / YubiKey / SoftHSM) until one matches; `required-mode=any` needs
 exactly one `+ OK`. Only an output ending with **no** `+ OK` line (followed
 by the slot being marked non-bootable) is an actual verification failure.
 
-On a YubiKey-signed fitImage, `dumpimage -l` shows, for every
+On a YubiKey-signed FIT, `dumpimage -l` shows, for every
 configuration:
 
 ```
-Sign algo:    sha256,rsa2048:iotgw-fit-yk-2026
+Sign algo:    sha256,rsa2048:iotgw-fit-yk-2027
 Sign value:   <256 bytes of fresh RSA-2048 signature>
 Timestamp:    <signing time, not build time>
 ```
@@ -802,7 +805,7 @@ For release evidence, capture `dumpimage -l` output and SHA-256 hashes
 for the source and HSM-signed FIT artifacts in the release record.
 
 For bundle-side evidence, extract the final `.raucb` with RAUC itself
-instead of raw `unsquashfs` (encrypted verity bundles are not directly
+instead of raw `unsquashfs` (encrypted `crypt` bundles are not directly
 readable as SquashFS):
 
 ```bash
@@ -817,149 +820,67 @@ rauc extract \
   "$DEPLOY/iot-gw-image-dev-bundle-full-fit.raucb" \
   "$OUT"
 
-mkdir -p "$OUT/bootfiles"
-tar -xzf "$OUT/bootfiles-fit.tar.gz" -C "$OUT/bootfiles"
-sha256sum "$OUT/bootfiles-fit.tar.gz" "$DEPLOY/bootfiles-fit.tar.gz"
-dumpimage -l "$OUT/bootfiles/fitImage" | \
-  grep -E 'Sign algo:|Sign value:|Timestamp:'
+for f in "$OUT"/*.fitImage-a "$OUT"/*.fitImage-b; do
+  dumpimage -l "$f" | grep -E 'Sign algo:|Sign value:|Timestamp:'
+done
 ```
 
-### Detached signing — three independent stages
+### Runtime dm-verity: signing the slot FITs
 
-HSM signing must never sit on the critical path of an unattended build.
-A CI runner or any pipeline that needs to complete without operator
-intervention has to be able to produce *something* releasable without
-contacting a YubiKey. The signing step is a separate ceremony — run on
-a machine with the HSM physically attached, by an operator who is
-present, or by a hardened signing daemon — and its output is fed back
-into a final assembly step.
+HSM signing must never sit on the critical path of an unattended build. The
+signing step is a separate ceremony — run on a machine with the HSM
+physically attached, by an operator who is present, or by a hardened signing
+daemon — and its output is fed back into a final assembly step. The three
+stages below are independent Make targets; none is a prerequisite of another.
 
-This repo expresses the model as three independent Make targets, none
-of them prerequisites of the others:
+The image builds two per-slot FITs, `<image>.fitImage-a` and `-b`, each
+binding the kernel to a device tree whose command line holds that slot's
+dm-verity table and `rauc.slot=`. Those are what the bundle installs and
+U-Boot boots, and what the stages sign:
 
 ```mermaid
-flowchart TD
-    subgraph BuildPhase["Build phase (unattended build runner)"]
-        A["make bundle-dev-full-fit"]
-        B["bootfiles-fit.tar.gz<br/>inner FIT signed by file key"]
-        C["candidate .raucb<br/>not final release if HSM signing is required"]
-        A --> B
-        A --> C
-    end
-
-    subgraph Store1["Release artifact storage"]
-        D["file-key signed build artifacts"]
-    end
-
-    subgraph SignPhase["Sign phase (operator workstation or signing server)"]
-        E["make sign-bootfiles-fit-yk"]
-        G["scripts/fit-signing/sign_fit.py sign-bootfiles"]
-        YK["PKCS#11 token<br/>RSA-2048 private key<br/>non-extractable"]
-        H["bootfiles-fit.tar.gz<br/>inner FIT HSM-signed"]
-        E --> G
-        G -->|"PKCS#11 via engine_pkcs11<br/>PIN + touch or signing-daemon policy"| YK
-        YK --> G --> H
-    end
-
-    subgraph Store2["Release artifact storage"]
-        I["HSM-signed bootfiles-fit.tar.gz"]
-    end
-
-    subgraph AssemblePhase["Assemble phase (unattended bundle assembly)"]
-        J["make bundle-dev-full-fit-resign"]
-        K["iot-gw-bundle-full-fit<br/>do_configure re-copies signed tarball"]
-        L["final .raucb<br/>contains HSM-signed FIT"]
-        J --> K --> L
-    end
-
-    B --> D --> E
-    H --> I --> J
+flowchart LR
+    A["make prod<br/>(unattended)<br/>slot FITs signed by file key"] --> B["make sign-slot-fits-yk<br/>(operator: PIN + touch)<br/>slot FITs HSM-signed"]
+    B --> C["make bundle-prod-full-fit<br/>(unattended)<br/>assembly gate verifies, then packs"]
 ```
 
-The same trust boundary can be viewed as artifact movement:
+1. **Build** (`make prod`, unattended). The slot FITs are signed with the
+   build's file key. Under the release profile the shipped anchor does not
+   trust that key, so the FITs are intermediates: `iotgw-fit-gate` checks
+   them against an anchor holding only the build key (signature present,
+   kernel and fdt covered, intact), not against the release anchor they
+   cannot yet pass.
+2. **Sign** (`make sign-slot-fits-yk`, operator-only; `-softhsm` for dev).
+   Runs `sign_fit.py sign-slot-fits` on the image's pair, never on a glob
+   of the deploy directory (`SLOT_FITS_IMAGE`, default `iot-gw-image-prod`).
+   Before asking for the PIN it checks that the pair belongs together:
+   single-configuration FITs, slot identity, a `dm-mod.create` table equal
+   to the one the image recipe generates (read the way the kernel parses
+   the command line), and `veritysetup` verifying the rootfs file against
+   it. It then signs A and B. The PIN is asked once per FIT, because each
+   `mkimage` run opens its own PKCS#11 session, and a touch is needed per
+   FIT. It confirms each command line came through byte-identical and
+   that each FIT verifies against an anchor holding only the signing key.
+   Both FITs are backed up before either is signed; any failure restores
+   both. A FIT is skipped only if it already carries the profile's key
+   **and** verifies against that key alone. A manifest
+   `<image>.slot-fits.signed` records the result.
+3. **Assemble** (`make bundle-prod-full-fit`, unattended). The bundle
+   recipe tracks both slot FITs, the verity parameters and the bootfiles
+   archive by content, so re-signed FITs re-run assembly. The assembly gate
+   (`iotgw-bundle-slot-gate.bbclass`) then runs on the files staged into
+   the bundle, not on deploy copies. The trust anchor is the DTB inside the
+   staged bootfiles archive, which must hold exactly the build's enabled
+   trust roots. Both staged FITs must verify against it, and the slot
+   checks above are repeated against the staged rootfs. Any failure stops
+   the bundle; the gate never signs.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant CI as CI/build runner
-    participant Store as Artifact storage
-    participant Signer as Operator or signing service
-    participant YK as YubiKey/HSM
-    participant Final as Final assembly runner
+The checks live in `meta-iot-gateway/scripts/slot_fits.py`, shared by the
+operator tool and the bundle recipe. `slot_fits.py check` runs them alone.
+Dev and dual-trust bundles pass the same gate with no stage 2, because
+their anchor also trusts the file key.
 
-    CI->>CI: make bundle-dev-full-fit
-    CI->>Store: publish bootfiles-fit.tar.gz and candidate .raucb
-    Store->>Signer: fetch bootfiles-fit.tar.gz
-    Signer->>YK: PKCS#11 sign FIT hashes<br/>PIN/touch or daemon policy
-    YK-->>Signer: RSA-2048 signatures
-    Signer->>Store: publish HSM-signed bootfiles-fit.tar.gz
-    Store->>Final: fetch signed tarball
-    Final->>Final: make bundle-dev-full-fit-resign
-    Final->>Store: publish final HSM-signed .raucb
-```
-
-#### Build — `make bundle-dev-full-fit` (unattended)
-
-Same target as the file-key flow above. No HSM, no PIN, no touch.
-Suitable for GitHub Actions, GitLab runners, or any unattended
-pipeline. Produces the file-key-signed `.raucb` plus the deploy
-`bootfiles-fit.tar.gz` whose inner FIT is file-key signed.
-
-#### Sign — `make sign-bootfiles-fit-yk` (operator-only)
-
-Runs `scripts/fit-signing/sign_fit.py sign-bootfiles`. Extracts
-`deploy/.../bootfiles-fit.tar.gz`, signs the inner
-FIT (prompts for PIN, requires touch when the slot policy demands
-one), repacks the tarball in place. Snapshot/restore semantics: if
-anything fails between extract and repack, the original tarball is
-restored from a `.bak` sibling.
-
-The wrapper is idempotent. Before extracting and re-signing, it peeks
-at the inner `fitImage`'s `Sign algo:` audit lines; if **every**
-signature node already advertises the HSM key-name-hint
-(`sha256,rsa2048:<KEY_NAME_HINT>`), the wrapper exits cleanly without
-contacting the token. A fresh build produces a file-key-signed FIT, so
-the audit line shows the file-key label and the wrapper signs. A
-partially labelled FIT (one config matches, another still shows the
-file-key label) is NOT skipped — the wrapper logs the mismatch and
-re-signs all nodes, so a mixed-trust tarball never makes it to the
-bundle. To override the skip and re-sign anyway, pass `--force` to the
-wrapper. With the Make wrapper:
-
-```bash
-make sign-bootfiles-fit-yk SIGN_BOOTFILES_ARGS=--force
-```
-
-`SIGN_BOOTFILES_ARGS` (e.g. `--force`, `--archive PATH`) and `SIGN_FIT_ARGS`
-(e.g. `--verify`, `--verbose`) are both passed inline to
-`sign_fit.py sign-bootfiles` — there is no `--` separator.
-
-The check is content-based: the "already labelled" signal lives
-inside the artifact, not in a sidecar file. The same archive can be
-moved between machines (CI → operator workstation → final-assembly
-runner) and the idempotency decision is consistent everywhere. The
-check inspects audit metadata (the key-name-hint embedded in each
-`signature*` node), not the cryptographic signature. The
-authoritative signature verification still belongs to U-Boot at boot
-time, against the public key embedded in the signing DTB.
-
-Runs **only** on a machine with the HSM physically attached — an
-operator workstation or a hardened signing server. Never runs in CI.
-The signing step is bounded in time and well-defined: one PIN entry,
-one touch (CACHED covers all configurations in the FIT), seconds of
-wall clock.
-
-#### Assemble — `make bundle-dev-full-fit-resign` (unattended)
-
-`bitbake -C do_configure iot-gw-bundle-full-fit`. Invalidates the
-bundle recipe's `do_configure` stamp so it re-copies the now-HSM-
-signed tarball from DEPLOY_DIR_IMAGE into its WORKDIR and re-runs
-`do_bundle`. A few minutes; no kernel/rootfs rebuild. Can run in CI
-on any runner that has the signed tarball deployed (e.g. via an
-artifact pull from release storage), or locally by the operator
-right after the sign phase.
-
-#### CI / signing-server integration
+### CI / signing-server integration
 
 For pipelines that have to be fully unattended, the only options are:
 
@@ -973,11 +894,11 @@ For pipelines that have to be fully unattended, the only options are:
    the assemble phase.
 2. **Manual handoff** — CI runs the build phase and publishes
    artifacts; a release manager pulls them to a workstation with the
-   token attached, runs the sign phase, publishes the signed tarball
+   token attached, runs the sign phase, publishes the signed slot FITs
    back; a final CI job (or the operator) runs the assemble phase.
 
 The repository ships only the building blocks (`scripts/fit-signing/sign_fit.py`
-and the three Make targets). The signing daemon
+and the sign/assemble Make targets: `sign-slot-fits-*`, `bundle-*-full-fit`). The signing daemon
 is intentionally out of scope here — it belongs to whichever signing
 infrastructure consumes this layer.
 

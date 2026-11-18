@@ -1,0 +1,14 @@
+# Administrators: members of the `sudo` group (devel on dev/desktop images;
+# no account is in it on prod). Anything they run through sudo starts in
+# sysadm_r:sysadm_t, the SELinux administrator domain, instead of inheriting
+# the login domain (staff_t/user_t), which may not manage the system.
+#
+# The Defaults line also covers grants written elsewhere without ROLE/TYPE
+# (for example a per-user NOPASSWD rule), because sudoers applies the last
+# matching rule but Defaults per group apply to every rule.
+#
+# Needs: sudo built with SELinux support, and the account's SELinux user
+# authorised for sysadm_r (seusers maps it to staff_u). A user mapped to
+# user_u cannot hold sysadm_r, and sudo then refuses every command.
+Defaults:%sudo role=sysadm_r, type=sysadm_t
+%sudo ALL=(ALL:ALL) ROLE=sysadm_r TYPE=sysadm_t ALL
