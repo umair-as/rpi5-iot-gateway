@@ -1,0 +1,14 @@
+# Containers on this gateway run as the iotgw-ctr principal from Quadlet
+# units under /etc/containers/systemd/users/<uid>, generated into its user
+# manager at boot. podman's own user preset enables a rootless podman API
+# socket, auto-update timer and restart units in EVERY user's session
+# manager, so each admin login (and the principal's manager) would start a
+# podman API for that user. Disabled here; read before podman's
+# 98-podman.preset, so these lines win. Nothing on the image needs the API
+# socket; a developer who wants it enables it with `systemctl --user enable`.
+disable podman.socket
+disable podman.service
+disable podman-auto-update.timer
+disable podman-auto-update.service
+disable podman-clean-transient.service
+disable podman-restart.service

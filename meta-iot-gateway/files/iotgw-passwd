@@ -1,0 +1,25 @@
+edgehealth:x:989:984:Edge Health Daemon:/nonexistent:/usr/sbin/nologin
+systemd-network:x:990:985::/:/sbin/nologin
+systemd-timesync:x:991:986::/:/sbin/nologin
+systemd-resolve:x:992:987::/:/sbin/nologin
+tss:x:993:993::/:/bin/false
+otbr:x:994:994:User for otbr:/var/lib/otbr:/sbin/nologin
+radvd:x:995:65534::/var/run/radvd/:/sbin/nologin
+messagebus:x:996:995::/var/lib/dbus:/bin/false
+sshd:x:997:997::/var/run/sshd:/bin/false
+ota:x:998:998:OTA Update Daemon:/nonexistent:/bin/false
+avahi:x:999:999::/run/avahi-daemon:/bin/false
+pulse:x:980:980::/var/run/pulse:/bin/false
+dxdemo:x:979:979::/var/cache/dxdemo:/sbin/nologin
+mosquitto:x:978:978::/home/mosquitto:/bin/false
+polkitd:x:977:977::/etc/polkit-1:/bin/nologin
+dxrt:x:976:976::/var/lib/dxrt:/sbin/nologin
+weston:x:1001:1001::/home/weston:/bin/sh
+devel:x:1000:1000::/home/devel:/bin/bash
+avahi-autoipd:x:975:969::/run/avahi-autoipd:/bin/false
+gpio-manager:x:974:990::/:/bin/nologin
+iotgwtpm:x:973:972::/:/sbin/nologin
+telegraf:x:972:971::/var/lib/telegraf:/sbin/nologin
+influxdb:x:971:970::/var/lib/influxdb:/bin/false
+iotgw-ctr:x:968:968:Rootless container principal:/home/iotgw-ctr:/sbin/nologin
+iotgw-ops:x:967:967:OTA operator (prod):/home/iotgw-ops:/bin/sh
