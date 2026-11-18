@@ -1,0 +1,30 @@
+# iotgw path aliases for the /data partition (libselinux file_contexts.subs).
+#
+# /aliased_path /path_as_configured_in_file_contexts
+#
+# /data is a writable ext4 partition outside the read-only, build-time-labelled
+# root. Its contents are the backing store of paths that live elsewhere in the
+# tree: the sources of the persistent bind mounts and the single files bound
+# into /etc. Aliasing each one to the path it is seen at gives the backing
+# inode the same label as that path, so a plain `restorecon -R /data` labels
+# the whole partition correctly. Applied before file_contexts.subs_dist, so an
+# alias may land on a path that subs_dist aliases again (/root -> /home/root).
+/data/machine-id /etc/machine-id
+/data/home /home
+/data/crash/pstore /var/lib/systemd/pstore
+/data/log/audit /var/log/audit
+/data/log/journal /var/log/journal
+/data/lib/bluetooth /var/lib/bluetooth
+/data/lib/thread /var/lib/thread
+/data/ssh /etc/ssh
+# sshd's live host keys (iotgw-sshd-keys copies or generates them each boot):
+# same labels as /etc/ssh, so the keys are sshd_key_t.
+/run/sshd-keys /etc/ssh
+
+# Ephemeral overlay uppers assembled on tmpfs by the pre-init (iotgw-preinit).
+# The upper root's label becomes the merged directory's label, so it has to be
+# the /etc (resp. /root, /home) type before the overlay is mounted. /home only
+# uses its upper when /data is unavailable and the bind falls back to tmpfs.
+/run/iotgw/overlay/etc/upper /etc
+/run/iotgw/overlay/root/upper /root
+/run/iotgw/overlay/home/upper /home

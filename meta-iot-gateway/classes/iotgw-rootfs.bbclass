@@ -44,13 +44,173 @@ iotgw_rootfs_sysctl() {
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_sysctl;"
 
 ###### nftables default rules
+# IOTGW_IMAGE_OTBR_WEBUI = "1" (dev, desktop) admits the OTBR web UI port; any
+# other image, prod included, gets the placeholder removed and no :80 rule.
+IOTGW_IMAGE_OTBR_WEBUI ??= "0"
 iotgw_rootfs_nftables() {
     if [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-firewall/nftables.conf ]; then
         install -m 0644 ${IMAGE_ROOTFS}${datadir}/iotgw-firewall/nftables.conf \
             ${IMAGE_ROOTFS}/etc/nftables.conf
+        if [ "${IOTGW_IMAGE_OTBR_WEBUI}" = "1" ] && \
+           [ -e ${IMAGE_ROOTFS}${datadir}/iotgw-firewall/nftables-otbr-webui.conf ]; then
+            sed -i -e '/@OTBR_WEBUI_RULES@/r ${IMAGE_ROOTFS}${datadir}/iotgw-firewall/nftables-otbr-webui.conf' \
+                   ${IMAGE_ROOTFS}/etc/nftables.conf
+        fi
+        sed -i '/@OTBR_WEBUI_RULES@/d' ${IMAGE_ROOTFS}/etc/nftables.conf
+        if grep -q '@[A-Z_]*@' ${IMAGE_ROOTFS}/etc/nftables.conf; then
+            bbfatal "iotgw-firewall: unexpanded placeholder left in /etc/nftables.conf"
+        fi
     fi
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_nftables;"
+
+###### Prod hygiene gate: no dev-only packages, drop-ins or ports in a prod image
+# Dev-only content (the OTBR web UI, nmap, iperf3, the crash-debug sysctl, the
+# dev-friendly sshd policy) can reach prod through shared packagegroups and
+# global toggles. Each is kept out by construction; this gate turns the next
+# leak into a build failure instead of a finding. Enabled by the prod image recipe (IOTGW_PROD_HYGIENE_GATE = "1").
+IOTGW_PROD_HYGIENE_GATE ??= "0"
+IOTGW_PROD_FORBIDDEN_PATHS ??= " \
+    ${bindir}/node ${datadir}/otbr-webui \
+    ${bindir}/nmap ${bindir}/iperf3 ${bindir}/tcpdump ${bindir}/tshark ${bindir}/wireshark \
+    ${bindir}/gdb ${bindir}/strace ${bindir}/valgrind ${bindir}/perf \
+    ${sysconfdir}/sysctl.d/95-iotgw-crash-debug.conf \
+    /home/devel ${sysconfdir}/sudoers.d/devel ${sysconfdir}/sudoers.d/010-devel \
+    ${libdir}/libEGL.so.1 ${libdir}/libGLESv2.so.2 ${libdir}/libgbm.so.1 ${libdir}/dri \
+    ${bindir}/kmscube \
+    ${sysconfdir}/systemd/system/sockets.target.wants/podman.socket \
+    ${sysconfdir}/systemd/system/multi-user.target.wants/podman.service \
+    ${bindir}/slirp4netns ${bindir}/docker \
+    ${sbindir}/mosquitto ${bindir}/mosquitto ${systemd_system_unitdir}/mosquitto.service \
+    /root/.ssh/authorized_keys \
+"
+# GL userspace above: the headless build keeps DISTRO_FEATURES opengl so the
+# dev image can carry Mesa (v3d) for GPU work, and that feature is shared with
+# prod. Prod has no consumer of the GPU, so Mesa reaching it means a package
+# picked up a GL dependency; the gate fails the build instead of shipping it.
+iotgw_rootfs_prod_hygiene() {
+    [ "${IOTGW_PROD_HYGIENE_GATE}" = "1" ] || return 0
+    local bad="" p
+    for p in ${IOTGW_PROD_FORBIDDEN_PATHS}; do
+        [ -e "${IMAGE_ROOTFS}$p" ] && bad="$bad $p"
+    done
+    [ -z "$bad" ] || bbfatal "prod hygiene: dev-only content present in the prod rootfs:$bad"
+    if [ "${IOTGW_ENABLE_CRASH_DEBUG_DEV}" = "1" ]; then
+        bbfatal "prod hygiene: IOTGW_ENABLE_CRASH_DEBUG_DEV=1 while building a prod image (kas/local.yml sets it; the prod kas overlay forces it to 0 - is the overlay in the composition?)"
+    fi
+    if [ ! -e ${IMAGE_ROOTFS}${sysconfdir}/ssh/sshd_config.d/10-iotgw-prod-auth.conf ]; then
+        bbfatal "prod hygiene: sshd prod policy drop-in missing (iotgw-sshd-hardening-prod not installed)"
+    fi
+    # Hardening content must be present, not only dev content absent: a
+    # packagegroup installed by the wrong tier fails silently otherwise.
+    # iotgw-audit stages its rules under ${datadir}; iotgw_rootfs_audit_rules
+    # (appended after this gate) deploys them into ${sysconfdir}/audit, so the
+    # staged copy is checked here.
+    for p in ${sysconfdir}/sysctl.d/99-iotgw-hardening.conf \
+             ${sysconfdir}/modprobe.d/iotgw-blacklist.conf \
+             ${sysconfdir}/systemd/system/wpa_supplicant@${IOTGW_WIFI_IFACE}.service.d/override.conf \
+             ${datadir}/iotgw-audit/iotgw.rules \
+             ${localstatedir}/lib/systemd/linger/iotgw-ctr ${bindir}/pasta \
+             ${datadir}/iotgw-audit/auditd.conf; do
+        [ -e "${IMAGE_ROOTFS}$p" ] || bad="$bad $p"
+    done
+    [ -z "$bad" ] || bbfatal "prod hygiene: hardening content missing from the prod rootfs (packagegroup-iot-gw-security not installed?):$bad"
+    if grep -qE '^[^#]*dport[[:space:]]+80[[:space:]]' ${IMAGE_ROOTFS}${sysconfdir}/nftables.conf 2>/dev/null; then
+        bbfatal "prod hygiene: firewall admits tcp/80 (OTBR web UI rule) in a prod image"
+    fi
+    # Kernel and U-Boot are one recipe per composition and read these two
+    # variables from the global datastore, the same values this image sees.
+    # The dev fragments and the lockdown token are decided by the kas
+    # composition (kas/uboot-prod-hardening.yml), not by this recipe, so a
+    # prod image from the wrong composition is caught here.
+    local f
+    for f in igw_observability_dev igw_crash_debug_dev igw_btf_core_dev; do
+        case " $(echo "${IOTGW_KERNEL_FEATURES}" | tr ',' ' ') " in
+            *" $f "*) bbfatal "prod hygiene: dev kernel fragment $f in IOTGW_KERNEL_FEATURES (kas/uboot-prod-hardening.yml not in the composition?)" ;;
+        esac
+    done
+    if [ "${IOTGW_ENABLE_BTF_CORE_DEV}" = "1" ]; then
+        bbfatal "prod hygiene: IOTGW_ENABLE_BTF_CORE_DEV=1 while building a prod image"
+    fi
+    for f in appliance_lockdown fit_enforce; do
+        case " ${IOTGW_UBOOT_FEATURES} " in
+            *" $f "*) ;;
+            *) bbfatal "prod hygiene: IOTGW_UBOOT_FEATURES lacks $f (kas/uboot-prod-hardening.yml not in the composition?)" ;;
+        esac
+    done
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_prod_hygiene;"
+
+# Root has no password in prod. Checked after extrausers has applied the
+# usermod (its set_user_group is added with +=; :append runs after all +=).
+iotgw_rootfs_prod_root_locked() {
+    [ "${IOTGW_PROD_HYGIENE_GATE}" = "1" ] || return 0
+    if [ "$(awk -F: '$1=="root"{print $2}' ${IMAGE_ROOTFS}${sysconfdir}/shadow)" != "*" ]; then
+        bbfatal "prod hygiene: root has a password in the prod image (IOTGW_ROOT_PASSWORD_HASH must be \"*\")"
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND:append = " iotgw_rootfs_prod_root_locked;"
+
+# A password field is a lock marker or a well-formed crypt(5) hash. Anything
+# else matches no password, which locks the console without any build error.
+# Runs after extrausers for the same reason as the check above.
+iotgw_rootfs_password_fields() {
+    for user in root devel; do
+        grep -q "^$user:" ${IMAGE_ROOTFS}${sysconfdir}/shadow || continue
+        field=$(awk -F: -v u="$user" '$1==u{print $2}' ${IMAGE_ROOTFS}${sysconfdir}/shadow)
+        case "$field" in
+            '*'|'!'*) ;;
+            '$'[0-9a-z]*'$'*'$'*) ;;
+            *) bbfatal "shadow: $user has a malformed password field (check IOTGW_*_PASSWORD_HASH and its escaping)" ;;
+        esac
+    done
+}
+ROOTFS_POSTPROCESS_COMMAND:append = " iotgw_rootfs_password_fields;"
+
+# Credentials from kas/local.yml stay out of git, not out of the image: a
+# password hash or a Wi-Fi key is in the rootfs, the .wic and every RAUC bundle
+# built from it. Say so on every build that carries one, without printing it.
+# A dev image with no password at all is valid (SSH keys only), so that case
+# warns rather than fails. Reads the staged rootfs, after extrausers.
+python iotgw_rootfs_credential_warnings() {
+    import glob, os, re
+    rootfs = d.getVar('IMAGE_ROOTFS')
+    image = d.getVar('PN')
+    shadow = {}
+    etc = os.path.join(rootfs, d.getVar('sysconfdir').lstrip('/'))
+    with open(os.path.join(etc, 'shadow')) as f:
+        for line in f:
+            fields = line.split(':')
+            if len(fields) > 1:
+                shadow[fields[0]] = fields[1]
+    hashed = [u for u in ('root', 'devel', 'iotgw-ops')
+              if u in shadow and shadow[u].startswith('$')]
+    for user in hashed:
+        bb.warn('%s: %s has a password hash in the image; it is in the .wic and '
+                'every bundle built from it, do not distribute them' % (image, user))
+    if 'devel' in shadow and not hashed:
+        bb.warn('%s: no account has a password (console and newrole logins '
+                'fail, SSH keys only); set IOTGW_ROOT_PASSWORD_HASH or '
+                'IOTGW_DEVEL_PASSWORD_HASH in kas/local.yml if the bench needs '
+                'one' % image)
+    keyline = re.compile(r'^\s*(psk|sae_password|password)=', re.M)
+    for conf in glob.glob(os.path.join(etc, 'wpa_supplicant/*.conf')):
+        with open(conf) as f:
+            if keyline.search(f.read()):
+                bb.warn('%s: %s carries a Wi-Fi key in plain text; it is in the '
+                        '.wic and every bundle built from it' %
+                        (image, os.path.relpath(conf, rootfs)))
+}
+ROOTFS_POSTPROCESS_COMMAND:append = " iotgw_rootfs_credential_warnings;"
+
+# The busybox setuid-root binary is trimmed in every image: the applets it
+# carried come from shadow, util-linux and iputils.
+iotgw_rootfs_no_suid_busybox() {
+    if [ -e ${IMAGE_ROOTFS}${base_bindir}/busybox.suid ] || [ -u ${IMAGE_ROOTFS}${base_bindir}/busybox ]; then
+        bbfatal "busybox is setuid in the image: iotgw-no-suid-applets.cfg did not take effect"
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND:append = " iotgw_rootfs_no_suid_busybox;"
 
 ###### Audit rules deployment
 # auditd owns /etc/audit and /etc/audit/rules.d — we cannot package into those dirs
@@ -79,6 +239,45 @@ iotgw_rootfs_audit_rules() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_audit_rules;"
 
+###### SELinux: no unexpected permissive domains in the shipped policy
+# A `permissive <domain>;` statement is part of the policy and takes effect
+# whatever the kernel configuration (the kernel reads the policy's permissive
+# map; CONFIG_SECURITY_SELINUX_DEVELOP only gates the global switch). The
+# staging allowlist IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED (distro include)
+# names the domains still being collected on an enforcing trial; anything else
+# fails the image, and the list itself must be empty before the enforcing flip.
+# The store's CIL files are bzip2-compressed by refpolicy's install.
+do_rootfs[depends] += "bzip2-replacement-native:do_populate_sysroot"
+iotgw_rootfs_selinux_permissive_gate() {
+    local store cil doms found unexpected d
+    store=$(ls -d ${IMAGE_ROOTFS}${localstatedir}/lib/selinux/*/active/modules 2>/dev/null | head -n1)
+    [ -n "$store" ] || return 0
+    found=""
+    for cil in "$store"/*/*/cil; do
+        [ -f "$cil" ] || continue
+        if bzip2 -t "$cil" 2>/dev/null; then
+            doms=$(bzip2 -dc "$cil" | sed -n 's/^(typepermissive \([A-Za-z0-9_]*\))/\1/p')
+        else
+            doms=$(sed -n 's/^(typepermissive \([A-Za-z0-9_]*\))/\1/p' "$cil")
+        fi
+        found="$found $doms"
+    done
+    unexpected=""
+    for d in $found; do
+        case " ${IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED} " in
+            *" $d "*) ;;
+            *) unexpected="$unexpected $d" ;;
+        esac
+    done
+    if [ -n "$unexpected" ]; then
+        bbfatal "SELinux policy declares permissive domain(s) not in IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED:$unexpected"
+    fi
+    if [ -n "$(echo $found)" ]; then
+        bbwarn "SELinux: staging permissive domains shipped in this image:$(echo $found). Remove them (and empty IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED) before the enforcing flip."
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_selinux_permissive_gate;"
+
 ###### Bluetooth configuration directory mode alignment
 iotgw_rootfs_bluetooth_mode() {
     if [ -d ${IMAGE_ROOTFS}/etc/bluetooth ]; then
@@ -90,11 +289,11 @@ ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_bluetooth_mode;"
 ###### Keep boot lean under the systemd-networkd stack.
 # systemd-networkd + systemd-resolved are the active stack (enabled via
 # 90-iotgw.preset). Mask exactly one auxiliary unit: systemd-networkd-wait-online.
-# mosquitto and ota-updater pull network-online.target, so an active wait-online
+# ota-updater pulls network-online.target, so an active wait-online
 # would block boot until every managed link (including Wi-Fi association, which
 # may never complete if no PSK is configured) becomes routable — up to its
 # ~120s timeout. Masking it makes network-online.target a trivial sync point,
-# so those services start without waiting on the network (prior lean-boot
+# so it starts without waiting on the network (prior lean-boot
 # posture). This is one of two intentional masks (see wpa_supplicant.service
 # below); systemd 259's preset-all emits a benign "is masked" notice for it,
 # filtered via IMAGE_LOG_CHECK_EXCLUDES in iot-gw-image-base.inc.
@@ -122,6 +321,24 @@ iotgw_rootfs_mask_wpa_supplicant_singleton() {
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_wpa_supplicant_singleton;"
 
+###### Apply our user-unit presets after recipes have enabled user units.
+# systemd.bbclass runs `systemctl --global enable` for every SYSTEMD_SERVICE
+# name that also exists as a user unit (podman.service/podman.socket), and an
+# explicit enable is not undone by a preset. Without this step the "disable"
+# lines in our user-preset files never take effect: every login session would
+# start a rootless podman API for that user.
+iotgw_rootfs_user_presets() {
+    for f in ${IMAGE_ROOTFS}${systemd_unitdir}/user-preset/[0-9]*-iotgw-*.preset; do
+        [ -f "$f" ] || continue
+        for unit in $(awk '$1 == "disable" { print $2 }' "$f"); do
+            if [ -e ${IMAGE_ROOTFS}${systemd_user_unitdir}/$unit ]; then
+                systemctl --root=${IMAGE_ROOTFS} --global disable "$unit"
+            fi
+        done
+    done
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_user_presets;"
+
 ###### Optional vconsole setup masking (headless/serial-focused images)
 iotgw_rootfs_mask_vconsole_setup() {
     if [ "${IOTGW_DISABLE_VCONSOLE_SETUP}" = "1" ]; then
@@ -139,6 +356,22 @@ iotgw_rootfs_mask_rauc_mark_good() {
     fi
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_rauc_mark_good;"
+
+###### SELinux: mask the meta-selinux first-boot autorelabel unit
+# selinux-autorelabel is a hard RDEPENDS of packagegroup-core-selinux, so it
+# cannot be left out of the image. It is inert here: the root is labelled at
+# build time (selinux-image) and /.autorelabel cannot exist on the dm-verity
+# root. If it ever ran, `fixfiles -F relabel /` would rewrite labels across
+# the assembled /etc instead of the build-time ones. Mask it (WantedBy=sysinit.target: a masked
+# Wants= dependency is skipped, not a failure). /data is labelled by
+# iotgw-selinux-relabel instead.
+iotgw_rootfs_mask_selinux_autorelabel() {
+    if ${@bb.utils.contains('DISTRO_FEATURES', 'selinux', 'true', 'false', d)}; then
+        install -d ${IMAGE_ROOTFS}${sysconfdir}/systemd/system
+        ln -snf /dev/null ${IMAGE_ROOTFS}${sysconfdir}/systemd/system/selinux-autorelabel.service
+    fi
+}
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_mask_selinux_autorelabel;"
 
 ###### OTA updater config ownership/mode
 # ota-updater runs as User=ota/Group=ota and needs read access to /etc/ota/updater.conf.
@@ -191,6 +424,26 @@ iotgw_rootfs_buildinfo() {
     echo "${IMAGE_NAME}" > ${IMAGE_ROOTFS}/etc/version
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_buildinfo;"
+
+# Layer revisions, appended to the same file. oe-core's image-buildinfo class
+# writes /etc/buildinfo too, so it is not inherited: the two writers would
+# clobber each other depending on order. Name, branch and revision only — the
+# layer path is a build-host path and stays out of the image (see the prod
+# BUILD_SYS policy in docs/SECURITY.md). Like oe-core's class, the revisions are
+# excluded from the task signature, so a layer commit that changes nothing in
+# the image does not force a rootfs rebuild; the file records the layers as of
+# the last do_rootfs run.
+python iotgw_rootfs_buildinfo_layers() {
+    import os
+    import oe.buildcfg
+    path = os.path.join(d.getVar('IMAGE_ROOTFS'), 'etc', 'buildinfo')
+    with open(path, 'a') as stream:
+        for _path, name, branch, rev, modified in oe.buildcfg.get_layer_revisions(d):
+            stream.write("LAYER_%s=%s:%s%s\n" % (name.replace('-', '_'), branch or '<detached>',
+                                                rev, ' (modified)' if modified else ''))
+}
+iotgw_rootfs_buildinfo_layers[vardepsexclude] += "BBLAYERS"
+ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_buildinfo_layers;"
 
 # oe-core's rootfs_reproducible hook rewrites /etc/version from SOURCE_DATE_EPOCH
 # near the end of do_rootfs. Re-apply our image identifier after do_rootfs so
@@ -323,19 +576,15 @@ ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_supplementary_groups;"
 #   2. Reproducible builds pin sp_lstchg to SOURCE_DATE_EPOCH -> 15069 days
 #      (2011-04-05). 90 days later is 2011-07-04.
 #
-# Result on target: `root 15069 7 90 14` — a password that expired ~15 years
-# before the build ran. It is normally MASKED because first-boot provisioning
-# rewrites root's entry into the persistent /etc overlay on /data, so the live
-# value is current. It bites in exactly two windows: a wiped or not-yet-mounted
-# /data, and early boot before the overlay is up. That was observed once as a
-# transient SSH lockout immediately after a slot-B reboot.
+# Result on target: `root 15069 7 90 14` — a password that expired long
+# before the build ran. Nothing at runtime rewrites the entry (/etc is a
+# volatile overlay over the read-only root; writes never persist), so without
+# the fix below root's password is expired on every boot.
 #
-# THIS IS THE SAME BUG THAT KILLED WESTON. weston-init's useradd inherited the
-# identical 90-day aging, its account was born expired, and PAM refused the
-# session permanently (status=224/PAM) — see
-# recipes-graphics/weston/files/iotgw-weston-no-pam.conf. Weston was fixed by
-# dropping its PAM session; root cannot be, because root's PAM session is the
-# recovery path.
+# The same aging hit weston-init's useradd account (born expired, PAM refused
+# the session, status=224/PAM; see
+# recipes-graphics/weston/files/iotgw-weston-no-pam.conf). Weston dropped its
+# PAM session; root cannot, because its PAM session is the recovery path.
 #
 # The fix is deliberately scoped to root's /etc/shadow ENTRY, not to
 # /etc/login.defs:

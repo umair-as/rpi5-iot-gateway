@@ -1,0 +1,1097 @@
+policy_module(iotgw)
+
+########################################
+#
+# Declarations
+#
+# Project policy for the iotgw distro. Built into the refpolicy store at image
+# time (refpolicy-mcs bbappend), so its file contexts label the rootfs during
+# the build. Staging: a new domain may be declared permissive while an
+# enforcing trial collects its access surface; the image build fails on any
+# permissive domain not in IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED
+# (iotgw-rootfs.bbclass).
+#
+
+# RAUC update daemon (de.pengutronix.rauc on the system bus).
+type rauc_t;
+type rauc_exec_t;
+init_daemon_domain(rauc_t, rauc_exec_t)
+
+# RAUC runtime state under its data-directory (/data): central.raucs and the
+# install event log. Labelled through file_contexts.local, not this .fc, so
+# that every typed /data path has one precedence domain (see the .local file).
+type rauc_var_lib_t;
+files_type(rauc_var_lib_t)
+
+# RAUC runtime state under /run/rauc (slot links, the active-install marker).
+type rauc_runtime_t;
+files_runtime_file(rauc_runtime_t)
+
+# Bundle staging directory (/data/ota-tmp, file_contexts.local): written by the
+# OTA operator and administrators, read by rauc_t. Its own type keeps the
+# operator away from RAUC's state (rauc_var_lib_t).
+type iotgw_ota_inbox_t;
+files_type(iotgw_ota_inbox_t)
+
+# Private half of the device's OTA identity (crypt-bundle decryption key and
+# the streaming TLS key). Both copies,
+# /etc/ota/device.key (this .fc) and /data/ota/certs/device.key (.local), carry
+# it. Confined domains cannot read it unless granted here; unconfined ones
+# (init_t, initrc_t, kernel_t) still can, because it is a files_type.
+type iotgw_ota_key_t;
+files_type(iotgw_ota_key_t)
+
+# Mounter of the volatile-binds overlays (mount-copybind for /var/lib,
+# /var/cache, /var/spool, /srv). overlayfs checks every access through an
+# overlay a second time as the task that mounted it, so the mounter must hold
+# rights on every type that can appear under those trees. Giving them to this
+# one-shot domain keeps them away from mount_t, which every `mount` runs as.
+type iotgw_overlay_t;
+type iotgw_overlay_exec_t;
+init_daemon_domain(iotgw_overlay_t, iotgw_overlay_exec_t)
+
+# DX-M1 desktop stack. dxrtd (NPU runtime daemon), weston (compositor) and the
+# demo launcher each get a dedicated domain instead of initrc_t, and the
+# accelerator node a dedicated device type instead of device_t. This module is
+# shared by every image, so the prod policy also carries these domains and the
+# file contexts; prod ships none of the binaries, so no process enters them there.
+type iotgw_dxrtd_t;
+type iotgw_dxrtd_exec_t;
+init_daemon_domain(iotgw_dxrtd_t, iotgw_dxrtd_exec_t)
+type iotgw_dxrtd_var_lib_t;
+files_type(iotgw_dxrtd_var_lib_t)
+# StateDirectory=dxrt: systemd creates it with this label.
+systemd_StateDirectory(iotgw_dxrtd_var_lib_t)
+type iotgw_dxrt_tmpfs_t;
+files_tmpfs_file(iotgw_dxrt_tmpfs_t)
+# dxrtd's monitor state in /dev/shm: clients read it, only dxrtd writes it.
+type iotgw_dxrt_monitor_t;
+files_tmpfs_file(iotgw_dxrt_monitor_t)
+type iotgw_dxrt_device_t;
+dev_node(iotgw_dxrt_device_t)
+# Fallback filesystem endpoint of the runtime socket, in dxrtd's PrivateTmp.
+type iotgw_dxrtd_tmp_t;
+files_tmp_file(iotgw_dxrtd_tmp_t)
+
+type iotgw_weston_t;
+type iotgw_weston_exec_t;
+init_daemon_domain(iotgw_weston_t, iotgw_weston_exec_t)
+wayland_compositor_domain(iotgw_weston_t)
+type iotgw_weston_runtime_t;
+files_runtime_file(iotgw_weston_runtime_t)
+type iotgw_weston_tmpfs_t;
+files_tmpfs_file(iotgw_weston_tmpfs_t)
+wayland_compositor_tmpfs(iotgw_weston_tmpfs_t)
+
+type iotgw_dxdemo_t;
+type iotgw_dxdemo_exec_t;
+init_daemon_domain(iotgw_dxdemo_t, iotgw_dxdemo_exec_t)
+wayland_client_domain(iotgw_dxdemo_t)
+type iotgw_dxdemo_cache_t;
+files_type(iotgw_dxdemo_cache_t)
+# CacheDirectory=dxdemo: systemd creates it with this label.
+systemd_CacheDirectory(iotgw_dxdemo_cache_t)
+type iotgw_dxdemo_tmpfs_t;
+files_tmpfs_file(iotgw_dxdemo_tmpfs_t)
+wayland_client_tmpfs(iotgw_dxdemo_tmpfs_t)
+
+# Daemons of this distro that refpolicy has no module for. Without a domain
+# they run as initrc_t, the generic domain for anything init starts from a
+# bin_t file, which neither confines them nor grants what they need.
+
+# Mosquitto MQTT broker (loopback listener, persistence under /data).
+type iotgw_mosquitto_t;
+type iotgw_mosquitto_exec_t;
+init_daemon_domain(iotgw_mosquitto_t, iotgw_mosquitto_exec_t)
+type iotgw_mosquitto_etc_t;
+files_config_file(iotgw_mosquitto_etc_t)
+type iotgw_mosquitto_var_lib_t;
+files_type(iotgw_mosquitto_var_lib_t)
+type iotgw_mosquitto_runtime_t;
+files_runtime_file(iotgw_mosquitto_runtime_t)
+
+# edge-healthd post-OTA health daemon (state under /data/edge/health).
+type iotgw_healthd_t;
+type iotgw_healthd_exec_t;
+init_daemon_domain(iotgw_healthd_t, iotgw_healthd_exec_t)
+type iotgw_healthd_var_lib_t;
+files_type(iotgw_healthd_var_lib_t)
+type iotgw_healthd_runtime_t;
+files_runtime_file(iotgw_healthd_runtime_t)
+
+# OpenThread Border Router web UI (Node.js, dev images only).
+type iotgw_webui_t;
+type iotgw_webui_exec_t;
+init_daemon_domain(iotgw_webui_t, iotgw_webui_exec_t)
+
+# OpenThread Border Router agent (dev images with IOTGW_ENABLE_OTBR): Thread
+# radio over the RCP tty, wpan0, border routing, mDNS through avahi, REST API.
+# Without a domain it runs as initrc_t, which refpolicy leaves unconfined.
+type iotgw_otbr_t;
+type iotgw_otbr_exec_t;
+init_daemon_domain(iotgw_otbr_t, iotgw_otbr_exec_t)
+# Thread network dataset and settings (/var/lib/thread, bound from /data).
+type iotgw_otbr_var_lib_t;
+files_type(iotgw_otbr_var_lib_t)
+# CLI socket and lock for ot-ctl (/run/otbr).
+type iotgw_otbr_runtime_t;
+files_runtime_file(iotgw_otbr_runtime_t)
+
+# systemd-udevd's memfd, handed to PID1's fd store and read back by the next
+# udevd instance after a restart.
+type iotgw_udev_tmpfs_t;
+files_tmpfs_file(iotgw_udev_tmpfs_t)
+
+########################################
+#
+# rauc_t policy (minimum to unbreak enforcing; the rules come from denials
+# recorded during real `rauc install` runs)
+#
+
+allow rauc_t self:capability { chown dac_override dac_read_search fowner fsetid setgid setuid sys_admin };
+allow rauc_t self:process { getsched setsched signal_perms };
+allow rauc_t self:fifo_file rw_fifo_file_perms;
+allow rauc_t self:unix_stream_socket create_stream_socket_perms;
+allow rauc_t self:unix_dgram_socket create_socket_perms;
+
+manage_dirs_pattern(rauc_t, rauc_var_lib_t, rauc_var_lib_t)
+manage_files_pattern(rauc_t, rauc_var_lib_t, rauc_var_lib_t)
+files_search_var_lib(rauc_t)
+# central.raucs is rewritten through a randomly named temporary file in the
+# data-directory (/data, var_lib_t), then renamed over the original: every
+# file RAUC creates there must come out rauc_var_lib_t, or the rename leaves
+# the status file var_lib_t until the next relabel.
+files_rw_var_lib_dirs(rauc_t)
+files_var_lib_filetrans(rauc_t, rauc_var_lib_t, file)
+
+manage_dirs_pattern(rauc_t, rauc_runtime_t, rauc_runtime_t)
+manage_files_pattern(rauc_t, rauc_runtime_t, rauc_runtime_t)
+manage_lnk_files_pattern(rauc_t, rauc_runtime_t, rauc_runtime_t)
+files_runtime_filetrans(rauc_t, rauc_runtime_t, dir)
+
+# Boot selection: fw_printenv/fw_setenv on the U-Boot environment file
+# (/uboot-env, vfat) under the /var/lock/fw_printenv.lock lock.
+fs_search_dos(rauc_t)
+fs_manage_dos_files(rauc_t)
+# The install hook records the slot on trial as a file on /uboot-env (written
+# through a temporary file and renamed), and refuses an install while the boot
+# is degraded (/run/iotgw/degraded).
+fs_manage_dos_dirs(rauc_t)
+files_search_runtime(rauc_t)
+files_read_runtime_files(rauc_t)
+files_search_locks(rauc_t)
+files_manage_generic_locks(rauc_t)
+
+# machine-id, boot_id and the mount table RAUC reads to find the booted slot.
+files_read_etc_runtime_files(rauc_t)
+kernel_read_kernel_sysctls(rauc_t)
+mount_read_runtime_files(rauc_t)
+
+read_files_pattern(rauc_t, iotgw_ota_key_t, iotgw_ota_key_t)
+files_search_etc(rauc_t)
+files_read_etc_files(rauc_t)
+
+kernel_read_system_state(rauc_t)
+corecmd_exec_bin(rauc_t)
+corecmd_exec_shell(rauc_t)
+dev_read_sysfs(rauc_t)
+files_read_usr_files(rauc_t)
+miscfiles_read_localization(rauc_t)
+miscfiles_read_generic_certs(rauc_t)
+logging_send_syslog_msg(rauc_t)
+
+# Raw slot writes and the bundle loop/dm-verity setup. The SD card is a
+# removable device to the policy, eMMC/NVMe a fixed disk: grant both.
+storage_raw_read_fixed_disk(rauc_t)
+storage_raw_write_fixed_disk(rauc_t)
+storage_raw_read_removable_device(rauc_t)
+storage_raw_write_removable_device(rauc_t)
+dev_rw_loop_control(rauc_t)
+dev_rw_lvm_control(rauc_t)
+dev_read_urand(rauc_t)
+
+# Bundle mount: the squashfs payload carries no SELinux labels, so the bundle
+# tree and the hook script in it are unlabeled_t. Only rauc_t reads and runs
+# them; the bundle signature and dm-verity are what make that content trusted.
+allow rauc_t rauc_runtime_t:dir mounton;
+allow rauc_t self:capability sys_rawio;
+fs_getattr_xattr_fs(rauc_t)
+fs_mount_xattr_fs(rauc_t)
+fs_unmount_xattr_fs(rauc_t)
+fs_getattr_tmpfs(rauc_t)
+fs_getattr_dos_fs(rauc_t)
+selinux_getattr_fs(rauc_t)
+kernel_list_unlabeled(rauc_t)
+kernel_read_unlabeled_files(rauc_t)
+gen_require(`
+	type unlabeled_t;
+')
+allow rauc_t unlabeled_t:file { execute execute_no_trans map ioctl };
+
+# The rauc unit runs with NoNewPrivileges, so nothing RAUC or its hooks start
+# can change domain: mount, cp, tar and install all run as rauc_t.
+mount_exec(rauc_t)
+mount_rw_runtime_files(rauc_t)
+allow rauc_t self:process setfscreate;
+seutil_read_config(rauc_t)
+seutil_read_file_contexts(rauc_t)
+files_list_kernel_modules(rauc_t)
+files_read_kernel_modules(rauc_t)
+# tar resolves the bundle's owners through NSS, which reaches systemd-userdbd
+# and PID1 over varlink.
+init_stream_connect(rauc_t)
+optional_policy(`
+	gen_require(`
+		type systemd_userdbd_t, systemd_userdbd_runtime_t;
+	')
+	allow rauc_t systemd_userdbd_runtime_t:dir list_dir_perms;
+	allow rauc_t systemd_userdbd_runtime_t:lnk_file read_lnk_file_perms;
+	allow rauc_t systemd_userdbd_runtime_t:sock_file write_sock_file_perms;
+	allow rauc_t systemd_userdbd_t:unix_stream_socket connectto;
+')
+
+# HTTPS streaming (rauc install <url>): RAUC re-executes itself as the
+# rauc-nbd helper (sandbox-user=ota), which fetches the bundle with mTLS over
+# TCP and serves it to the kernel through NBD, set up over generic netlink.
+can_exec(rauc_t, rauc_exec_t)
+allow rauc_t self:tcp_socket create_stream_socket_perms;
+allow rauc_t self:netlink_generic_socket create_socket_perms;
+corenet_tcp_connect_http_port(rauc_t)
+corenet_tcp_sendrecv_generic_if(rauc_t)
+sysnet_dns_name_resolve(rauc_t)
+kernel_request_load_module(rauc_t)
+gen_require(`
+	type mount_runtime_t;
+')
+allow rauc_t mount_runtime_t:dir rw_dir_perms;
+
+# Boot-file staging of the FIT hook in a temporary directory.
+files_manage_generic_tmp_dirs(rauc_t)
+files_manage_generic_tmp_files(rauc_t)
+
+optional_policy(`
+	dbus_system_domain(rauc_t, rauc_exec_t)
+	init_dbus_chat(rauc_t)
+	# Daemons still without a domain (initrc_t) query RAUC over D-Bus.
+	init_dbus_chat_script(rauc_t)
+')
+
+# A staged bundle is opened by rauc_t and set up as a loop device for the
+# signature check and the install.
+list_dirs_pattern(rauc_t, iotgw_ota_inbox_t, iotgw_ota_inbox_t)
+read_files_pattern(rauc_t, iotgw_ota_inbox_t, iotgw_ota_inbox_t)
+
+# Administrators may talk to RAUC (rauc status, rauc install). The rauc CLI is
+# the same binary as the daemon; as a client it stays in the caller's domain
+# and talks to rauc_t over D-Bus, so no transition.
+optional_policy(`
+	gen_require(`
+		type sysadm_t;
+	')
+	iotgw_rauc_dbus_chat(sysadm_t)
+	can_exec(sysadm_t, rauc_exec_t)
+')
+
+# The OTA operator over SSH (prod: the iotgw-ops account, staff_t) stages a
+# bundle and drives RAUC, nothing more: no elevation, no RAUC state, no keys.
+# The D-Bus daemon's own policy limits which uid may call the installer.
+optional_policy(`
+	gen_require(`
+		type staff_t;
+	')
+	iotgw_rauc_dbus_chat(staff_t)
+	can_exec(staff_t, rauc_exec_t)
+	manage_dirs_pattern(staff_t, iotgw_ota_inbox_t, iotgw_ota_inbox_t)
+	manage_files_pattern(staff_t, iotgw_ota_inbox_t, iotgw_ota_inbox_t)
+	# The rauc client loads the slot status and the event log before it talks
+	# to the daemon; read-only.
+	read_files_pattern(staff_t, rauc_var_lib_t, rauc_var_lib_t)
+')
+
+########################################
+#
+# iotgw_overlay_t policy (broad by attribute: the mounter check only mirrors an
+# accessor's own, already-passed check)
+#
+
+allow iotgw_overlay_t self:capability { chown dac_override dac_read_search fowner fsetid mknod sys_admin };
+allow iotgw_overlay_t self:process { getsched signal_perms };
+allow iotgw_overlay_t self:fifo_file rw_fifo_file_perms;
+
+# The script itself: sh, mkdir, cp, rm, matchpathcon, restorecon, mount.
+corecmd_exec_bin(iotgw_overlay_t)
+corecmd_exec_shell(iotgw_overlay_t)
+kernel_read_system_state(iotgw_overlay_t)
+dev_read_sysfs(iotgw_overlay_t)
+files_read_usr_files(iotgw_overlay_t)
+miscfiles_read_localization(iotgw_overlay_t)
+seutil_read_file_contexts(iotgw_overlay_t)
+seutil_domtrans_setfiles(iotgw_overlay_t)
+logging_send_syslog_msg(iotgw_overlay_t)
+
+# `mount` must stay in this domain (no transition to mount_t), so that the
+# overlay's stashed credentials are iotgw_overlay_t.
+mount_exec(iotgw_overlay_t)
+mount_manage_runtime_files(iotgw_overlay_t)
+
+# The mount itself and the work directory probing overlayfs does at mount time.
+fs_mount_xattr_fs(iotgw_overlay_t)
+fs_remount_xattr_fs(iotgw_overlay_t)
+fs_unmount_xattr_fs(iotgw_overlay_t)
+fs_getattr_all_fs(iotgw_overlay_t)
+fs_manage_tmpfs_dirs(iotgw_overlay_t)
+fs_manage_tmpfs_files(iotgw_overlay_t)
+fs_manage_tmpfs_chr_files(iotgw_overlay_t)
+files_mounton_all_mountpoints(iotgw_overlay_t)
+
+# overlayfs repeats creates and relabels as the mounter, while a new object
+# keeps the SELinux user of its creator (root, staff_u). The object-identity
+# constraint refuses both for a system_u mounter, so an admin could neither
+# create nor relabel files under these trees. The attribute covers create,
+# relabelfrom and relabelto. The creator or relabeller is checked first, under
+# the same constraint, and gains nothing from this exemption.
+domain_obj_id_change_exemption(iotgw_overlay_t)
+
+# Mounter check: every access through /var/lib, /var/cache, /var/spool and
+# /srv is re-checked as this domain against the real inode's type. Non-auth
+# only: the *_all_* interfaces cover shadow_t and trip refpolicy's neverallow
+# rules in authlogin; no auth file lives
+# under these trees, so nothing is lost.
+# Mount-time checks: relabel from the generic fs label, mount on /var/spool,
+# and the whiteout device overlayfs leaves in a reused work directory.
+fs_relabelfrom_xattr_fs(iotgw_overlay_t)
+files_mounton_all_mountpoints(iotgw_overlay_t)
+# var_spool_t is not a mountpoint type, so the interface above does not cover
+# the /var/spool overlay.
+gen_require(`
+	type var_t, var_spool_t;
+	attribute non_auth_file_type;
+')
+allow iotgw_overlay_t var_spool_t:dir mounton;
+# Removing an entry of the read-only lower layer leaves a whiteout, a chr_file
+# created as the mounter in the work directory (var_t) and linked or renamed
+# into the upper tree, where a rename can also create it with the type of the
+# parent directory. Replacing or cleaning one up later needs unlink.
+allow iotgw_overlay_t var_t:chr_file { create link };
+allow iotgw_overlay_t non_auth_file_type:chr_file { rename unlink };
+files_list_non_auth_dirs(iotgw_overlay_t)
+files_read_non_auth_symlinks(iotgw_overlay_t)
+files_manage_non_auth_files(iotgw_overlay_t)
+# mmap through the overlay (rpm's sqlite database under /var/lib/rpm).
+files_map_non_auth_files(iotgw_overlay_t)
+files_relabel_non_auth_files(iotgw_overlay_t)
+
+########################################
+#
+# Local rules on existing domains
+#
+
+# sshd_t reads /etc/shadow directly; refpolicy expects that read to go through
+# unix_chkpwd (chkpwd_t). The narrowest grant that works.
+optional_policy(`
+	gen_require(`
+		type sshd_t;
+	')
+	auth_read_shadow(sshd_t)
+')
+
+# Plain bind mounts (systemd .mount units, genuinely mount_t) onto typed
+# directories under /var/lib: the pstore archive and the Bluetooth state.
+# mount_t reaches other mountpoint types only through the allow_mount_anyfile
+# boolean, which stays off.
+optional_policy(`
+	gen_require(`
+		type mount_t;
+		type systemd_pstore_var_lib_t;
+	')
+	allow mount_t systemd_pstore_var_lib_t:dir mounton;
+')
+
+optional_policy(`
+	gen_require(`
+		type mount_t;
+		type bluetooth_var_lib_t;
+	')
+	allow mount_t bluetooth_var_lib_t:dir mounton;
+')
+
+# systemd-run --pipe/--pty and similar clients hand their terminal and pipe
+# descriptors to PID1 over the system bus; dbus-daemon must be able to carry
+# an administrator's descriptors.
+optional_policy(`
+	gen_require(`
+		type system_dbusd_t, sysadm_t;
+	')
+	allow system_dbusd_t sysadm_t:fd use;
+	allow system_dbusd_t sysadm_t:fifo_file rw_fifo_file_perms;
+')
+
+# wpa_cli from an administrator shell: wpa_supplicant runs as
+# NetworkManager_t; the control interface is a datagram socket both ways.
+optional_policy(`
+	gen_require(`
+		type NetworkManager_t, sysadm_t;
+	')
+	allow sysadm_t NetworkManager_t:unix_dgram_socket sendto;
+	allow NetworkManager_t sysadm_t:unix_dgram_socket sendto;
+')
+
+# iotgw-machine-id bind-mounts the persistent machine-id over /etc/machine-id.
+optional_policy(`
+	gen_require(`
+		type mount_t, etc_runtime_t;
+	')
+	allow mount_t etc_runtime_t:file mounton;
+')
+
+# systemd-pstore runs systemd's container detection at start-up: PID1's
+# environment, the kernel osrelease sysctl and the namespace files.
+optional_policy(`
+	gen_require(`
+		type systemd_pstore_t;
+	')
+	init_read_state(systemd_pstore_t)
+	kernel_read_kernel_sysctls(systemd_pstore_t)
+	fs_getattr_nsfs_files(systemd_pstore_t)
+')
+
+# libsemanage (3.8 and later) resets every policy store entry it copies, and
+# the policy files it installs under /etc/selinux, to their file_contexts
+# label, SELinux user included, so that they stay system_u whoever runs
+# semodule. refpolicy gives semanage_t neither relabel permission on these
+# types (the TE check refuses even a same-user relabelfrom) nor the
+# object-identity exemption (needed for the change to system_u), so for an
+# administrator (staff_u, root) every reset is denied: one AVC per entry on
+# every transaction. Reach of this block: semanage_t may relabel files among
+# its four store and configuration types (semanage_store_t, file_context_t,
+# selinux_config_t, policy_config_t), which it already manages, so a file can
+# also change type between them, not only its SELinux user. The identity
+# exemption is domain-wide: semanage_t may create or relabel files and sockets
+# with another SELinux user wherever it already has create or relabel
+# permission. Every domain that enters semanage_t gets this. semanage_t already
+# writes and loads the whole policy.
+optional_policy(`
+	gen_require(`
+		type semanage_t, semanage_store_t;
+		type file_context_t, selinux_config_t, policy_config_t;
+	')
+	domain_obj_id_change_exemption(semanage_t)
+	seutil_relabelto_bin_policy(semanage_t)
+	allow semanage_t semanage_store_t:dir { relabelfrom relabelto };
+	allow semanage_t semanage_store_t:file { relabelfrom relabelto };
+	allow semanage_t { file_context_t selinux_config_t }:file { relabelfrom relabelto };
+	allow semanage_t policy_config_t:file relabelfrom;
+')
+
+########################################
+#
+# iotgw_mosquitto_t policy
+#
+
+allow iotgw_mosquitto_t self:tcp_socket create_stream_socket_perms;
+allow iotgw_mosquitto_t self:unix_dgram_socket create_socket_perms;
+read_files_pattern(iotgw_mosquitto_t, iotgw_mosquitto_etc_t, iotgw_mosquitto_etc_t)
+list_dirs_pattern(iotgw_mosquitto_t, iotgw_mosquitto_etc_t, iotgw_mosquitto_etc_t)
+manage_files_pattern(iotgw_mosquitto_t, iotgw_mosquitto_var_lib_t, iotgw_mosquitto_var_lib_t)
+manage_dirs_pattern(iotgw_mosquitto_t, iotgw_mosquitto_var_lib_t, iotgw_mosquitto_var_lib_t)
+manage_files_pattern(iotgw_mosquitto_t, iotgw_mosquitto_runtime_t, iotgw_mosquitto_runtime_t)
+files_search_var_lib(iotgw_mosquitto_t)
+files_read_etc_files(iotgw_mosquitto_t)
+kernel_read_system_state(iotgw_mosquitto_t)
+miscfiles_read_localization(iotgw_mosquitto_t)
+logging_send_syslog_msg(iotgw_mosquitto_t)
+corenet_tcp_bind_generic_node(iotgw_mosquitto_t)
+corenet_tcp_bind_all_unreserved_ports(iotgw_mosquitto_t)
+corenet_tcp_sendrecv_generic_if(iotgw_mosquitto_t)
+# libssl loads the OpenSSL configuration at start-up.
+miscfiles_read_generic_certs(iotgw_mosquitto_t)
+
+########################################
+#
+# iotgw_healthd_t policy
+#
+
+allow iotgw_healthd_t self:unix_dgram_socket create_socket_perms;
+manage_files_pattern(iotgw_healthd_t, iotgw_healthd_var_lib_t, iotgw_healthd_var_lib_t)
+manage_dirs_pattern(iotgw_healthd_t, iotgw_healthd_var_lib_t, iotgw_healthd_var_lib_t)
+manage_files_pattern(iotgw_healthd_t, iotgw_healthd_runtime_t, iotgw_healthd_runtime_t)
+files_search_var_lib(iotgw_healthd_t)
+files_read_etc_files(iotgw_healthd_t)
+kernel_read_system_state(iotgw_healthd_t)
+miscfiles_read_localization(iotgw_healthd_t)
+logging_send_syslog_msg(iotgw_healthd_t)
+
+# Health signals: journal scan, pstore crash archives, thermal zones and the
+# board serial number in sysfs, link state over netlink.
+logging_search_logs(iotgw_healthd_t)
+systemd_list_journal_dirs(iotgw_healthd_t)
+systemd_read_journal_files(iotgw_healthd_t)
+systemd_watch_journal_dirs(iotgw_healthd_t)
+logging_mmap_journal(iotgw_healthd_t)
+init_search_var_lib_dirs(iotgw_healthd_t)
+dev_read_sysfs(iotgw_healthd_t)
+kernel_read_kernel_sysctls(iotgw_healthd_t)
+fs_getattr_xattr_fs(iotgw_healthd_t)
+fs_getattr_tmpfs(iotgw_healthd_t)
+allow iotgw_healthd_t self:netlink_route_socket { create_netlink_socket_perms nlmsg_read };
+allow iotgw_healthd_t self:netlink_generic_socket create_socket_perms;
+optional_policy(`
+	gen_require(`
+		type systemd_pstore_var_lib_t;
+	')
+	list_dirs_pattern(iotgw_healthd_t, systemd_pstore_var_lib_t, systemd_pstore_var_lib_t)
+	allow iotgw_healthd_t systemd_pstore_var_lib_t:file getattr;
+')
+
+# It owns a name on the system bus, asks PID1 for unit states, and queries
+# RAUC and timesyncd.
+optional_policy(`
+	gen_require(`
+		type system_dbusd_t, ntpd_t;
+		attribute systemdunit;
+		class dbus { acquire_svc send_msg };
+		class service status;
+	')
+	dbus_system_bus_client(iotgw_healthd_t)
+	allow iotgw_healthd_t system_dbusd_t:dbus acquire_svc;
+	init_dbus_chat(iotgw_healthd_t)
+	allow iotgw_healthd_t systemdunit:service status;
+	iotgw_rauc_dbus_chat(iotgw_healthd_t)
+	allow iotgw_healthd_t ntpd_t:dbus send_msg;
+	allow ntpd_t iotgw_healthd_t:dbus send_msg;
+')
+
+########################################
+#
+# iotgw_webui_t policy
+#
+
+# V8 compiles JavaScript at run time.
+allow iotgw_webui_t self:process execmem;
+allow iotgw_webui_t self:tcp_socket create_stream_socket_perms;
+corecmd_exec_bin(iotgw_webui_t)
+files_read_usr_files(iotgw_webui_t)
+files_read_etc_files(iotgw_webui_t)
+kernel_read_system_state(iotgw_webui_t)
+miscfiles_read_localization(iotgw_webui_t)
+logging_send_syslog_msg(iotgw_webui_t)
+corenet_tcp_bind_generic_node(iotgw_webui_t)
+corenet_tcp_bind_http_port(iotgw_webui_t)
+# The server side proxies the OTBR REST API on loopback (8081).
+corenet_tcp_connect_transproxy_port(iotgw_webui_t)
+corenet_tcp_sendrecv_generic_if(iotgw_webui_t)
+
+# libuv: io_uring and eventfd/anon inodes; Node start-up reads its cgroup
+# memory limit, CPU frequency, the OpenSSL configuration and the resolver.
+allow iotgw_webui_t self:io_uring allowed;
+allow iotgw_webui_t self:anon_inode { create map read write };
+allow iotgw_webui_t self:fifo_file rw_fifo_file_perms;
+# Node forwards SIGTERM to its own threads on shutdown; without signal the
+# stop hangs until systemd's timeout kills it.
+allow iotgw_webui_t self:process { getcap getsched signal_perms };
+kernel_read_vm_sysctls(iotgw_webui_t)
+kernel_read_vm_overcommit_sysctl(iotgw_webui_t)
+allow iotgw_webui_t self:netlink_route_socket { create_netlink_socket_perms nlmsg_read };
+fs_read_cgroup_files(iotgw_webui_t)
+dev_read_sysfs(iotgw_webui_t)
+miscfiles_read_generic_certs(iotgw_webui_t)
+sysnet_dns_name_resolve(iotgw_webui_t)
+files_search_var_lib(iotgw_webui_t)
+
+########################################
+#
+# Rootless containers
+#
+
+# Containers run as the iotgw-ctr principal: a non-login system account that
+# seusers maps to user_u (__default__), whose user manager (user_systemd_t,
+# started by logind for the lingering user) runs the Quadlet units and execs
+# podman. refpolicy wires the rootless podman role (podman_user_t, its conmon
+# domain, container_t under the role) for staff_r only; this gives user_r the
+# same wiring, keyed on user_application_exec_domain, which user_systemd_t
+# belongs to. Every user_u login gains it, which on these images is the
+# principal and non-admin accounts; admins are staff_u and had it already.
+# The engine's exec of the container changes SELinux user and role
+# (system_u:system_r:container_t, from lxc_contexts): the constraints allow
+# it because the engine domain carries the identity/role change exemptions
+# and container_t is a change target, and the kernel's role-allow gate on
+# process transition needs the user_r -> system_r pair, which refpolicy
+# grants to no login role (its staff wiring lacks it too). The MCS
+# constraints bind only mcs_constrained_type sources (the containers), so the
+# principal's s0 range is no obstacle to a container at s0:cX,cY. The role
+# statement in the template also admits user_r to the docker and rootlesskit
+# user domains, which no binary on the image enters. The privileged user
+# container domain is not reachable: a local refpolicy patch removes the
+# rootless engines' path into it and its unconfined rules. An engine can
+# still ask the user manager for a transient unit, which runs in user_t, the
+# login domain of the same principal.
+optional_policy(`
+	gen_require(`
+		type user_t;
+		role user_r, system_r;
+		attribute user_application_exec_domain;
+	')
+	container_user_role(user, user_t, user_application_exec_domain, user_r)
+	allow user_r system_r;
+')
+
+# conmon starts crun across a domain transition. Without noatsecure the kernel
+# runs crun in secure-execution mode, secure_getenv() hides XDG_RUNTIME_DIR and
+# DBUS_SESSION_BUS_ADDRESS, the user-bus lookup fails and crun falls back to the
+# system bus, where it may not reach PID 1. refpolicy dontaudits the check, so
+# the failure logs no denial. Both domains are the same unprivileged principal.
+optional_policy(`
+	gen_require(`
+		type podman_user_t, podman_user_conmon_t;
+		type user_systemd_t, systemd_user_runtime_notify_t, systemd_user_runtime_t;
+		attribute container_user_domain;
+	')
+	allow podman_user_conmon_t podman_user_t:process noatsecure;
+	# pasta runs in the engine domain and proxies the TCP connections of the
+	# container, which holds every port itself. Reaching the gateway through
+	# it is stopped by the firewall (output chain, the principal on lo).
+	corenet_tcp_connect_all_ports(podman_user_t)
+	# conmon forwards stop signals to the payload, which sits in its user
+	# namespace under a mapped id; the engine inspects conmon through /proc.
+	allow podman_user_conmon_t self:cap_userns kill;
+	allow podman_user_conmon_t container_user_domain:process { signal sigkill signull };
+	ps_process_pattern(podman_user_t, podman_user_conmon_t)
+	# Healthchecks run from a transient timer requested over the private
+	# socket of the user manager.
+	allow podman_user_t systemd_user_runtime_t:sock_file { getattr write };
+	allow podman_user_t user_systemd_t:unix_stream_socket connectto;
+	# sd_notify from the container engine to the user manager.
+	systemd_search_user_runtime(podman_user_t)
+	allow podman_user_t systemd_user_runtime_notify_t:sock_file write;
+	allow podman_user_t user_systemd_t:unix_dgram_socket sendto;
+	# After a failed StartTransientUnit crun clears the stale scope and retries;
+	# the manager checks ResetFailedUnit as "system reload".
+	allow podman_user_t user_systemd_t:system reload;
+	dev_read_urand(podman_user_t)
+	fs_getattr_bpf(podman_user_t)
+')
+
+# podman-user-generator runs inside every user manager (the container
+# principal's, staff logins', root's console login) and walks
+# /etc/containers/systemd; the container principal's manager also walks the
+# engine's runtime directory. A manager that
+# restarts while its runtime directory stays (linger, or a login session still
+# open) replaces its own notify socket; without that it fails to start until
+# the user logs out.
+optional_policy(`
+	gen_require(`
+		type user_systemd_t, staff_systemd_t, sysadm_systemd_t;
+		type systemd_user_runtime_notify_t, container_user_runtime_t;
+	')
+	container_read_config(user_systemd_t)
+	container_read_config(staff_systemd_t)
+	container_read_config(sysadm_systemd_t)
+	allow user_systemd_t container_user_runtime_t:dir { getattr search };
+	allow { user_systemd_t staff_systemd_t sysadm_systemd_t } systemd_user_runtime_notify_t:sock_file unlink;
+')
+
+# The generator reaches ~/.config/containers/systemd (systemd_conf_home_t)
+# through ~/.config/containers, whose content includes registry credentials:
+# traversal only, no read. A user manager flushes pending connections from the
+# socket it activated for the session bus, which carries the bus label.
+# systemctl stats its pid namespace to tell whether it runs on the host.
+optional_policy(`
+	gen_require(`
+		type user_systemd_t, staff_systemd_t, container_conf_home_t;
+		type user_dbusd_t, staff_dbusd_t;
+		type user_t, staff_t;
+	')
+	allow user_systemd_t container_conf_home_t:dir { getattr search };
+	allow staff_systemd_t container_conf_home_t:dir { getattr search };
+	allow user_systemd_t user_dbusd_t:unix_stream_socket accept;
+	allow staff_systemd_t staff_dbusd_t:unix_stream_socket accept;
+	fs_getattr_nsfs_files(user_t)
+	fs_getattr_nsfs_files(staff_t)
+')
+
+# systemd-tmpfiles --user looks for user-tmpfiles.d under the XDG directories.
+optional_policy(`
+	gen_require(`
+		type user_systemd_tmpfiles_t, staff_systemd_tmpfiles_t;
+	')
+	xdg_search_data_dirs(user_systemd_tmpfiles_t)
+	xdg_search_config_dirs(user_systemd_tmpfiles_t)
+	xdg_search_config_dirs(staff_systemd_tmpfiles_t)
+')
+
+# crun pins its cgroup v2 device-filter BPF programs under /sys/fs/bpf/crun,
+# and podman seeds from /dev/urandom; refpolicy's podman_t has neither.
+optional_policy(`
+	gen_require(`
+		type podman_t;
+	')
+	fs_search_bpf(podman_t)
+	fs_manage_bpf_dirs(podman_t)
+	fs_manage_bpf_files(podman_t)
+	dev_read_urand(podman_t)
+')
+
+# systemd-sysctl, run by udev when netavark creates its bridge, applies the
+# drop-in netavark writes under /run/sysctl.d. Its label depends on the domain
+# podman ran in: container_runtime_t from a system container engine domain
+# (container.te runtime filetrans), the generic var_run_t from any other (seen
+# on the board from an administrator shell). refpolicy has no type for the
+# directory itself, so both are read.
+optional_policy(`
+	gen_require(`
+		type udev_t, container_runtime_t;
+	')
+	allow udev_t container_runtime_t:dir list_dir_perms;
+	container_read_runtime_files(udev_t)
+	files_read_runtime_files(udev_t)
+')
+
+# The same directory read by systemd-sysctl.service, which runs in
+# systemd_sysctl_t rather than udev_t: once netavark has created /run/sysctl.d
+# (container_runtime_t), it cannot apply any runtime sysctl drop-in without this.
+optional_policy(`
+	gen_require(`
+		type systemd_sysctl_t, container_runtime_t;
+	')
+	allow systemd_sysctl_t container_runtime_t:dir list_dir_perms;
+	container_read_runtime_files(systemd_sysctl_t)
+')
+
+# networkctl from an administrator shell queries link details over generic
+# netlink (nl80211, ethtool).
+optional_policy(`
+	gen_require(`
+		type sysadm_t;
+	')
+	allow sysadm_t self:netlink_generic_socket create_socket_perms;
+')
+
+# Administrators use the TPM directly from a shell: tpm2-tools, tpm-ops,
+# systemd-cryptenroll, and /usr/bin/systemd-cryptsetup (bin_t). Refpolicy
+# grants the device only to tpm2_t and a few daemons, and these tools run in
+# the caller's domain. Programs labelled lvm_exec_t (cryptsetup, boot-time
+# systemd-cryptsetup units) run in lvm_t, which this does not cover. Only the
+# admin domain; staff_t and user_t stay without.
+optional_policy(`
+	gen_require(`
+		type sysadm_t;
+	')
+	dev_rw_tpm(sysadm_t)
+')
+
+# seatd's signal handler wakes its event loop by writing to a pipe it created
+# itself. Without write on it a SIGTERM is never acted on, and a stop or restart
+# of seatd waits for systemd's stop timeout, after which systemd kills it.
+optional_policy(`
+	gen_require(`
+		type seatd_t;
+	')
+	allow seatd_t self:fifo_file rw_inherited_fifo_file_perms;
+')
+
+# systemd-udevd serializes its configuration into a memfd, stores it in PID1's
+# fd store and reads it back after a restart. A private type instead of the
+# generic tmpfs_t every other memfd carries. The transition also applies to any
+# regular file udev_t creates in a tmpfs_t directory (/dev/shm), and grants it
+# write on such directories; udevd is not known to create files there.
+optional_policy(`
+	gen_require(`
+		type udev_t;
+	')
+	allow udev_t iotgw_udev_tmpfs_t:file { create getattr open read write };
+	fs_tmpfs_filetrans(udev_t, iotgw_udev_tmpfs_t, file)
+')
+
+# The console banner's \4{iface} escapes make agetty open an rtnetlink socket
+# that stays open across its exec of login. login does not use it, so the
+# inherited-descriptor check is silenced rather than granted.
+optional_policy(`
+	gen_require(`
+		type local_login_t, getty_t;
+	')
+	dontaudit local_login_t getty_t:netlink_route_socket { read write };
+')
+
+# pam_keyinit (optional in the sshd PAM stack) runs in sshd_t after the
+# session keyring was created in the user's context: it links the user keyring
+# into the session keyring at open and revokes the session keyring at close.
+# Both are refused for SSH logins (staff_t, user_t); the login proceeds, nothing
+# on the image uses a login session's keyring, and an unrevoked session keyring
+# is destroyed when the last process referring to it exits. Silenced, not granted.
+optional_policy(`
+	gen_require(`
+		type sshd_t, staff_t, user_t;
+	')
+	dontaudit sshd_t { staff_t user_t }:key { link write setattr };
+')
+
+# Administrators over SSH (staff_t) already read the journal; journalctl -f
+# also needs an inotify watch on the journal directories.
+optional_policy(`
+	gen_require(`
+		type staff_t;
+	')
+	systemd_watch_journal_dirs(staff_t)
+')
+
+########################################
+#
+# iotgw_otbr_t policy
+#
+
+manage_files_pattern(iotgw_otbr_t, iotgw_otbr_var_lib_t, iotgw_otbr_var_lib_t)
+manage_dirs_pattern(iotgw_otbr_t, iotgw_otbr_var_lib_t, iotgw_otbr_var_lib_t)
+files_search_var_lib(iotgw_otbr_t)
+manage_files_pattern(iotgw_otbr_t, iotgw_otbr_runtime_t, iotgw_otbr_runtime_t)
+manage_sock_files_pattern(iotgw_otbr_t, iotgw_otbr_runtime_t, iotgw_otbr_runtime_t)
+files_search_runtime(iotgw_otbr_t)
+
+# Thread interface (wpan0, a tun device), host routes and addresses over
+# rtnetlink, raw ICMPv6 for border routing, UDP for Thread/TREL/backbone.
+# The unit grants exactly these two capabilities (and net_bind_service).
+allow iotgw_otbr_t self:capability { net_admin net_raw };
+allow iotgw_otbr_t self:tun_socket create_socket_perms;
+corenet_rw_tun_tap_dev(iotgw_otbr_t)
+allow iotgw_otbr_t self:netlink_route_socket { create_netlink_socket_perms nlmsg_read nlmsg_write };
+allow iotgw_otbr_t self:rawip_socket create_socket_perms;
+allow iotgw_otbr_t self:udp_socket create_socket_perms;
+corenet_udp_bind_generic_node(iotgw_otbr_t)
+# REST API (OTBR_AGENT_OPTS --rest-listen-address, port 8081 = transproxy_port_t).
+allow iotgw_otbr_t self:tcp_socket create_stream_socket_perms;
+corenet_tcp_bind_generic_node(iotgw_otbr_t)
+corenet_tcp_bind_transproxy_port(iotgw_otbr_t)
+allow iotgw_otbr_t self:unix_dgram_socket create_socket_perms;
+allow iotgw_otbr_t self:fifo_file rw_fifo_file_perms;
+# tun is a module, loaded at boot by the otbr package (modules-load.d), so the
+# agent's char-major autoload request is refused and not audited.
+kernel_dontaudit_request_load_module(iotgw_otbr_t)
+# The RCP: /dev/otbr-rcp (a udev symlink, device_t) -> ttyACM*, which refpolicy
+# labels tty_device_t. Denied, the open fails with no audit record (init.te
+# dontaudits unallocated ttys for every daemon). The type also covers other
+# unallocated serial ttys; ttyACM nodes cannot be typed apart without taking
+# them from interactive users.
+term_use_unallocated_ttys(iotgw_otbr_t)
+dev_read_generic_symlinks(iotgw_otbr_t)
+files_read_etc_files(iotgw_otbr_t)
+files_read_etc_symlinks(iotgw_otbr_t)
+miscfiles_read_localization(iotgw_otbr_t)
+logging_send_syslog_msg(iotgw_otbr_t)
+systemd_read_resolved_runtime(iotgw_otbr_t)
+# The ingress filter is updated through `sh -c "ipset ..."`; ipset runs in
+# iptables_t. The unit sets NoNewPrivileges, so the transition needs
+# nnp_transition (init.te grants it only from init_t/initrc_t).
+corecmd_search_bin(iotgw_otbr_t)
+corecmd_exec_shell(iotgw_otbr_t)
+optional_policy(`
+	gen_require(`
+		type iptables_t;
+	')
+	iptables_domtrans(iotgw_otbr_t)
+	allow iotgw_otbr_t iptables_t:process2 { nnp_transition nosuid_transition };
+	# ipset resolves through glibc and reads the resolver configuration.
+	systemd_read_resolved_runtime(iptables_t)
+')
+# Owns io.openthread.BorderRouter.wpan0 and publishes MeshCoP through avahi.
+optional_policy(`
+	gen_require(`
+		type system_dbusd_t;
+		class dbus acquire_svc;
+	')
+	dbus_system_bus_client(iotgw_otbr_t)
+	allow iotgw_otbr_t system_dbusd_t:dbus acquire_svc;
+	avahi_dbus_chat(iotgw_otbr_t)
+')
+# var-lib-thread.mount binds /data/lib/thread over /var/lib/thread.
+optional_policy(`
+	gen_require(`
+		type mount_t;
+	')
+	allow mount_t iotgw_otbr_var_lib_t:dir mounton;
+')
+# sudo over a non-interactive SSH session (`ssh gw sudo cmd`): the command runs
+# in sysadm_t, its stdio are sshd's pipes. Denied, it runs but prints nothing.
+optional_policy(`
+	gen_require(`
+		type sysadm_t;
+	')
+	ssh_rw_pipes(sysadm_t)
+')
+
+# systemd-tmpfiles' clean pass stats /run/podman/podman.sock, which refpolicy
+# leaves var_run_t (no file context for /run/podman).
+optional_policy(`
+	gen_require(`
+		type systemd_tmpfiles_t, var_run_t;
+	')
+	allow systemd_tmpfiles_t var_run_t:sock_file getattr;
+')
+
+# podman's systemd generator looks for /run/containers on every daemon-reload.
+optional_policy(`
+	gen_require(`
+		type systemd_generator_t, container_runtime_t;
+	')
+	allow systemd_generator_t container_runtime_t:dir search;
+')
+# ot-ctl from an administrator shell talks to the agent's CLI socket.
+optional_policy(`
+	gen_require(`
+		type sysadm_t;
+	')
+	stream_connect_pattern(sysadm_t, iotgw_otbr_runtime_t, iotgw_otbr_runtime_t, iotgw_otbr_t)
+')
+
+########################################
+#
+# DX-M1 desktop stack
+#
+
+# dxrtd: owns the accelerator, serves the runtime over an abstract unix socket
+# (@dxrt_dynamic_ipc.sock) and SysV message queues, and publishes monitor state
+# in /dev/shm. The runtime also binds /tmp/dxrt_dynamic_ipc.sock as a fallback
+# endpoint; the unit's PrivateTmp keeps it private, so it gets its own type.
+# files_tmp_filetrans grants add/remove on tmp_t directories: contained only
+# while the unit keeps PrivateTmp=yes.
+allow iotgw_dxrtd_t self:unix_stream_socket { create_stream_socket_perms connectto };
+allow iotgw_dxrtd_t self:msgq create_msgq_perms;
+allow iotgw_dxrtd_t self:msg { send receive };
+# A SysV message carries its sender's label: each side receives the other's.
+# Which side creates the queues is not known, so each may use the other's.
+allow iotgw_dxrtd_t iotgw_dxdemo_t:msg receive;
+allow iotgw_dxrtd_t iotgw_dxdemo_t:msgq rw_msgq_perms;
+allow iotgw_dxrtd_t iotgw_dxrt_device_t:chr_file { rw_chr_file_perms map };
+dev_list_all_dev_nodes(iotgw_dxrtd_t)
+manage_sock_files_pattern(iotgw_dxrtd_t, iotgw_dxrtd_tmp_t, iotgw_dxrtd_tmp_t)
+files_tmp_filetrans(iotgw_dxrtd_t, iotgw_dxrtd_tmp_t, sock_file)
+manage_files_pattern(iotgw_dxrtd_t, iotgw_dxrtd_var_lib_t, iotgw_dxrtd_var_lib_t)
+manage_dirs_pattern(iotgw_dxrtd_t, iotgw_dxrtd_var_lib_t, iotgw_dxrtd_var_lib_t)
+files_search_var_lib(iotgw_dxrtd_t)
+# Inference buffers are memfds (memfd_<pid>_<n>) passed to clients and written
+# by both sides; unnamed, so every other tmpfs file dxrtd creates gets their
+# type. The named transition wins for the monitor file, which clients may only
+# read.
+mmap_manage_files_pattern(iotgw_dxrtd_t, iotgw_dxrt_tmpfs_t, iotgw_dxrt_tmpfs_t)
+fs_tmpfs_filetrans(iotgw_dxrtd_t, iotgw_dxrt_tmpfs_t, file)
+mmap_manage_files_pattern(iotgw_dxrtd_t, iotgw_dxrt_monitor_t, iotgw_dxrt_monitor_t)
+fs_tmpfs_filetrans(iotgw_dxrtd_t, iotgw_dxrt_monitor_t, file, "dxrt_monitor_v2")
+fs_search_tmpfs(iotgw_dxrtd_t)
+dev_read_sysfs(iotgw_dxrtd_t)
+kernel_read_system_state(iotgw_dxrtd_t)
+files_read_etc_files(iotgw_dxrtd_t)
+miscfiles_read_localization(iotgw_dxrtd_t)
+logging_send_syslog_msg(iotgw_dxrtd_t)
+# The runtime library's isDxrtServiceRunning() walks /proc reading every
+# process's cmdline and skips any it cannot open; nothing is lost when another
+# domain's entry is unreadable, so those reads are not audited.
+domain_dontaudit_read_all_domains_state(iotgw_dxrtd_t)
+
+# weston: system compositor on the DRM device, seat through seatd.
+allow iotgw_weston_t self:unix_stream_socket { create_stream_socket_perms connectto };
+allow iotgw_weston_t self:process { getsched setsched };
+# libudev monitor for DRM and input hotplug.
+allow iotgw_weston_t self:netlink_kobject_uevent_socket create_socket_perms;
+# The unit runs weston on its VT (TTYPath=/dev/tty7, StandardInput=tty-fail):
+# systemd opens the tty and weston inherits it. Denied, the start fails with no
+# audit record (a refpolicy dontaudit rule hides it; seen only with semodule -DB).
+term_use_unallocated_ttys(iotgw_weston_t)
+# libudev's device enumeration statfs()s /sys first; refused (again without an
+# audit record), weston finds no DRM device and exits.
+dev_getattr_sysfs(iotgw_weston_t)
+dev_read_sysfs(iotgw_weston_t)
+# libseat (seatd backend) opens the DRM and input nodes and passes the fds.
+optional_policy(`
+	gen_require(`
+		type seatd_t;
+	')
+	seatd_stream_connect(iotgw_weston_t)
+	allow iotgw_weston_t seatd_t:fd use;
+')
+manage_files_pattern(iotgw_weston_t, iotgw_weston_runtime_t, iotgw_weston_runtime_t)
+manage_sock_files_pattern(iotgw_weston_t, iotgw_weston_runtime_t, iotgw_weston_runtime_t)
+manage_dirs_pattern(iotgw_weston_t, iotgw_weston_runtime_t, iotgw_weston_runtime_t)
+files_search_runtime(iotgw_weston_t)
+mmap_manage_files_pattern(iotgw_weston_t, iotgw_weston_tmpfs_t, iotgw_weston_tmpfs_t)
+fs_tmpfs_filetrans(iotgw_weston_t, iotgw_weston_tmpfs_t, file)
+# xkbcommon maps the keymap rules from /usr/share; statfs on /.
+files_map_usr_files(iotgw_weston_t)
+fs_getattr_xattr_fs(iotgw_weston_t)
+# DRI, DMA, input, fonts, xkb, mesa cache and udev runtime come with
+# wayland_compositor_domain.
+files_read_etc_files(iotgw_weston_t)
+miscfiles_read_localization(iotgw_weston_t)
+kernel_read_system_state(iotgw_weston_t)
+corecmd_exec_bin(iotgw_weston_t)
+logging_send_syslog_msg(iotgw_weston_t)
+# weston launches its own helper clients (weston-keyboard, weston-desktop-shell).
+allow iotgw_weston_t self:fd use;
+init_use_fds(iotgw_weston_t)
+
+# weston.socket: systemd creates /run/wayland-0 with its fc label, then a
+# forked (sd-chown) in init_t applies SocketUser/SocketGroup; without setattr
+# the socket unit fails and weston (Requires=weston.socket) with it.
+optional_policy(`
+	gen_require(`
+		type init_t;
+	')
+	allow init_t iotgw_weston_runtime_t:sock_file setattr;
+')
+
+# demo launcher: a Wayland client of weston (socket-activated /run/wayland-0)
+# and a DX runtime client of dxrtd.
+allow iotgw_dxdemo_t self:unix_stream_socket create_stream_socket_perms;
+allow iotgw_dxdemo_t self:msgq create_msgq_perms;
+allow iotgw_dxdemo_t self:msg { send receive };
+allow iotgw_dxdemo_t iotgw_dxrtd_t:unix_stream_socket connectto;
+allow iotgw_dxdemo_t iotgw_dxrtd_t:msgq rw_msgq_perms;
+allow iotgw_dxdemo_t iotgw_dxrtd_t:msg receive;
+allow iotgw_dxdemo_t iotgw_dxrt_device_t:chr_file rw_chr_file_perms;
+# dxrtd's inference buffers arrive as memfd descriptors over the runtime socket.
+allow iotgw_dxdemo_t iotgw_dxrtd_t:fd use;
+allow iotgw_dxdemo_t iotgw_dxrt_tmpfs_t:file { rw_file_perms map };
+read_files_pattern(iotgw_dxdemo_t, iotgw_dxrt_monitor_t, iotgw_dxrt_monitor_t)
+allow iotgw_dxdemo_t iotgw_dxrt_monitor_t:file map;
+# The runtime library checks that dxrtd runs by reading its /proc cmdline; the
+# other processes it walks past on the way are skipped when unreadable.
+ps_process_pattern(iotgw_dxdemo_t, iotgw_dxrtd_t)
+domain_dontaudit_read_all_domains_state(iotgw_dxdemo_t)
+fs_search_tmpfs(iotgw_dxdemo_t)
+# weston.socket's listener carries weston's exec domain (systemd labels a
+# socket-activated socket from the service's exec context).
+allow iotgw_dxdemo_t iotgw_weston_t:unix_stream_socket connectto;
+
+# Wayland clients without a domain of their own (the HDMI apps of the desktop
+# image run as systemd services in initrc_t) hand the compositor wl_shm pools
+# that are plain tmpfs_t memfds, which wayland_compositor_domain does not
+# cover; without this the compositor rejects the pool and the client cannot
+# open a window. Same permissions refpolicy gives the compositor on
+# wayland_client_tmpfs_type, on every tmpfs_t file it is handed or can reach.
+gen_require(`
+	type tmpfs_t;
+')
+allow iotgw_weston_t tmpfs_t:file { getattr ioctl map read write };
+allow iotgw_dxdemo_t iotgw_weston_runtime_t:sock_file write;
+files_search_runtime(iotgw_dxdemo_t)
+# The GStreamer registry is mapped from the cache. ORC's JIT is off in the unit
+# (ORC_CODE=backup), so nothing in the writable cache needs execute.
+mmap_manage_files_pattern(iotgw_dxdemo_t, iotgw_dxdemo_cache_t, iotgw_dxdemo_cache_t)
+manage_dirs_pattern(iotgw_dxdemo_t, iotgw_dxdemo_cache_t, iotgw_dxdemo_cache_t)
+files_search_var(iotgw_dxdemo_t)
+mmap_manage_files_pattern(iotgw_dxdemo_t, iotgw_dxdemo_tmpfs_t, iotgw_dxdemo_tmpfs_t)
+fs_tmpfs_filetrans(iotgw_dxdemo_t, iotgw_dxdemo_tmpfs_t, file)
+# GStreamer's pipeline threads talk over pipes; PrivateTmp /tmp; the plugin
+# scanner looks for udev's runtime directory; urandom for its seeds.
+allow iotgw_dxdemo_t self:fifo_file rw_fifo_file_perms;
+# timeout(1) in the launcher's probe mode puts the timed command in its own group.
+allow iotgw_dxdemo_t self:process setpgid;
+files_search_tmp(iotgw_dxdemo_t)
+udev_search_runtime(iotgw_dxdemo_t)
+dev_read_urand(iotgw_dxdemo_t)
+kernel_read_vm_sysctls(iotgw_dxdemo_t)
+corecmd_exec_bin(iotgw_dxdemo_t)
+corecmd_exec_shell(iotgw_dxdemo_t)
+files_read_etc_files(iotgw_dxdemo_t)
+files_read_usr_files(iotgw_dxdemo_t)
+kernel_read_system_state(iotgw_dxdemo_t)
+dev_read_sysfs(iotgw_dxdemo_t)
+miscfiles_read_localization(iotgw_dxdemo_t)
+logging_send_syslog_msg(iotgw_dxdemo_t)

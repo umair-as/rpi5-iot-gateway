@@ -17,8 +17,6 @@ RuntimeDirectory=otbr
 RuntimeDirectoryMode=0750
 # Place OTBR sockets in a dedicated run dir owned by otbr
 Environment=OTBR_SOCKET_DIR=/run/otbr
-# Ensure runtime artifacts are writable by otbr
-ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
 ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed

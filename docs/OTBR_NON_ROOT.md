@@ -37,7 +37,8 @@ Group=otbr
 SupplementaryGroups=dialout
 EnvironmentFile=-/etc/default/otbr-agent
 ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
-ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
+RuntimeDirectory=otbr
+RuntimeDirectoryMode=0750
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed
 Restart=on-failure
@@ -68,7 +69,8 @@ EnvironmentFile=-/etc/default/otbr-agent
 
 # Setup (runs as root due to + prefix)
 ExecStartPre=+/usr/libexec/otbr/otbr-ipset-init
-ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
+RuntimeDirectory=otbr
+RuntimeDirectoryMode=0750
 
 ExecStart=/usr/sbin/otbr-agent $OTBR_AGENT_OPTS
 KillMode=mixed
@@ -150,23 +152,20 @@ Typical runtime files:
 - `/run/otbr/openthread-wpan0.sock`
 - `/run/otbr/openthread-wpan0.lock`
 
-### Solution 1: tmpfiles.d + socket dir override (Recommended)
+### Solution 1: RuntimeDirectory + socket dir override (Recommended)
 
-If you want a dedicated socket directory (instead of `/run`), set
-`OTBR_SOCKET_DIR` and ensure the daemon respects it.
-This repository already uses that pattern in the shipped unit.
+Give the daemon a dedicated socket directory (instead of `/run`) through
+`OTBR_SOCKET_DIR`, and let systemd create it owned by the service user. The
+shipped unit uses this pattern:
 
-Create `/usr/lib/tmpfiles.d/otbr.conf`:
-```
-d /run/otbr 0750 otbr otbr -
-```
-
-Set the socket directory in the unit and keep these `ExecStartPre` entries:
 ```ini
+RuntimeDirectory=otbr
+RuntimeDirectoryMode=0750
 Environment=OTBR_SOCKET_DIR=/run/otbr
-ExecStartPre=+/bin/sh -c 'rm -f /run/otbr/openthread-wpan0.sock; touch /run/otbr/openthread-wpan0.lock; chown otbr:otbr /run/otbr/openthread-wpan0.lock; chmod 660 /run/otbr/openthread-wpan0.lock'
-ReadWritePaths=/run
 ```
+
+systemd creates `/run/otbr` owned by `otbr` before `ExecStart`, so no
+tmpfiles entry or lock-file pre-step is needed.
 
 ### Solution 2: ExecStartPre ACL (Alternative)
 
@@ -194,6 +193,8 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="YYYY", SYMLINK+="o
 ### TUN Device
 
 Access to `/dev/net/tun` is granted via `CAP_NET_ADMIN`. Ensure `PrivateDevices=false` in the systemd service.
+The `tun` module is loaded at boot by `modules-load.d/otbr-tun.conf` (wpan0 is
+a tun device).
 
 ## Known Issues and Pending Investigation
 

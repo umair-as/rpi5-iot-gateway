@@ -1,0 +1,34 @@
+# iotgw local file contexts.
+#
+# Everything on /data that file_contexts.subs does not alias onto another path
+# (OTA state, the encrypted-store image, overlay work directories, iotgw state)
+# is persistent service state: var_lib_t, as under /var/lib.
+#
+# Typed exceptions live HERE and not in the iotgw policy module's .fc on
+# purpose: a file_contexts.local entry takes precedence over any module .fc
+# entry for the same path (semanage-fcontext(8)), so a module .fc line for a
+# /data path would silently lose to the var_lib_t default below. Keeping every
+# typed /data path in this one file leaves a single precedence domain, where
+# the more specific spec wins. Verify on target with matchpathcon; the build
+# does not check the precedence.
+/data(/.*)?	system_u:object_r:var_lib_t:s0
+
+# Private half of the OTA identity (crypt-bundle decryption key, streaming TLS
+# key). Readers: rauc_t and the unconfined domains; see policy/iotgw.te.
+/data/ota/certs/device\.key	--	system_u:object_r:iotgw_ota_key_t:s0
+
+# RAUC runtime state under data-directory=/data/.
+/data/central\.raucs	--	system_u:object_r:rauc_var_lib_t:s0
+/data/rauc-events\.log.*	--	system_u:object_r:rauc_var_lib_t:s0
+
+# Local bundle staging for `rauc install <file>` (an OTA download streams over
+# HTTPS and needs no file). RAUC's own type, so rauc_t reads a staged bundle
+# without a grant on the var_lib_t default that covers every other service's
+# state under /data.
+/data/ota/bundles(/.*)?	system_u:object_r:rauc_var_lib_t:s0
+# Bundle staging for `rauc install <file>`: the operator writes here, rauc_t reads.
+/data/ota-tmp(/.*)?	system_u:object_r:iotgw_ota_inbox_t:s0
+
+# Broker persistence and edge-healthd state.
+/data/mosquitto(/.*)?	system_u:object_r:iotgw_mosquitto_var_lib_t:s0
+/data/edge/health(/.*)?	system_u:object_r:iotgw_healthd_var_lib_t:s0
