@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# RAUC bundle hook for the raw dm-verity root slots (pre-install, post-install).
+#
+# An OTA install writes only what belongs to the target slot: its signed FIT
+# (/boot/fitImage-a or -b), the trial-slot record and the U-Boot env metadata.
+# It never writes the shared boot files (u-boot.bin, the board DTB that holds
+# the FIT trust anchor, config.txt): /boot is single-copy, so a bad write there
+# would take both slots down and no slot switch could roll it back. Those
+# change only through iotgw-rpi-bootfiles-update, run by an operator, which
+# refuses a DTB that does not trust both installed slot FITs.
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -67,8 +76,6 @@ esac
 BUNDLE_MNT="${RAUC_BUNDLE_MOUNT_POINT:-/run/rauc/mnt/bundle}"
 BOOT_DEV="/dev/mmcblk0p1"
 BOOT_MP="/boot"
-VERBOSE="${IOTGW_VERBOSE:-0}"
-VERBOSE_OVERLAYS="${IOTGW_VERBOSE_OVERLAYS:-0}"
 
 for cmd in tar mount mountpoint umount install cmp sed awk sync grep cp rm mkdir mktemp mv; do
   command -v "$cmd" >/dev/null 2>&1 || die "Missing required command: $cmd"
@@ -275,55 +282,7 @@ if ! mount -o remount,rw "$BOOT_MP"; then
   log_warn "Failed to remount $BOOT_MP read-write"
 fi
 
-updated=0
-bootfiles_changed=0
-bootfiles_skipped=0
-# Install file only when content differs
-install_if_changed() {
-  src="$1"
-  dest="$2"
-  mode="${3:-0644}"
-  label="$4"
-  quiet_skip="${5:-0}"
-
-  if [ -f "$dest" ] && cmp -s "$src" "$dest"; then
-    if [ -n "$label" ] && [ "$quiet_skip" -eq 0 ] && [ "$VERBOSE" = "1" ]; then
-      log_skip "$label unchanged"
-    fi
-    bootfiles_skipped=$((bootfiles_skipped + 1))
-    return 1
-  fi
-
-  if [ -n "$label" ]; then
-    if [ "$VERBOSE" = "1" ]; then
-      log_install "Installing $label to /boot"
-    else
-      log_install "Updating $label"
-    fi
-  fi
-  install -m "$mode" "$src" "$dest"
-  bootfiles_changed=$((bootfiles_changed + 1))
-  return 0
-}
-
 log_info "FIT destination: ${FIT_DEST_NAME} (slot=${RAUC_SLOT_NAME:-unknown})"
-
-# FIT variant: fitImage handled separately above; keep Image/kernel_2712 for
-# compatibility. cmdline.txt is image-owned firmware baseline; the
-# post-install pass below strips any stale root=/rauc.slot= tokens when
-# U-Boot is in charge.
-FILES=(u-boot.bin cmdline.txt splash.bmp Image kernel_2712.img bcm2712-rpi-5-b.dtb)
-for f in "${FILES[@]}"; do
-  if [ -f "$tmpdir/$f" ]; then
-    label="$f"
-    if [ "$VERBOSE" != "1" ]; then
-      label="$f"
-    fi
-    if install_if_changed "$tmpdir/$f" "$BOOT_MP/$f" 0644 "$label"; then
-      updated=1
-    fi
-  fi
-done
 
 # Install the slot's verity FIT (fitImage-a or fitImage-b). The generic
 # fitImage in the archive has no verity table and is never installed. Write a
@@ -332,85 +291,16 @@ done
 slot_fit=$(find_slot_fit)
 fit_target="$BOOT_MP/$FIT_DEST_NAME"
 if [ -f "$fit_target" ] && cmp -s "$slot_fit" "$fit_target"; then
-  bootfiles_skipped=$((bootfiles_skipped + 1))
+  log_skip "$FIT_DEST_NAME unchanged"
 else
   log_install "Updating $FIT_DEST_NAME"
   install -m 0644 "$slot_fit" "$BOOT_MP/.$FIT_DEST_NAME.new"
   sync
   mv -f "$BOOT_MP/.$FIT_DEST_NAME.new" "$fit_target"
   sync
-  bootfiles_changed=$((bootfiles_changed + 1))
-  updated=1
+  log_success "$FIT_DEST_NAME installed"
 fi
 record_trial_slot || die "Trial record not written; refusing the install (slot left inactive)"
-
-# Include any additional Raspberry Pi 5 family DTBs shipped in bundle.
-for dtb in "$tmpdir"/bcm2712-rpi-*.dtb; do
-  [ -f "$dtb" ] || continue
-  bn=$(basename "$dtb")
-  if install_if_changed "$dtb" "$BOOT_MP/$bn" 0644 "$bn"; then
-    updated=1
-  fi
-done
-
-# Overlays directory (copy present files; keep logs concise unless verbose)
-if [ -d "$tmpdir/overlays" ]; then
-  mkdir -p "$BOOT_MP/overlays"
-  # Build overlay allowlist from config.txt (dtoverlay=...)
-  allowlist=""
-  if [ -r "$BOOT_MP/config.txt" ]; then
-    allowlist=$(grep -E '^[[:space:]]*dtoverlay=' "$BOOT_MP/config.txt" \
-      | sed -E 's/^[[:space:]]*dtoverlay=([^,[:space:]]+).*/\1/' \
-      | tr '\n' ' ' || true)
-  fi
-  # Always allow overlay_map metadata if present
-  allowlist="${allowlist} overlay_map overlay_map_pi5"
-
-  overlays_copied=0
-  overlays_total=0
-  for f in "$tmpdir"/overlays/*; do
-    [ -f "$f" ] || continue
-    bn=$(basename "$f")
-    base="${bn%.dtbo}"
-    base="${base%.dtb}"
-    if [ -n "$allowlist" ]; then
-      case " $allowlist " in
-        *" ${base} "*) ;;
-        *) continue ;;
-      esac
-    fi
-    overlays_total=$((overlays_total + 1))
-    label=""
-    if [ "$VERBOSE_OVERLAYS" = "1" ]; then
-      label="overlays/$bn"
-    fi
-    if install_if_changed "$f" "$BOOT_MP/overlays/$bn" 0644 "$label" 1; then
-      overlays_copied=$((overlays_copied + 1))
-      updated=1
-    fi
-  done
-  if [ "${overlays_total}" -gt 0 ]; then
-    if [ "${overlays_copied}" -gt 0 ]; then
-      log_install "Installed ${overlays_copied}/${overlays_total} overlay file(s) to /boot/overlays"
-    else
-      log_skip "Overlays unchanged (${overlays_total} file(s))"
-    fi
-  fi
-fi
-
-# Ensure kernel_2712.img exists for Pi5 firmware even if bundle only shipped Image
-if [ ! -f "$tmpdir/kernel_2712.img" ] && [ -f "$tmpdir/Image" ]; then
-  if install_if_changed "$tmpdir/Image" "$BOOT_MP/kernel_2712.img" 0644 "kernel_2712.img (from Image)"; then
-    updated=1
-  fi
-fi
-
-if [ "$updated" -eq 1 ]; then
-  sync || true
-  log_success "Boot files updated: ${bootfiles_changed} changed, ${bootfiles_skipped} unchanged"
-else
-  log_skip "Boot files already up-to-date"
-fi
 
 # Persist bundle metadata to U-Boot environment when available
 if command -v fw_setenv >/dev/null 2>&1; then
@@ -473,108 +363,6 @@ if command -v fw_setenv >/dev/null 2>&1; then
   fi
 else
   log_warn "fw_setenv not available; skipping U-Boot env update"
-fi
-
-MAX_BACKUPS="${MAX_BOOT_BACKUPS:-3}"
-
-# Helper: prune backups, keep newest N matching pattern <file>.bak*
-prune_backups() {
-  f="$1"; n="$2"
-  dir=$(dirname "$f"); base=$(basename "$f")
-  list=$(find "$dir" -maxdepth 1 -type f -name "${base}.bak*" -printf '%T@ %p\n' 2>/dev/null \
-    | sort -nr \
-    | awk '{print $2}')
-  [ -n "$list" ] || return 0
-  # Delete everything beyond first N and report count
-  to_prune=$(echo "$list" | awk 'NR>n {print}' n="$n" | wc -l | awk '{print $1}')
-  if [ "$to_prune" -gt 0 ]; then
-    echo "$list" | awk 'NR>n {print}' n="$n" | xargs -n1 -- rm -f --
-    log_clean "Pruned ${to_prune} old backups for ${base}, kept latest ${n}"
-  fi
-}
-
-# Prefer U-Boot chainloading when available: enforce kernel=u-boot.bin in config.txt
-if [ -r "$BOOT_MP/config.txt" ] && [ -r "$BOOT_MP/u-boot.bin" ]; then
-  # Compute prospective new config (proper newlines, no literal \n)
-  tmpcfg="$BOOT_MP/config.txt.tmp"
-  sed -E '/^[[:space:]]*kernel=/d' "$BOOT_MP/config.txt" > "$tmpcfg" || cp -a "$BOOT_MP/config.txt" "$tmpcfg"
-  echo "kernel=u-boot.bin" >> "$tmpcfg"
-  # Only change if different
-  if ! cmp -s "$tmpcfg" "$BOOT_MP/config.txt"; then
-    bk="$BOOT_MP/config.txt.bak.$(date +%Y%m%d%H%M%S)"
-    cp -a "$BOOT_MP/config.txt" "$bk" || true
-    prune_backups "$BOOT_MP/config.txt" "$MAX_BACKUPS"
-    mv "$tmpcfg" "$BOOT_MP/config.txt"
-    sync || true
-  else
-    rm -f "$tmpcfg" || true
-  fi
-
-  # Ensure Raspberry Pi firmware splash is disabled (prefer U-Boot splash)
-  if [ -r "$BOOT_MP/config.txt" ]; then
-    tmpcfg="$BOOT_MP/config.txt.tmp"
-    # Drop any existing disable_splash lines (commented or not) and append desired setting
-    sed -E '/^[[:space:]]*#?[[:space:]]*disable_splash[[:space:]]*=/d' "$BOOT_MP/config.txt" > "$tmpcfg" || cp -a "$BOOT_MP/config.txt" "$tmpcfg"
-    echo "disable_splash=1" >> "$tmpcfg"
-    if ! cmp -s "$tmpcfg" "$BOOT_MP/config.txt"; then
-      bk="$BOOT_MP/config.txt.bak.$(date +%Y%m%d%H%M%S)"
-      cp -a "$BOOT_MP/config.txt" "$bk" || true
-      prune_backups "$BOOT_MP/config.txt" "$MAX_BACKUPS"
-      mv "$tmpcfg" "$BOOT_MP/config.txt"
-      sync || true
-    else
-      rm -f "$tmpcfg" || true
-    fi
-  fi
-
-  # With U-Boot in charge (and config.txt actually set), remove any firmware-preset root=/rauc.slot=
-  if [ -r "$BOOT_MP/cmdline.txt" ] && grep -Eq '^[[:space:]]*kernel[[:space:]]*=[[:space:]]*u-boot\.bin[[:space:]]*$' "$BOOT_MP/config.txt"; then
-    current="$(cat "$BOOT_MP/cmdline.txt" 2>/dev/null || echo "")"
-    stripped=$(printf '%s\n' "$current" \
-      | sed -E 's/(^| )root=[^ ]+//g; s/(^| )rauc\.slot=[^ ]+//g' \
-      | tr -s ' ' \
-      | sed -E 's/^ +| +$//g')
-    if [ "${current}" != "${stripped}" ]; then
-      bk="$BOOT_MP/cmdline.txt.bak.$(date +%Y%m%d%H%M%S)"
-      cp -a "$BOOT_MP/cmdline.txt" "$bk" || true
-      prune_backups "$BOOT_MP/cmdline.txt" "$MAX_BACKUPS"
-      printf '%s\n' "$stripped" > "$BOOT_MP/cmdline.txt"
-      sync || true
-    fi
-  fi
-else
-  # If we boot via firmware (not U-Boot), ensure next boot root= points to the
-  # just-installed target slot by updating /boot/cmdline.txt accordingly.
-  log_check "Checking firmware boot configuration (non-U-Boot mode)..."
-  TARGET_ROOT=""
-  # Prefer RAUC-provided slot device if available
-  if [ -n "${RAUC_SLOT_DEVICE:-}" ]; then
-    TARGET_ROOT="${RAUC_SLOT_DEVICE}"
-  elif [ -n "${RAUC_SLOT_NAME:-}" ]; then
-    case "${RAUC_SLOT_NAME}" in
-      rootfs.0) TARGET_ROOT="PARTLABEL=rootA" ;;
-      rootfs.1) TARGET_ROOT="PARTLABEL=rootB" ;;
-    esac
-  fi
-  if [ -n "$TARGET_ROOT" ] && [ -r "$BOOT_MP/cmdline.txt" ]; then
-    current="$(cat "$BOOT_MP/cmdline.txt" 2>/dev/null || echo "")"
-    stripped=$(printf '%s\n' "$current" | sed -E 's/(^| )root=[^ ]+//g' | tr -s ' ' | sed -E 's/^ +| +$//g')
-    if [ -n "$stripped" ]; then
-      newcmd="$stripped root=${TARGET_ROOT}"
-    else
-      newcmd="root=${TARGET_ROOT}"
-    fi
-    if [ "${current}" != "${newcmd}" ]; then
-      log_update "Updating cmdline.txt root=${TARGET_ROOT} for next boot"
-      bk="$BOOT_MP/cmdline.txt.bak.$(date +%Y%m%d%H%M%S)"
-      cp -a "$BOOT_MP/cmdline.txt" "$bk" || true
-      prune_backups "$BOOT_MP/cmdline.txt" "$MAX_BACKUPS"
-      printf '%s\n' "$newcmd" > "$BOOT_MP/cmdline.txt"
-      sync || true
-    else
-      log_success "cmdline.txt already points to ${TARGET_ROOT}; no change"
-    fi
-  fi
 fi
 
 log_success "Bundle post-install hook completed successfully"

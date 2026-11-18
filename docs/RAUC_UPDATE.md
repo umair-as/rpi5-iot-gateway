@@ -95,6 +95,47 @@ autoboot window; prod builds have no prompt.
 
 ---
 
+## Shared boot files
+
+An install writes the target root slot and that slot's signed FIT
+(`/boot/fitImage-a` or `-b`), nothing else on `/boot`. `u-boot.bin`,
+`config.txt` and `bcm2712-rpi-5-b.dtb` (U-Boot's FIT trust anchor) are
+single-copy: a slot switch cannot roll them back, so a bad write there would
+take both slots down.
+
+**Before any slot is written**, the system pre-install handler
+(`/usr/libexec/iotgw/iotgw-rauc-preinstall`, `[handlers]` in
+`/etc/rauc/system.conf`) refuses a bundle unless:
+
+- it declares `[meta.iotgw] bundle-abi=2` (its hook installs only the slot FIT);
+- its rootfs image runs the bundle's pre-install and post-install hooks, and
+  the bundle carries the hook, `bootfiles-fit.tar.gz` and exactly one
+  `*.fitImage-a` and one `*.fitImage-b`;
+- the current anchor on `/boot` accepts both slot FITs: by
+  `required-mode` and the RSA key (modulus and exponent) behind each FIT
+  signer, not by key name.
+
+`bundle-formats` in `system.conf` refuses `plain` bundles before that. A
+refusal is logged by RAUC (`journalctl -u rauc`) with the reason, and every
+slot is left as it was.
+
+**To change the shared files**, run the updater from an image that carries
+the new ones:
+
+```bash
+sudo iotgw-rpi-bootfiles-update --dry-run    # plan; writes nothing
+sudo iotgw-rpi-bootfiles-update              # back up, write, read back (asks first)
+sudo reboot
+sudo iotgw-rpi-bootfiles-update --restore <run-id>   # roll back a run (ls /data/rpi-boot/backup)
+```
+
+It refuses before the first write if a staged file does not match its
+manifest, `/boot` is not a mounted read-write FAT, or the new DTB would not
+accept an installed slot FIT. Each file is written to a temporary name, read
+back from the medium, renamed and read back again. A `--restore` goes through
+the same checks. Moving a device from dual trust to YubiKey-only trust is
+staged: [FIT Boot Signing](FIT_BOOT_SIGNING.md).
+
 ## 📐 Adaptive Updates (block-hash-index)
 
 Adaptive updates are not applied: they have not been validated against the

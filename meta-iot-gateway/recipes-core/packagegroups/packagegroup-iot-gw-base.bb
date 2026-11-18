@@ -15,6 +15,7 @@ RDEPENDS:${PN} = " \
     systemd-extra-utils \
     lynis \
     ota-certs \
+    iotgw-boot-guard-bootfiles-update \
     ${@bb.utils.contains('IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE','1',' iotgw-pstore-persist','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV','1',' iotgw-crash-debug-sysctl','',d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG','1',' iotgw-systemd-watchdog','',d)} \

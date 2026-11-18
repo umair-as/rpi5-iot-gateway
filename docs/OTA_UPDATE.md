@@ -57,7 +57,7 @@ sequenceDiagram
     R->>R: Verify signature + mount verity
     R->>R: Write rootfs to inactive slot
     R->>Hook: Run slot-post-install hook
-    Hook->>Boot: Install the slot's FIT (fitImage-a/-b); update U-Boot, DTBs, firmware if changed
+    Hook->>Boot: Install the slot's FIT (fitImage-a/-b) only
     R->>U: Activate inactive slot (fw_setenv BOOT_ORDER)
     T->>T: Reboot
     U->>U: Select slot, decrement boot counter
@@ -66,7 +66,7 @@ sequenceDiagram
 
 ### Key Properties
 
-✅ **Synchronized Update Path** — Bundle hook updates `/boot` in the same install transaction
+✅ **Slot-only writes** — An install writes the target slot and its FIT; the shared boot files are never touched by OTA
 ✅ **Per-Slot FIT Naming** — Each slot writes its own kernel (`fitImage-a` / `fitImage-b`) on the shared boot partition
 ✅ **Verity-bound root** — Each slot's signed FIT carries that slot's dm-verity root hash, so a rootfs boots only with its matching FIT
 
@@ -336,8 +336,12 @@ variables from the profiles above; crypt needs nothing added.
 ## ⚠️ Design Considerations
 
 **Shared /boot partition** — the kernel is per slot, but U-Boot, firmware,
-`config.txt` and the control DTB are shared and updated in place by the bundle
-hook. On rollback they remain, so they must stay compatible with both slots.
+`config.txt` and the control DTB (U-Boot's FIT trust anchor) are shared and
+single-copy. An OTA never writes them, and the device's pre-install handler
+refuses a bundle whose slot FITs the current anchor would not accept. They
+change only through `iotgw-rpi-bootfiles-update`, which refuses a DTB that
+does not trust both installed slot FITs
+([RAUC Update](RAUC_UPDATE.md#shared-boot-files)).
 
 **No persistent `/etc`** — `/etc` and `/root` are the slot's content with a
 tmpfs upper, so an OTA delivers configuration with nothing to reconcile; state

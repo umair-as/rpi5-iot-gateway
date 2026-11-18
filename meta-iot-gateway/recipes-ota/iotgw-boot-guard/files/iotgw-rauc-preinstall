@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# RAUC system pre-install handler (system.conf [handlers] pre-install).
+#
+# RAUC runs this after it has verified and mounted the bundle and chosen the
+# target slots, and before it writes any slot. A non-zero exit aborts the
+# install with every slot untouched. Unlike a bundle hook, the handler belongs
+# to the installed system, so an old or hand-made bundle cannot leave it out.
+#
+# The root slots are raw dm-verity slots whose root hash lives only in the
+# per-slot signed FIT on /boot. A bundle is refused unless it can deliver that
+# FIT and install it:
+#   - it declares the bundle ABI this system implements ([meta.iotgw]
+#     bundle-abi), which marks a bundle whose hook installs only the slot FIT;
+#   - its rootfs image runs the bundle's pre-install and post-install hooks;
+#   - it carries the hook, the bootfiles archive and one signed FIT per slot;
+#   - the current trust anchor (/boot/bcm2712-rpi-5-b.dtb) accepts both FITs,
+#     so the written slot can boot without any change to the shared /boot.
+set -euo pipefail
+IFS=$'\n\t'
+
+BUNDLE_ABI=2
+BUNDLE_MNT="${RAUC_BUNDLE_MOUNT_POINT:-}"
+BOOT_MP="${IOTGW_BOOT_MP:-/boot}"
+ANCHOR="${BOOT_MP}/bcm2712-rpi-5-b.dtb"
+DEGRADED_MARKER="${IOTGW_DEGRADED_MARKER:-/run/iotgw/degraded}"
+ANCHOR_LIB="${IOTGW_FIT_ANCHOR_LIB:-/usr/lib/iotgw/iotgw-fit-anchor.sh}"
+
+refuse() { printf 'iotgw-rauc-preinstall: refusing the bundle: %s\n' "$*" >&2; exit 1; }
+note() { printf 'iotgw-rauc-preinstall: %s\n' "$*" >&2; }
+
+# shellcheck source=iotgw-fit-anchor.sh
+. "$ANCHOR_LIB" || refuse "cannot load ${ANCHOR_LIB}"
+command -v fdtget >/dev/null 2>&1 || refuse "fdtget (dtc) is missing; the trust anchor cannot be checked"
+
+[ ! -e "$DEGRADED_MARKER" ] || refuse "this boot is degraded ($(cat "$DEGRADED_MARKER" 2>/dev/null || echo unknown)); repair /data and reboot first"
+[ -n "$BUNDLE_MNT" ] && [ -d "$BUNDLE_MNT" ] || refuse "RAUC_BUNDLE_MOUNT_POINT is not a directory"
+MANIFEST="${BUNDLE_MNT}/manifest.raucm"
+[ -r "$MANIFEST" ] || refuse "bundle has no manifest.raucm"
+
+# ini_get <section> <key>: value from the bundle manifest (first match).
+ini_get() {
+    awk -v sec="[$1]" -v key="$2" '
+        /^[[:space:]]*\[/ { insec = ($0 == sec); next }
+        insec { line = $0; sub(/^[[:space:]]+/, "", line)
+                if (index(line, key "=") == 1) { print substr(line, length(key) + 2); exit } }
+    ' "$MANIFEST"
+}
+
+abi="$(ini_get meta.iotgw bundle-abi)"
+[ "$abi" = "$BUNDLE_ABI" ] \
+    || refuse "bundle ABI '${abi:-none}' is not ${BUNDLE_ABI}: a bundle from before the slot-FIT-only hook, or not built by this layer"
+
+# Every target slot must be a raw root slot fed by the rootfs image.
+targets="${RAUC_TARGET_SLOTS:-}"
+[ -n "$targets" ] || refuse "RAUC named no target slot"
+for n in $targets; do
+    name_var="RAUC_SLOT_NAME_${n}"; type_var="RAUC_SLOT_TYPE_${n}"; class_var="RAUC_SLOT_CLASS_${n}"
+    name="${!name_var:-}"; type="${!type_var:-}"; class="${!class_var:-}"
+    [ "$class" = rootfs ] || refuse "target slot ${name:-#$n} is class '${class}', not rootfs"
+    [ "$type" = raw ] || refuse "target slot ${name} is type '${type}', not a raw dm-verity slot"
+done
+
+hooks="$(ini_get image.rootfs hooks)"
+case ";${hooks};" in *";pre-install;"*) ;; *) refuse "the rootfs image does not run the bundle pre-install hook (hooks='${hooks}')" ;; esac
+case ";${hooks};" in *";post-install;"*) ;; *) refuse "the rootfs image does not run the bundle post-install hook, which installs the slot FIT (hooks='${hooks}')" ;; esac
+hook_file="$(ini_get hooks filename)"
+[ -n "$hook_file" ] && [ -f "${BUNDLE_MNT}/${hook_file}" ] || refuse "bundle hook script '${hook_file:-none}' is missing"
+[ -f "${BUNDLE_MNT}/bootfiles-fit.tar.gz" ] || refuse "bundle has no bootfiles-fit.tar.gz (kernel release for the module pairing check)"
+
+[ -f "$ANCHOR" ] || refuse "no trust anchor at ${ANCHOR}; the slot FITs cannot be checked"
+for slot in a b; do
+    fits=()
+    for f in "${BUNDLE_MNT}"/*.fitImage-"${slot}"; do
+        [ -f "$f" ] && fits+=("$f")
+    done
+    [ "${#fits[@]}" -eq 1 ] || refuse "bundle carries ${#fits[@]} *.fitImage-${slot} files, expected exactly one"
+    why="$(fit_anchor_check "${fits[0]}" "$ANCHOR" "$ANCHOR")" \
+        || refuse "slot FIT ${fits[0]##*/} would not boot with the current trust anchor: ${why}"
+done
+
+note "bundle accepted: ABI ${abi}, hooks '${hooks}', both slot FITs trusted by the current anchor"
+exit 0
