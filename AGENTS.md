@@ -238,13 +238,14 @@ What makes it actually work:
 - Don't re-run an equivalent failing command hoping for a different result — change one variable per retry.
 - No speculative adjacent refactors; keep the diff scoped to the request.
 - Subagents and isolated worktrees only when parallelism or build pollution justifies the cost (Claude: `yocto-worktree` skill).
-- **Long-running builds (>~10 min): launch detached, never via the agent harness's background-process mechanism.** A harness-spawned background process stays a child of the agent's tool runner and dies with it — the build gets SIGTERM'd mid-task (`make` exits 241 with no bitbake `ERROR:` lines, which reads like a mystery failure). Instead, from an ordinary foreground shell call:
+- **Long-running builds (>~10 min): use the shared tmux launcher, never the agent harness's background-process mechanism.** From an ordinary foreground tool call in the selected worktree:
 
   ```bash
-  setsid nohup make <target> > scratch/<topic>.log 2>&1 &
+  . scripts/env.sh
+  python3 scripts/agent-build/agent-build.py start <topic> -- <make-target>
   ```
 
-  `setsid` gives the job its own session; once the launching shell exits it reparents to the init/user manager and nothing in the agent's process tree can signal it. Watch progress with a **separate** poller that only reads the log file — decouple the watcher from the work, so a killed poller is just re-armed while the build survives. For builds that matter, prefer handing the operator the one-liner to run in their own shell. A killed build is recoverable either way (bitbake resumes from sstate), but the detached form avoids the wasted hours and the misleading failure mode.
+  Immediately give the operator the printed read-only attach command, run directory and log path. Monitor logs/status separately; only a recorded zero exit code means success. Do not clean up running sessions when the agent turn ends. The helper preserves a terminal, logs before make starts, records make's status and rejects concurrent helper builds for the same build directory. HSM signing remains operator-driven. Details, environment forwarding, cleanup and limitations: `docs/AGENT_BUILDS.md`. Keep monitoring already-running `setsid nohup` builds through their existing logs. Neither launch method guarantees survival against host shutdown or enclosing cgroup cleanup; for critical builds, the operator can launch from their own terminal.
 - Stop at the requested milestone; report remaining work instead of continuing unprompted.
 
 ## Where detailed guidance lives

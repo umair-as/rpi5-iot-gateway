@@ -10,19 +10,19 @@ The rest of this file is Claude-Code-specific tooling that does not apply to oth
 
 ## Domain skills available
 
-Two repo-local skills in `.claude/skills/` — invoke when the task fits:
+Repo-local skills in `.claude/skills/` — invoke when the task fits:
 
 - `devtool-workflow` — iterating on recipe source (U-Boot, kernel, app) via `devtool` instead of hand-editing patches: `--no-overrides`, patch export destinations, mandatory contamination verification, the U-Boot savedefconfig flow
 - `yocto-worktree` — isolated worktrees for subagent/parallel builds: `kas/local.yml` seeding, shared-cache verification, branch rename-before-PR, locked-worktree cleanup
+- `prebuild-gate` — run `make preflight` before any image build: maps changed paths to the cheapest check (policy source check, fragment gate, boot-script tests, do_patch, refpolicy compile, kernel configure, parse)
+- `ota-bench-test` — operator-invoked only: OTA-only bench test of a new bundle (baseline, local install, recovery, streaming, tampered-bundle rejection) with a results log
 
-A previous shared set (`add-package`, `build-image`, `debug-bitbake`,
-`create-kernel-fragment`, `patch-kernel-bsp`, `patch-uboot-bsp`) was
-removed: it was generic scarthgap-era procedure that restated
-`AGENTS.md` and `.claude/rules/` less precisely, and its raw
-`kas shell` examples contradicted the `scripts/env.sh` requirement.
-BitBake failure triage now lives in `.claude/rules/yocto-patterns.md`.
-Everything else those skills covered is in `AGENTS.md` and the rules —
-read those instead.
+Two repo-local subagents in `.claude/agents/`:
+
+- `selinux-policy-reviewer` — read-only review of `iotgw.te/.if/.fc` and the `/data` file-context files against the pinned refpolicy source; run it before compiling a policy change
+- `build-watcher` — watches one `agent-build.py` run and reports the outcome, or the first causal error, in five lines
+
+BitBake failure triage lives in `.claude/rules/yocto-patterns.md`.
 
 ## Subagents & parallel work
 
