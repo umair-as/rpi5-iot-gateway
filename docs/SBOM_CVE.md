@@ -16,7 +16,7 @@ Scanning runs `sbom-cve-check` (bootlin) over the image's SPDX 3.0 graph:
   `sbom-cve-check` and sets `SPDX_INCLUDE_VEX = "all"`, so `CVE_STATUS`
   dispositions flow into the report as VEX.
 - The scanner databases (NVD-FKIE and CVE-List-V5) are **pinned by SRCREV** in
-  `kas/cve.yml` and fetched with auto-update disabled — a scan is reproducible
+  `meta-iot-gateway/conf/distro/include/iotgw-cve-db.inc` and fetched with auto-update disabled — a scan is reproducible
   with respect to database content. "Reproducible" is not "current": the pinned
   database has a deliberate age; refresh it on a policy cadence — procedure and
   traps in §"Refreshing the pin" below.
@@ -48,9 +48,8 @@ Scanning runs `sbom-cve-check` (bootlin) over the image's SPDX 3.0 graph:
 > print(len(ko), "modules,", sum(1 for k in ko if not d[k]), "with zero sources")'
 > ```
 >
-> On this tree that reports every module blind (`1357 modules, 1357 with zero
-> sources`), against a `vmlinux` entry carrying 7428. Until the packaging
-> behaviour is fixed **and that fix reaches our pinned layers**, this input
+> On this tree every module reports zero sources. Until the packaging
+> behaviour is fixed **and that fix reaches the pinned layers**, this input
 > cannot answer "was this module compiled". Fixed upstream is not the same
 > event as fixed here.
 
@@ -81,13 +80,13 @@ stated above: a scan reports what was known at the pinned cutoff, not what is
 known today. Shipping a count measured against a stale pin produces a
 healthy-looking number that is silently blind to everything published since.
 
-Read the current cutoff from the dated comments in `kas/cve.yml` — never from a
+Read the current cutoff from the dated comments in `meta-iot-gateway/conf/distro/include/iotgw-cve-db.inc` — never from a
 date written anywhere else. To move it:
 
 **`DL_DIR` is a bitbake variable set in `kas/local.yml`, not a shell variable.**
 An ambient `$DL_DIR` is not authoritative, and the failure is not that it is
-merely unset: on this project's host it has carried a leftover export pointing
-at a pre-NVMe cache that no longer receives fetches. That is worse than empty —
+merely unset: a leftover export can point at an old cache that no longer
+receives fetches. That is worse than empty —
 an empty variable yields an obviously broken path, while a stale one silently
 reads a real repository whose contents stopped advancing months ago. Ask
 bitbake:
@@ -109,7 +108,7 @@ git ls-remote https://github.com/fkie-cad/nvd-json-data-feeds.git main
 git -C "$DL_DIR/git2/github.com.CVEProject.cvelistV5.git"         log -1 --format='%H %ci' main
 git -C "$DL_DIR/git2/github.com.fkie-cad.nvd-json-data-feeds.git" log -1 --format='%H %ci' main
 
-# 3. Edit BOTH SRCREVs in kas/cve.yml to the step-1 values, updating the date
+# 3. Edit BOTH SRCREVs in meta-iot-gateway/conf/distro/include/iotgw-cve-db.inc to the step-1 values, updating the date
 #    comment above each to that commit's date.
 
 # 4. Confirm BOTH new values actually bind, in RECIPE context, before starting a
@@ -123,10 +122,9 @@ git -C "$DL_DIR/git2/github.com.fkie-cad.nvd-json-data-feeds.git" log -1 --forma
 > **Never take the new revision from the local mirror.** Auto-update is
 > disabled and the fetch is pinned, so the mirror's `main` does not advance on
 > its own — in practice it sits at exactly the commit you already pinned.
-> Reading it and pasting the result back into `kas/cve.yml` is a refresh that
-> changes nothing while looking like it worked. Measured on this tree: mirror
-> `main` was `d34c2612…`/`b9056dbe…`, identical to the pins in `kas/cve.yml`,
-> while upstream had moved on. Step 1 is the only authoritative source.
+> Reading it and pasting the result back into `iotgw-cve-db.inc` is a refresh that
+> changes nothing while looking like it worked. Step 1 is the only
+> authoritative source.
 
 > **Verify in recipe context, not the global datastore.**
 > `bitbake-getvar --value SRCREV:pn-<recipe>` only proves the *assignment
@@ -151,12 +149,14 @@ question: refresh and re-scan before a release rather than shipping a count
 measured against an arbitrarily old database, and state the cutoff alongside any
 figure that leaves the project.
 
-Two traps, both live:
+Two traps:
 
 - The `SRCREV:pn-…` overrides are keyed on **PN** while upstream carries the
   database date in **PV**. They therefore survive a layer bump and keep binding
-  whatever `kas/cve.yml` says — so bumping layers without editing these two
-  lines silently reverts the database advance the bump would have brought.
+  whatever `iotgw-cve-db.inc` says. After a layer bump, compare them with
+  upstream's recipe PV (`git -C .kas/openembedded-core ls-tree --name-only HEAD
+  meta/recipes-devtools/sbom-cve-check/`): an older pin silently holds the
+  database back, a newer one holds it forward.
 - Local corpus clones kept for lookups are often shallow (`--depth 1`) and
   cannot serve as a fetch source for a pinned SRCREV. Check with
   `git rev-parse --is-shallow-repository` before assuming a SHA is available
@@ -263,8 +263,9 @@ boundary, and answering it needs evidence this pipeline does not produce.
 
 Three things to know before reading a kernel row here:
 
-- The kernel recipe already includes OE-Core's generic and version-specific
-  `cve-exclusion*.inc`; the residual rows are what needs per-CVE work.
+- The kernel recipe includes OE-Core's generic `cve-exclusion.inc` only (no
+  generated version-specific list); the residual rows are what needs per-CVE
+  work.
 - **CNA re-derivation is adopted** — it corrects rows the pinned database
   reports from an incomplete snapshot. **Compiled-file suppression is not
   adopted**, and its output must not be used for any triage decision. They are
@@ -284,6 +285,29 @@ The general decision model both guides sit inside — the stage order, the
 suppression and export policy, and where each kind of statement belongs — is
 [CVE Applicability](CVE_APPLICABILITY.md). Patch mechanics:
 [Kernel CVE Patch — Field Guide](KERNEL_CVE_PATCH.md).
+
+## Closed components without a CVE feed
+
+The CVE report lists every package, but a package whose only `CVE_PRODUCT` is
+its own recipe name can never match an advisory. For these the report's
+"0 issues" means "no feed", not "clean", and the watch is manual. Current set
+(versions from an image at the current layer pins; update this table when a
+pin moves):
+
+| Component | Version on the image | Recipe | What parses untrusted input | Watch source |
+|---|---|---|---|---|
+| Cypress/Infineon CYW43455 Wi-Fi station firmware (`cyfmac43455-sdio-{standard,minimal}.bin`, per-board `brcmfmac43455-sdio.<board>.bin`, `.clm_blob`) | `7.45.265 (28bca26 CY) FWID 01-b677b91b`, built 2023-08-29 | `linux-firmware-rpidistro` 20240709-2~bpo12+1+rpt3 | every 802.11 management and EAPOL frame in range, before association | Raspberry Pi `firmware-nonfree` changelog (bookworm branch; newest `rpt4`, 2025-09-30, changes only CYW43439); Infineon security advisories. Upstream linux-firmware carries the older 7.45.241. |
+| Bluetooth controller patch `BCM4345C0.hcd` (loaded), `BCM4345C5.hcd` | controller reports `BCM4345C0 (003.001.025) build 0000` | `bluez-firmware-rpidistro` 1.2-9+rpt3 | HCI/L2CAP/SMP from any peer in range | Raspberry Pi `bluez-firmware` repository |
+| Raspberry Pi 5 bootloader EEPROM images, `recovery.bin`, `vl805-*.bin` | `pieeprom-2026-02-23` (newest shipped) | `rpi-eeprom` v2026.02.23+2712 | boot media, network boot if enabled | Raspberry Pi `rpi-eeprom` release notes |
+| Raspberry Pi GPU/boot firmware on /boot (`bootcode.bin`, `fixup*.dat`, `start*.elf`) | from the pinned `rpi-bootfiles` | `rpi-bootfiles` | boot media | Raspberry Pi `firmware` repository |
+| Node.js runtime (prebuilt) | 22.22.0 | `nodejs-bin` | HTTP (OTBR web UI, dev images only) | NVD (the recipe sets `CVE_PRODUCT = "nodejs:node.js"`; it has a feed, and is listed because it is a prebuilt binary) |
+
+Rules for this table: a pin move that changes any of these recipes must update
+the version column from the built artifact (`strings` on the blob, `dmesg` for
+the loaded controller version), not from the recipe. A new closed component
+goes here in the same change that adds it. Suppressing a finding for these
+components is never possible, because there is nothing to suppress; the row is
+the record that someone looked.
 
 ## Not this
 

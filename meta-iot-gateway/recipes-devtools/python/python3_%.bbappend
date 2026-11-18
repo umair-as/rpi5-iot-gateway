@@ -2,7 +2,7 @@
 # in the shipped CPython point release.
 #
 # All of the following were backported to CPython 3.14.4 (affected 3.14.0-3.14.3);
-# this image ships 3.14.4. The scanner's "fixed from 3.15.0" hint reflects the
+# this image ships 3.14.7. The scanner's "fixed from 3.15.0" hint reflects the
 # 3.15-alpha main-branch fix and misses the 3.14.4 stable backport; per-CVE OSV
 # ranges confirm 3.14.4 is the first fixed 3.14.x release.
 #   https://osv.dev/vulnerability/CVE-2025-13462  (tarfile DIRTYPE normalization)
@@ -11,32 +11,29 @@
 #   https://osv.dev/vulnerability/CVE-2026-4224    (fixed 3.14.4)
 #   https://osv.dev/vulnerability/CVE-2026-3479    (fixed 3.14.4; also PSF-disputed, CVSS 0.0)
 #
-# NOTE: imaplib/poplib CVE-2025-15366 / -15367 are deliberately absent from the
-# list above. They are fixed only in 3.15.0a6, so 3.14.4 really is affected and a
-# status entry would be a false claim. They are carried as backports in SRC_URI
-# instead.
+# imaplib CVE-2025-15366: fixed upstream in 3.14.7 (CNA record: 3.14.0 up to
+# but excluding 3.14.7 affected), in a refined form that rejects NUL/CR/LF in
+# command arguments and quotes other control characters (Lib/imaplib.py
+# _control_chars; NEWS gh-40038). The stricter 3.15.0a6 fix does not apply
+# on 3.14.7.
+#   https://github.com/python/cpython/issues/143921
 #
-# The scanner does NOT currently credit those two backports — it reports both as
-# Unpatched / version-in-range. That is known and deliberate for now.
-# oe.cve_check.parse_cves_from_patch_file() only reads a CVE id from the patch
-# FILENAME or from a line starting with "CVE:", and these patches carry the id
-# only in the git Subject line. The fix is to rename them to CVE-<id>.patch and
-# add a "CVE:" header, which has been validated (the recipe SPDX then emits a
-# VexFixed/fix-file-included relationship with a patchedBy edge).
+# poplib CVE-2025-15367: affected below 3.15.0a6, no 3.14 backport upstream;
+# 3.14.7's POP3._putcmd has no check, so it is carried as a backport.
+# The file is named CVE-<id>.patch because oe.cve_check.parse_cves_from_patch_file()
+# reads the id from the FILENAME (or a "CVE:" line) and the scanner otherwise
+# reports the CVE as Unpatched. The backport's header is left untouched.
 #
-# It is not applied here because changing SRC_URI rebuilds python3-NATIVE
-# (BBCLASSEXTEND = "native nativesdk"), whose sysroot feeds util-linux-native ->
-# e2fsprogs-native -> libarchive-native -> rpm-native, and rpm-native is a
-# dependency of do_package for every recipe in the image. One filename change
-# therefore invalidates the packaging step of the entire distro. Batch it with
-# other source-affecting work (patch adds, PV bumps) on a build day rather than
-# paying that cost on a metadata/triage pass.
+# Changing SRC_URI rebuilds python3-NATIVE (BBCLASSEXTEND), whose sysroot feeds
+# rpm-native and so do_package for every recipe: batch such edits with other
+# source-affecting changes.
 CVE_STATUS[CVE-2025-13462] = "fixed-version: fixed in CPython 3.14.4 (shipped)"
 CVE_STATUS[CVE-2026-2297] = "fixed-version: fixed in CPython 3.14.4 (shipped)"
 CVE_STATUS[CVE-2026-3644] = "fixed-version: fixed in CPython 3.14.4 (shipped)"
 CVE_STATUS[CVE-2026-4224] = "fixed-version: fixed in CPython 3.14.4 (shipped)"
 CVE_STATUS[CVE-2026-3479] = "disputed: PSF-disputed, CVSS 0.0; also fixed in 3.14.4 (shipped)"
+CVE_STATUS[CVE-2025-15366] = "fixed-version: fixed in CPython 3.14.7 (shipped); CNA lists 3.14.0 to <3.14.7 affected"
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 
-SRC_URI += "file://0001-python3-reject-control-characters-in-IMAP-commands-C.patch file://0002-python3-reject-control-characters-in-POP3-commands-C.patch"
+SRC_URI += "file://CVE-2025-15367.patch"
 

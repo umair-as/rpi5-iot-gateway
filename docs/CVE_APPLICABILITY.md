@@ -225,7 +225,7 @@ none says "true, and we accept it".
 | Reachability findings | the evidence ledger. May project to *exported* VEX only under the S5 export rule |
 | Mitigation claims and their assertions | the evidence ledger. Exports as `affected` + action statement |
 | Risk acceptance | the product risk register, reviewed per release |
-| The reasoning, commands and outputs behind any of the above | the evidence ledger, with `scratch/` as the working scratchpad |
+| The reasoning, commands and outputs behind any of the above | the evidence ledger |
 
 **Scope discipline for `CVE_STATUS`.** A distro-wide entry with no `cpe:` scope
 decodes to vendor `*` / product `*` and is applied to **every recipe in the
@@ -407,12 +407,13 @@ distro in this family replaces it and keeps everything above verbatim.
 
 | Parameter | Value |
 |---|---|
-| Kernel recipe | `linux-iotgw-mainline-fit` (`CVE_PRODUCT = "linux_kernel"`, `CVE_VERSION = "${LINUX_VERSION}"`) |
+| Kernel recipe | `linux-iotgw-mainline` (`CVE_PRODUCT = "linux_kernel"`, `CVE_VERSION = "${LINUX_VERSION}"`) |
 | Machine | `raspberrypi5`, `aarch64` |
 | Images | `iot-gw-image-{base,dev,prod,desktop}` |
 | **The product** | `iot-gw-image-prod`. `-dev` is the engineering image: a finding present only there is in scope for `-dev` and out of scope for the product, and that distinction is an S2 answer, never a recipe `CVE_STATUS` |
 | Vendor-branch semantics | **mainline-stable.** Fix boundaries are per stable branch; a fix reaching mainline is not a fix reaching ours. There is no vendor backport arithmetic to reason around |
 | Scanner set | `sbom-cve-check` over the SPDX image graph, target scope only. No second scanner is wired, so vulnerabilities inside vendored dependencies of a recipe are a known, unmeasured blind spot |
+| Generated kernel exclusion include | none; the kernel recipe includes OE-Core's generic `cve-exclusion.inc` only |
 | `CVE_STATUS` homes | per-recipe `.bbappend`; distro-wide `conf/distro/include/iotgw-cve-ignores.inc` (every entry `cpe:`-scoped) |
 | Mitigation inventory | [SECURITY.md](SECURITY.md), [THREAT_MODEL.md](THREAT_MODEL.md); on-target assertions in `scripts/security/exposure-target.sh`, off-device reachability in `scripts/security/exposure-probe-host.sh` — a device cannot prove its own external reachability |
 | Ledger and register | not yet created; until they exist, reachability, mitigation and risk-acceptance findings have no durable home and must not be forced into `CVE_STATUS` |

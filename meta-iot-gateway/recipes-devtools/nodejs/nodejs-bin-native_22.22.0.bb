@@ -39,3 +39,7 @@ do_install() {
 
 # Relax QA on prebuilt binary
 INSANE_SKIP:${PN} = " ldflags textrel already-stripped file-rdeps"
+
+# Prebuilt upstream Node.js: track its advisories under the NVD product, not the
+# recipe name, which matches no NVD product.
+CVE_PRODUCT = "nodejs:node.js"

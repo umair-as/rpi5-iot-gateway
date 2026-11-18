@@ -20,72 +20,9 @@ local_conf_header:
     IMAGE_CLASSES:append = " sbom-cve-check"
     SPDX_INCLUDE_VEX = "all"
 
-    # CVE database pins — the fkie-cad NVD JSON feeds and cvelistV5.
-    #
-    # The upstream fragment defaults both to AUTOREV. Pin them so a release
-    # SBOM/CVE run is reproducible: two scans of the same commit have to see
-    # the same knowledge, or the report is not evidence of anything.
-    #
-    # Reproducible is not the same as current, and the difference is invisible
-    # from the output. A pinned database ages silently — the scan keeps
-    # succeeding and the unpatched count keeps looking healthy while every CVE
-    # published after the cutoff simply is not in the data. The dates below are
-    # part of the pin: refresh them deliberately, and never quote an unpatched
-    # count without saying which cutoff produced it.
-    #
-    # Keep each date on its own line. BitBake's conf parser requires an
-    # assignment to end at its closing quote, so a trailing "# ..." on these
-    # lines is a ParseError, not a comment. For the same reason, never end a
-    # comment line here with a backslash: line-joining happens before comment
-    # stripping, so the comment swallows the next line and the file fails to
-    # parse. Both verified against bb.parse directly.
-    #
-    # nvd-json-data-feeds @ 2026-06-16
-    SRCREV:pn-sbom-cve-check-update-nvd-native     = "b9056dbe8175514b36ed1720cd223fc73aa1796c"
-    # cvelistV5 @ 2026-06-16
-    SRCREV:pn-sbom-cve-check-update-cvelist-native = "d34c26123e45e877be017cf361b64edc0eefc4b6"
-
-    # Escape hatch: uncomment to scan against the current database tip instead.
-    # Useful for answering "what has landed since the pin?" — it makes the run
-    # unreproducible, so never leave it enabled for a release scan.
-    #SRCREV:pn-sbom-cve-check-update-nvd-native     = "${AUTOREV}"
-    #SRCREV:pn-sbom-cve-check-update-cvelist-native = "${AUTOREV}"
-
-    # WHEN BUMPING THE LAYER PINS IN rpi5.yml: re-check the two SRCREVs above
-    # in the same change. These overrides are keyed on PN, and upstream moved
-    # the database version into PV — so they survive a layer bump and keep
-    # binding, whatever version the recipe filename claims.
-    #
-    # Which way that binding cuts depends on whether these pins are newer or
-    # older than upstream's default, and that changes on its own as upstream
-    # advances. Newer: the override holds the database forward, no harm. Older:
-    # the same override silently holds us behind — the build succeeds, the
-    # unpatched count even improves (the layer bump brings its own CVE patches),
-    # and the database has not moved. Never assume which case applies; compare
-    # them. After a bump the recipe filenames carry the upstream database date,
-    # so listing them shows what these two lines are overriding:
-    #
-    #   git -C .kas/openembedded-core ls-tree --name-only HEAD meta/recipes-devtools/sbom-cve-check/
-    #
-    # WHEN MOVING THE cvelistV5 PIN ABOVE: re-check every CVE_STATUS entry that
-    # was justified by the pin being older than some upstream event, and delete
-    # the ones the new snapshot resolves on its own. A CVE_STATUS that outlives
-    # its reason keeps suppressing the row -- the scan stays green and nothing
-    # reports the mistake. Currently pin-dependent:
-    #
-    #   CVE-2026-31688 -- meta-iot-gateway/recipes-kernel/linux/
-    #                     linux-iotgw-mainline-fit_6.18.bbappend
-    #                     (CNA rejection 2026-06-17 postdates this snapshot)
-    #
-    # Keep that list accurate: an entry added here without its counterpart, or
-    # left here after deletion, is worse than no list.
-
-    # Checked at the 2026-07-30 oe-core pin: upstream's recipes are
-    # sbom-cve-check-update-nvd-native_2026.05.07-000006 and
-    # sbom-cve-check-update-cvelist-native_2026-05-07, i.e. 2026-05-07. The
-    # pins above (2026-06-16) are NEWER, so they hold the database forward --
-    # the benign direction. Re-check on the next layer bump; the direction can
-    # invert on its own as upstream advances.
+    # CVE database revisions: pinned in
+    # meta-iot-gateway/conf/distro/include/iotgw-cve-db.inc (a bump is a
+    # change to that file only). Override them in the cve_db_pin block below.
 
     # create-spdx/sbom-cve-check attach image post-build tasks whose sstate
     # output lives in DEPLOY_DIR_IMAGE. Keep image WORKDIRs around so rm_work
@@ -96,4 +33,19 @@ local_conf_header:
     # The upstream fragment only enables compiled-source SPDX metadata for
     # pn-linux-yocto. This distro uses a custom mainline FIT kernel provider,
     # so apply the same CVE/SBOM treatment to that recipe.
-    SPDX_INCLUDE_COMPILED_SOURCES:pn-linux-iotgw-mainline-fit = "1"
+    SPDX_INCLUDE_COMPILED_SOURCES:pn-linux-iotgw-mainline = "1"
+
+  cve_db_pin: |
+    # CVE database revisions. iotgw-cve-db.inc holds the pins as weak
+    # defaults; an assignment here lands in local.conf and wins. Uncomment one
+    # option (or copy it into kas/local.yml under this block name).
+    #
+    # (a) Pin specific revisions: reproducible, reports no CVE published
+    #     after the commit date.
+    # SRCREV:pn-sbom-cve-check-update-nvd-native     = "<nvd-json-data-feeds commit>"
+    # SRCREV:pn-sbom-cve-check-update-cvelist-native = "<cvelistV5 commit>"
+    #
+    # (b) Tip of both databases, for answering "what has landed since the
+    #     pin?": current data, not reproducible, never for a release scan.
+    # SRCREV:pn-sbom-cve-check-update-nvd-native     = "${AUTOREV}"
+    # SRCREV:pn-sbom-cve-check-update-cvelist-native = "${AUTOREV}"

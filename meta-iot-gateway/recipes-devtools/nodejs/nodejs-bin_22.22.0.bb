@@ -74,3 +74,7 @@ INSANE_SKIP:${PN}-npm = "ldflags textrel already-stripped"
 RDEPENDS:${PN}:class-target += "glibc libstdc++ libgcc"
 INSANE_SKIP:${PN} += " file-rdeps"
 INSANE_SKIP:${PN}-npm += " file-rdeps"
+
+# Prebuilt upstream Node.js: track its advisories under the NVD product, not the
+# recipe name, which matches no NVD product.
+CVE_PRODUCT = "nodejs:node.js"

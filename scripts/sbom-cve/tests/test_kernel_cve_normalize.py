@@ -13,7 +13,7 @@ import sys
 SBOM_DIR = pathlib.Path(__file__).resolve().parent.parent
 SCRIPT = SBOM_DIR / "kernel-cve-normalize.py"
 
-PKG_NAME = "linux-iotgw-mainline-fit"
+PKG_NAME = "linux-iotgw-mainline"
 
 # The real Yocto AUTOREV/git PV that crashes
 # packaging.version.Version(pkg["version"].split("-")[0]) in OE-Core's
