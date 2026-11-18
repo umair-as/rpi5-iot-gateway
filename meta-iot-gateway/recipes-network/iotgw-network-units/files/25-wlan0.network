@@ -6,8 +6,18 @@ Name=wlan0
 [Network]
 DHCP=ipv4
 IPv6AcceptRA=yes
-IPv6LinkLocalAddressing=yes
+LinkLocalAddressing=ipv6
+
+[DHCPv4]
+# Above br0's DHCP metric (1024): the wired uplink wins when both are up.
+RouteMetric=@IOTGW_WIFI_ROUTE_METRIC@
+# The hostname is provisioned identity, not a DHCP option: the server must not
+# set it (networkd would ask hostnamed, which asks polkit, for every lease).
+UseHostname=no
 
 [IPv6AcceptRA]
+# SLAAC only: no DHCPv6 client socket, whatever the router's RA flags say.
+DHCPv6Client=no
 # stable-privacy equivalent for SLAAC addresses.
 Token=prefixstable
+RouteMetric=@IOTGW_WIFI_ROUTE_METRIC@

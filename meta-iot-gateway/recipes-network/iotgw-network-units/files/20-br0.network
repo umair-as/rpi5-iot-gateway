@@ -10,6 +10,10 @@ LinkLocalAddressing=no
 IPv6AcceptRA=no
 
 [DHCPv4]
-# Bridge MAC is inherited from the first enslaved port; keep the DHCP client
-# id tied to the MAC so lease identity is stable across reboots.
+# The bridge carries eth0's factory MAC (10-br0.netdev); keep the DHCP client
+# id tied to the MAC so lease identity is stable across reboots and in
+# recovery mode.
 ClientIdentifier=mac
+# The hostname is provisioned identity, not a DHCP option: the server must not
+# set it (networkd would ask hostnamed, which asks polkit, for every lease).
+UseHostname=no

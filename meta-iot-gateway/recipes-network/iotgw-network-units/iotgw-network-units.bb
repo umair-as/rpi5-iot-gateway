@@ -29,10 +29,9 @@ IOTGW_WIFI_IPV4_METHOD ?= "auto"
 # its credentials land in the default iface's wpa_supplicant conf and no
 # wpa_supplicant@<that iface> instance is enabled. Multi-iface wpa_supplicant
 # (per-iface conf + enable symlink) is not yet supported: iotgw-hardening.bb's
-# service-hardening drop-in and rauc's managed-paths.d/network.conf are both
-# hardcoded to the wlan0 instance/conf today, so a genuinely per-iface
-# wpa_supplicant would also need those two recipes updated in lockstep to
-# avoid shipping an unhardened, RAUC-unmanaged Wi-Fi credential file.
+# service-hardening drop-in is hardcoded to the wlan0 instance, so a genuinely
+# per-iface wpa_supplicant would also need that recipe updated in lockstep to
+# avoid shipping an unhardened Wi-Fi supplicant instance.
 IOTGW_WIFI_NETWORKS   ?= ""
 
 # MAC randomization policy passed through to wpa_supplicant:
@@ -47,8 +46,31 @@ IOTGW_WIFI_NETWORKS   ?= ""
 IOTGW_WIFI_SCAN_RAND  ?= "1"
 IOTGW_WIFI_ASSOC_RAND ?= "0"
 
+# Regulatory domain for wpa_supplicant (ISO 3166-1 alpha-2, e.g. "DE"). No
+# layer default: it depends on where the device is installed. Unset leaves the
+# world domain "00", which rejects or never scans most 5 GHz channels.
+IOTGW_WIFI_COUNTRY ?= ""
+
+# Route metric for every wlan0 route (DHCP, SLAAC and static profiles). It sits
+# above networkd's DHCP default of 1024 that br0 uses, so the wired uplink is
+# preferred whenever both are up. Without it a static Wi-Fi profile's
+# metric-0 routes win on a shared subnet, and replies to wired peers leave
+# through wlan0.
+IOTGW_WIFI_ROUTE_METRIC ?= "2048"
+
+python __anonymous() {
+    import re
+    country = d.getVar('IOTGW_WIFI_COUNTRY') or ''
+    if country and not re.fullmatch(r'[A-Z]{2}', country):
+        bb.fatal("IOTGW_WIFI_COUNTRY must be an ISO 3166-1 alpha-2 code in upper case (e.g. DE), got '%s'" % country)
+    metric = d.getVar('IOTGW_WIFI_ROUTE_METRIC') or ''
+    if not metric.isdigit():
+        bb.fatal("IOTGW_WIFI_ROUTE_METRIC must be a non-negative integer, got '%s'" % metric)
+}
+
 SRC_URI = " \
     file://10-br0.netdev \
+    file://10-br0.link \
     file://20-br0.network \
     file://15-eth0.network \
     file://25-wlan0.network \
@@ -58,8 +80,8 @@ S = "${UNPACKDIR}"
 
 # Wi-Fi credentials (IOTGW_WIFI_PSK/_NETWORKS/_SSID) are interpolated directly
 # into do_install to generate wpa_supplicant-${IOTGW_WIFI_IFACE}.conf, so they
-# MUST stay in the task's vardeps: excluding them (as this recipe previously
-# did via do_install[vardepsexclude]) drops the rebuild trigger, not just a
+# MUST stay in the task's vardeps: excluding them (do_install[vardepsexclude])
+# drops the rebuild trigger, not just a
 # published hash — editing a credential in kas/local.yml would then leave
 # do_install's signature unchanged and sstate would replay stale creds onto
 # the image with no build warning. A secret's *hash* landing in the local
@@ -124,25 +146,50 @@ emit_networkd_ssid() {
         echo ""
         echo "[Network]"
         if [ "$_method" = "manual" ] && [ -n "$_ipaddr" ]; then
-            echo "Address=${_ipaddr}"
-            [ -n "$_gw" ] && echo "Gateway=${_gw}"
             for _d in $(echo "$_dns" | tr ';,' '  '); do
                 [ -n "$_d" ] && echo "DNS=${_d}"
             done
+            echo ""
+            echo "[Address]"
+            echo "Address=${_ipaddr}"
+            echo "RouteMetric=${IOTGW_WIFI_ROUTE_METRIC}"
+            if [ -n "$_gw" ]; then
+                echo ""
+                echo "[Route]"
+                echo "Gateway=${_gw}"
+                echo "Metric=${IOTGW_WIFI_ROUTE_METRIC}"
+            fi
         else
             echo "DHCP=ipv4"
+            echo ""
+            echo "[DHCPv4]"
+            echo "RouteMetric=${IOTGW_WIFI_ROUTE_METRIC}"
         fi
+        echo ""
+        echo "[IPv6AcceptRA]"
+        echo "DHCPv6Client=no"
     } > "$_out"
 }
 
 do_install() {
     install -d ${D}${sysconfdir}/systemd/network
     install -m 0644 ${UNPACKDIR}/10-br0.netdev   ${D}${sysconfdir}/systemd/network/
+    install -m 0644 ${UNPACKDIR}/10-br0.link     ${D}${sysconfdir}/systemd/network/
     install -m 0644 ${UNPACKDIR}/20-br0.network  ${D}${sysconfdir}/systemd/network/
+    # br0 ignores IPv6 unless it is the Border Router's infrastructure link,
+    # which needs a link-local address and router advertisements.
+    if [ "${IOTGW_ENABLE_OTBR}" = "1" ] && [ "${IOTGW_OTBR_INFRA_IFACE}" = "br0" ]; then
+        sed -i -e 's/^LinkLocalAddressing=no$/LinkLocalAddressing=ipv6/' \
+               -e 's/^IPv6AcceptRA=no$/IPv6AcceptRA=yes/' \
+            ${D}${sysconfdir}/systemd/network/20-br0.network
+        printf '\n[IPv6AcceptRA]\nDHCPv6Client=no\n' >> ${D}${sysconfdir}/systemd/network/20-br0.network
+    fi
     install -m 0644 ${UNPACKDIR}/15-eth0.network ${D}${sysconfdir}/systemd/network/
     # Generic wlan0 DHCP fallback for any SSID not given an explicit per-SSID
     # unit below (sorts after the generated 24-<iface>-<ssid>.network files).
     install -m 0644 ${UNPACKDIR}/25-wlan0.network ${D}${sysconfdir}/systemd/network/
+    sed -i 's/@IOTGW_WIFI_ROUTE_METRIC@/${IOTGW_WIFI_ROUTE_METRIC}/' \
+        ${D}${sysconfdir}/systemd/network/25-wlan0.network
 
     # Enable the wlan0 wpa_supplicant instance. Template instances are not
     # reachable by the enable-only preset-all used in this flow, so ship the
@@ -160,6 +207,7 @@ do_install() {
         echo "# Generated by iotgw-network-units. Managed file."
         echo "ctrl_interface=DIR=/run/wpa_supplicant GROUP=netdev"
         echo "update_config=1"
+        [ -n "${IOTGW_WIFI_COUNTRY}" ] && echo "country=${IOTGW_WIFI_COUNTRY}"
         echo "mac_addr=${IOTGW_WIFI_ASSOC_RAND}"
         echo "preassoc_mac_addr=${IOTGW_WIFI_SCAN_RAND}"
         echo ""
@@ -192,6 +240,7 @@ do_install() {
 
 FILES:${PN} = " \
     ${sysconfdir}/systemd/network/*.netdev \
+    ${sysconfdir}/systemd/network/*.link \
     ${sysconfdir}/systemd/network/*.network \
     ${sysconfdir}/wpa_supplicant/wpa_supplicant-${IOTGW_WIFI_IFACE}.conf \
     ${sysconfdir}/systemd/system/multi-user.target.wants/wpa_supplicant@${IOTGW_WIFI_IFACE}.service \
@@ -199,6 +248,7 @@ FILES:${PN} = " \
 
 CONFFILES:${PN} = " \
     ${sysconfdir}/systemd/network/10-br0.netdev \
+    ${sysconfdir}/systemd/network/10-br0.link \
     ${sysconfdir}/systemd/network/20-br0.network \
     ${sysconfdir}/systemd/network/15-eth0.network \
     ${sysconfdir}/systemd/network/25-wlan0.network \

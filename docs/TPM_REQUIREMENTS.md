@@ -1,19 +1,20 @@
-# TPM 2.0 Requirements (Working Draft)
+# TPM 2.0 Requirements
 
-This document is a working draft for requirements, learning notes, and a work plan for Linux-side TPM enablement and
-measured-boot design on the Raspberry Pi 5 (Infineon SLB9672). U-Boot TPM integration is
-parked pending upstream RP1/PCIe/SPI support.
+Requirements and measured-boot design for Linux-side TPM use on the Raspberry Pi 5
+(Infineon SLB9672). U-Boot TPM integration is out of scope until upstream RP1/PCIe/SPI
+support exists.
 
 
 ## Overview
 
-This project has TPM building blocks in place. This draft defines what problem we are
+This project has TPM building blocks in place. This document defines what problem we are
 solving, what is already working, what we want to achieve next, and what is intentionally
 out of scope.
 
 ## Current State (What We Have)
 - Hardware target: Infineon SLB9672 class TPM2 over SPI on RPi5.
-- Kernel/device enablement exists behind feature gate `IOTGW_ENABLE_TPM_SLB9672=1`.
+- Kernel/device enablement exists behind the TPM feature switch `IOTGW_ENABLE_TPM=1`
+  (set by `kas/tpm.yml`), which drives the hardware profile `IOTGW_ENABLE_TPM_SLB9672`.
 - Userspace includes TPM policy and tooling (`tpm-ops`; `tpm2-tools` in dev profile).
 - RAUC/FIT/OTA flow is currently used without U-Boot TPM integration.
 - U-Boot TPM integration attempt was parked due to upstream and stability blockers.
@@ -76,7 +77,7 @@ Acceptance:
 
 ### Phase 2: Measured-Boot Design
 Deliverables:
-- PCR ownership matrix (bootloader/FIT/kernel/initramfs/userspace).
+- PCR ownership matrix (bootloader/FIT/kernel/pre-init/userspace).
 - Event model: what gets extended, by which component, and when.
 - Evidence retrieval format and location.
 
@@ -112,6 +113,6 @@ Use these as baseline checks on target:
 2. Where should event logs live long-term for fleet attestation?
 3. What is the production policy if TPM is unavailable at boot (degraded mode vs hard fail)?
 
-## Decision Log
-- 2026-04-01: U-Boot TPM integration remains parked; Linux-side TPM is active path.
-- 2026-04-01: Focus shifts to requirements + measured-boot design before new implementation.
+## Decisions
+- U-Boot TPM integration is parked; Linux-side TPM is the active path.
+- Requirements and measured-boot design come before new implementation.

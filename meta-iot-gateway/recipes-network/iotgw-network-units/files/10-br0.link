@@ -1,0 +1,8 @@
+# udev's 99-default.link sets MACAddressPolicy=persistent, a MAC derived from
+# /etc/machine-id. br0 takes eth0's factory MAC instead (see 10-br0.netdev).
+[Match]
+OriginalName=br0
+Kind=bridge
+
+[Link]
+MACAddressPolicy=none
