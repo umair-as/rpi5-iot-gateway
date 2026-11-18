@@ -18,17 +18,16 @@ Conflicts=shutdown.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-# Fail closed: validate the file before touching the live table, so a bad
-# ruleset never reaches the delete-then-load sequence, and if loading fails
-# anyway (a kernel-side refusal that -c cannot see), ExecStopPost installs a
-# minimal known-good ruleset instead of leaving the kernel's accept policy
-# in place. The helper is a no-op when the unit stopped cleanly.
+# The ruleset replaces its own table in one nft transaction (see the head of
+# /etc/nftables.conf), so start and reload are a single load: a ruleset that
+# fails leaves the previous table in force. Validate first so a bad file is
+# reported before anything is attempted. If the first load at start fails (a
+# kernel-side refusal that -c cannot see), ExecStopPost installs a minimal
+# known-good ruleset instead of leaving the kernel's accept policy in place.
+# The helper is a no-op when the unit stopped cleanly.
 ExecStartPre=/usr/sbin/nft -c -f /etc/nftables.conf
-# Reset only our baseline table; ignore failure when table is absent.
-ExecStartPre=-/usr/sbin/nft delete table inet filter
 ExecStart=/usr/sbin/nft -f /etc/nftables.conf
 ExecReload=/usr/sbin/nft -c -f /etc/nftables.conf
-ExecReload=-/usr/sbin/nft delete table inet filter
 ExecReload=/usr/sbin/nft -f /etc/nftables.conf
 ExecStopPost=/usr/libexec/iotgw/iotgw-nftables-fallback
 NoNewPrivileges=true
