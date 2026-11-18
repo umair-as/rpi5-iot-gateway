@@ -8,10 +8,9 @@ Keep private investigations, incident notes, and sensitive assumptions in intern
 ## Scope
 
 In scope:
-- Boot integrity chain (RPI firmware -> U-Boot -> FIT verification -> kernel/initramfs)
+- Boot integrity chain (RPi firmware -> U-Boot -> FIT verification -> kernel -> dm-verity root -> pre-init)
 - OTA update path (RAUC A/B, bundle verification, slot switching)
-- Runtime configuration persistence (`/etc` overlay reconciliation)
-- Provisioning path (`/data/iotgw` inputs -> on-device config/cred stores)
+- Runtime state persistence (`/data` assembled by pre-init; `/etc` and `/root` volatile tmpfs overlays)
 - Core services (networking, OTA, observability, container runtime, TPM helpers)
 - Local/remote management interfaces (SSH, D-Bus mediated services)
 - Network exposure: listening sockets, firewall policy, and **address family**
@@ -35,11 +34,10 @@ Out of scope:
 
 1. Build host/CI -> signed artifacts
 2. Signed artifact store -> target device OTA installer
-3. Read-only rootfs slots -> writable `/data` and `/etc` overlay upper
-4. Provisioning input store (`/data/iotgw`) -> privileged provisioning services
-5. Local root/admin shell -> all runtime secret and control planes
-6. Network ingress (MQTT/SSH/management) -> internal services
-7. Upstream layer defaults -> shipped product policy (see "Inherited vs
+3. dm-verity rootfs slots -> writable `/data` (and volatile tmpfs uppers for `/etc`, `/root`)
+4. Local root/admin shell -> all runtime secret and control planes
+5. Network ingress (SSH/management) -> internal services
+6. Upstream layer defaults -> shipped product policy (see "Inherited vs
    Authored Configuration")
 
 **Address families are a boundary, not a detail.** IPv4 subnet separation
@@ -56,7 +54,7 @@ control that maps to no in-scope position is a nicety, however good it sounds.
 
 | # | Position | Reaches | Primary controls |
 |---|---|---|---|
-| A1 | Unauthenticated network peer (LAN, routed, Wi-Fi, IPv6) | Listening sockets admitted by the firewall | listen scope, family-qualified firewall rules, service auth |
+| A1 | Unauthenticated network peer (LAN, routed, Wi-Fi, IPv6) | Listening sockets admitted by the firewall; the other attached networks, through forwarding | listen scope, family-qualified firewall rules, default-deny forwarding (only the Thread/infrastructure pair when OTBR is built), service auth |
 | A2 | Radio-proximate peer (Wi-Fi, BLE, Thread) | Link-layer association, pairing, commissioning | link security (WPA2/WPA3 + PMF), BlueZ policy, Thread commissioning |
 | A3 | Compromised confined service (non-root) | Local IPC — D-Bus, Unix sockets, device nodes | per-service sandboxing, D-Bus method authorization, MAC policy |
 | A4 | Local authenticated user | Shell, sudo policy, group memberships | account policy, sudoers scope, `hidepid` |
@@ -64,9 +62,11 @@ control that maps to no in-scope position is a nicety, however good it sounds.
 | A6 | Update-path actor (bundle source, D-Bus caller) | Rootfs replacement, slot/boot state | bundle signature policy, installer authorization, anti-rollback |
 
 Notes on scope: A4 is largely development-only — production images carry no
-interactive accounts. A5 is bounded by the documented absence of OTP-rooted
-secure boot; see `docs/FIT_BOOT_SIGNING.md` for what signing does and does not
-cover.
+account with a password and no administrator: root cannot log in, the serial
+console has no login, and the single SSH account (`iotgw-ops`, key-only,
+`staff_t`) can only stage and install update bundles. A5 is bounded by the
+documented absence of OTP-rooted secure boot; see `docs/FIT_BOOT_SIGNING.md`
+for what signing does and does not cover.
 
 ## Inherited vs Authored Configuration
 
@@ -81,7 +81,7 @@ Instances found in this product (each a real defect, not hypothetical):
 
 | Inherited default | Effect | Position |
 |---|---|---|
-| `sshd.socket` with a bare `ListenStream=<port>` | systemd binds dual-stack; SSH answers on every address the device holds, including globally routable IPv6 | A1 |
+| `sshd.socket` with a bare `ListenStream=<port>` | systemd binds dual-stack; SSH answers on every address the device holds, including globally routable IPv6. (Fixed here: sshd binds its own listener, pinned to IPv4 by `05-iotgw-listen.conf`.) | A1 |
 | RAUC D-Bus policy granting `context="default"` | Any local process may call a root, unsandboxed installer | A3, A6 |
 | brcmfmac SDIO device-ID -> vendor-backend mapping | Binds the Wi-Fi part to a backend lacking the external-SAE implementation, so WPA3 cannot work despite capable firmware | A2 |
 | Radio firmware version/lineage chosen by an upstream machine conf | Firmware — a security-relevant input on the primary radio attack surface — is neither pinned nor reviewed by us | A2 |
@@ -117,13 +117,13 @@ Practices that follow:
 ## STRIDE Summary
 
 ### Spoofing
-- Risks: rogue bundle source, forged provisioning inputs, impersonated device/service.
+- Risks: rogue bundle source, forged persistent inputs on `/data`, impersonated device/service.
 - Baseline controls: signed FIT/RAUC artifacts, TLS/cert trust roots, service account isolation.
 - Planned controls: stronger device identity binding and signed bootstrap payloads.
 
 ### Tampering
-- Risks: modification of overlay-managed configs, credential stores, OTA metadata.
-- Baseline controls: managed-path reconciliation, read-only rootfs, hardened service permissions.
+- Risks: modification of persistent state on `/data`, credential stores, OTA metadata, an offline-modified root slot.
+- Baseline controls: dm-verity root authenticated by the signed FIT, `/etc` rebuilt from the slot every boot, hardened service permissions.
 - Planned controls: additional integrity checks and post-OTA verification gates.
 
 ### Repudiation
@@ -138,12 +138,12 @@ Practices that follow:
 
 ### Denial of Service
 - Risks: failed slot transitions, bad config persistence, service hardening regressions.
-- Baseline controls: A/B rollback semantics, conservative provisioning behavior, restart policies.
+- Baseline controls: A/B rollback semantics, restart policies.
 - Planned controls: health gates for critical services in OTA validation.
 
 ### Elevation of Privilege
 - Risks: overly broad service permissions/capabilities, weak syscall boundaries.
-- Baseline controls: systemd sandboxing, non-root services, read-only system partitions.
+- Baseline controls: SELinux enforcing on every image (no permissive domains), systemd sandboxing, non-root services, dm-verity root.
 - Planned controls: per-service hardening matrix with compatibility tests.
 
 ## Service Security Baseline
@@ -169,7 +169,7 @@ do not:
 
 | Population | Typical exposure |
 |---|---|
-| Authored in this layer (health daemon, OTBR units, broker) | ~1-5, "OK"/"PROTECTED" |
+| Authored in this layer (health daemon, OTBR units) | ~1-5, "OK"/"PROTECTED" |
 | Inherited from upstream layers (installer, smartcard daemon, HCI attach, audit, bus daemon) | ~9+, "UNSAFE" |
 
 A high score is not automatically a defect — some components legitimately need

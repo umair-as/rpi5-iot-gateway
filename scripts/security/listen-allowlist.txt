@@ -1,0 +1,54 @@
+# Listening sockets the gateway may have, read by exposure-target.sh.
+# Every socket `ss -tlnH` / `ss -ulnH` reports, loopback included, must match a
+# line here, or the exposure check fails.
+#
+# Columns:
+#   gate      a systemd unit that must be active for the line to apply
+#             ("-" = always). Feature listeners are gated by their unit, so one
+#             file serves base, dev, desktop and prod.
+#   proto     tcp | udp
+#   address   local address:port as ss prints it, as a bash pattern: escape a
+#             literal * [ ] with a backslash. A line without wildcards must be
+#             present; a wildcard line may match nothing.
+#   firewall  what the live input chain must do with the port:
+#               open    admitted from the network (IPv4 rule, no iifname)
+#               scoped  never admitted network-wide; an interface-bound
+#                       (iifname) rule, or none, is fine
+#               closed  not admitted at all
+#   domain    optional: the SELinux type every process holding the socket must
+#             run in ("-" or absent = not checked; checking needs root for ss -p)
+#   images    optional: comma list of images the line applies to (dev, desktop,
+#             prod, base, from IMAGE_BASENAME in /etc/buildinfo; "-" or absent = all).
+#             On any other image the listener matches nothing and fails.
+#
+# Adding a line is a security decision: say why in the commit.
+
+# gate                    proto address               firewall
+sshd.service              tcp   0.0.0.0:22            open
+systemd-resolved.service  tcp   127.0.0.53%lo:53      closed
+systemd-resolved.service  udp   127.0.0.53%lo:53      closed
+systemd-resolved.service  tcp   127.0.0.54:53         closed
+systemd-resolved.service  udp   127.0.0.54:53         closed
+# DHCPv4 client (bound to the interface address). No DHCPv6 client: br0 has no
+# link-local address and wlan0 sets DHCPv6Client=no, so :546 must not listen.
+-                         udp   *%*:68                closed
+# Avahi binds the wildcard on both families; only the OTBR infrastructure
+# interface admits mDNS.
+avahi-daemon.service      udp   0.0.0.0:5353          scoped
+avahi-daemon.service      udp   \[::\]:5353           scoped
+# OTBR agent REST API: unauthenticated, loopback only (otbr-agent.default).
+otbr-agent.service        tcp   127.0.0.1:8081        closed
+# OpenThread's own UDP sockets, ports taken from its dynamic range starting at
+# 49152: the Border Agent (MeshCoP, DTLS with the PSKc; `ot-ctl ba port`) and
+# one more stack socket. Backbone Router TMF on the infrastructure interface.
+otbr-agent.service        udp   \*:4915[2-9]          closed
+otbr-agent.service        udp   \*%*:61631            closed
+# OTBR web UI (Node.js, unauthenticated): dev and desktop images only.
+otbr-webui.service        tcp   0.0.0.0:80            open
+# MQTT test broker: a deliberate playground on dev and desktop, approved by the
+# operator 2026-11-14. Loopback only, in its confined domain, never in prod
+# (the prod hygiene gate forbids the binary). Any other bind of 1883, e.g.
+# 0.0.0.0 or [::], matches no line and fails. mosquitto.conf binds 127.0.0.1;
+# the ::1 line is a pattern ([3]) so it is allowed but not required.
+mosquitto.service         tcp   127.0.0.1:1883        closed  iotgw_mosquitto_t  dev,desktop
+mosquitto.service         tcp   \[::1\]:188[3]        closed  iotgw_mosquitto_t  dev,desktop

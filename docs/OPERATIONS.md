@@ -14,7 +14,8 @@ Audience: operators, integrators, and maintainers.
 | `make dev` | `iot-gw-image-dev` |
 | `make prod` | `iot-gw-image-prod` |
 | `make base` | `iot-gw-image-base` |
-| `kas build kas/desktop.yml:kas/local.yml --target iot-gw-image-desktop` | `iot-gw-image-desktop` (no make target) |
+| `make desktop` | `iot-gw-image-desktop` (lab image, always with the DX-M1 stack) |
+| `make bundle-desktop-full-fit` | desktop full bundle |
 | `make bundle-dev-full-fit` | dev full bundle (rootfs + signed FIT boot assets) |
 | `make bundle-prod-full-fit` | prod full bundle (rootfs + signed FIT boot assets) |
 
@@ -29,8 +30,11 @@ Feature-gated build examples:
 
 ```bash
 IOTGW_ENABLE_OTBR=1 make dev
-IOTGW_KERNEL_FEATURES="igw_containers igw_networking_iot igw_security_prod" make prod
 ```
+
+Kernel feature sets (`IOTGW_KERNEL_FEATURES`) are not forwarded from the
+environment; set them in `kas/local.yml` (see the commented example in
+`kas/local.yml.example`).
 
 RAUC bundles are **encrypted (`crypt`) by default**; `verity` is an explicit
 opt-out. A bundle build fails rather than falling back if no usable recipient
@@ -55,11 +59,12 @@ make bundle-prod-full-fit
 When Makefile abstraction is not enough:
 
 ```bash
-kas build kas/local.yml --target iot-gw-image-dev
-kas shell kas/local.yml
-bitbake-layers show-layers
-bitbake -e virtual/kernel | rg "^IOTGW_KERNEL_FEATURES="
+. scripts/env.sh && kas shell kas/local.yml -c 'bitbake-layers show-layers'
+. scripts/env.sh && kas shell kas/local.yml -c 'bitbake-getvar -r virtual/kernel IOTGW_KERNEL_FEATURES'
 ```
+
+A bare `kas` call without `scripts/env.sh` clones the layer stack into the
+repo root (AGENTS.md).
 
 ## 2) Flash Media
 
@@ -88,32 +93,17 @@ filesystem and its `ubootenv` label must survive, or the `/uboot-env` mount
 (`LABEL=ubootenv` in fstab) times out and boot drops to emergency mode.
 Recovery from an accidentally zeroed p2: `mkfs.vfat -n ubootenv /dev/sdX2`.
 
-## 3) Provision Network Before First Boot
+## 3) Network Configuration
 
-The image ships a working baseline via `iotgw-network-units`: `br0` bridge with
-`eth0` as port (DHCP) and `wlan0` Wi-Fi driven by `wpa_supplicant@wlan0` +
-systemd-resolved. Provisioning drop-ins under `/data/iotgw` are only needed to
-override it — Wi-Fi credentials, per-SSID static IPs (`[Match] SSID=`), extra
-interfaces:
+Network configuration is fixed at build time and changed through a new image.
+`iotgw-network-units` ships the topology: `br0` bridge with `eth0` as port
+(DHCP) and `wlan0` Wi-Fi driven by `wpa_supplicant@wlan0` + systemd-resolved.
+Wi-Fi networks, credentials and per-SSID static addressing come from the
+`IOTGW_WIFI_*` settings in `kas/local.yml` (`IOTGW_WIFI_NETWORKS`; the syntax is
+documented in the recipe and in `kas/local.yml.example`). An edit under `/etc`
+on the device is discarded at the next reboot.
 
-- `/data/iotgw/network/*.network|*.netdev|*.link` — installed to `/etc/systemd/network/`, then `networkctl reload`
-- `/data/iotgw/wpa/wpa_supplicant-<iface>.conf` — installed to `/etc/wpa_supplicant/` (mode 0600), matching `wpa_supplicant@<iface>` restarted
-- `/data/iotgw/iotgw-observability.env` (optional)
-
-Default layout note: data partition is `mmcblk0p5` (`/dev/sdX5` on removable media).
-
-Pre-boot media prep:
-
-```bash
-sudo mount /dev/sdX5 /mnt
-sudo mkdir -p /mnt/iotgw/{network,wpa}
-sudo cp wpa_supplicant-wlan0.conf /mnt/iotgw/wpa/
-sudo chmod 600 /mnt/iotgw/wpa/wpa_supplicant-wlan0.conf
-sudo cp 25-wlan0.network /mnt/iotgw/network/   # optional: override shipped wlan0 policy
-sudo umount /mnt
-```
-
-Runtime network management:
+Runtime network diagnostics:
 
 ```bash
 networkctl status                 # per-link state, addresses
@@ -143,8 +133,8 @@ systemctl --no-pager cat wpa_supplicant@wlan0.service
 The `wpa_supplicant@wlan0` profile must keep `PrivateTmp=false`.
 `wpa_cli` creates its reply socket under `/tmp`; a private `/tmp` lets
 `wpa_supplicant` receive commands through `/run/wpa_supplicant/wlan0` but
-prevents it from sending replies to the client. On serial console, the
-namespace view can be checked with:
+prevents it from sending replies to the client. From an administrator shell
+(`sysadm_t`, see Section 10), the namespace view can be checked with:
 
 ```bash
 pid=$(pidof wpa_supplicant)
@@ -152,7 +142,7 @@ ls -l /proc/1/ns/mnt /proc/$$/ns/mnt /proc/$pid/ns/mnt
 nsenter -t "$pid" -m ls -ld /tmp
 ```
 
-## 4) Dev SSH Keys (Dev Image Only)
+## 4) Dev SSH Keys (Dev and Desktop Images)
 
 Use `iotgw-dev-ssh-keys` via host file paths:
 
@@ -161,155 +151,135 @@ IOTGW_DEV_ROOT_AUTH_KEYS_FILE = "/home/me/keys/root_authorized_keys"
 IOTGW_DEV_DEVEL_AUTH_KEYS_FILE = "/home/me/keys/devel_authorized_keys"
 ```
 
-For **prod** images, see Section 5 — `iotgw-dev-ssh-keys` is dev/desktop-only;
-prod ships without any baked authorized_keys.
+For **prod** images, see Section 5: `iotgw-dev-ssh-keys` is dev/desktop-only,
+and prod ships no authorized key and no account with a password.
 
-## 5) Prod SSH Recovery Path
+SSH is key-only on every tier (`sshd_config.d/99-iotgw.conf`: password and
+keyboard-interactive authentication off). The account password hashes set in
+`kas/local.yml` serve the serial console, `sudo` and `newrole` on dev and
+desktop; they never work over the network.
 
-### Expected posture (by design)
+## 5) Prod Administration And Recovery
 
-A freshly-flashed prod image has TCP port 22 open but **no usable login path**:
+### Posture (by design)
 
-- `iotgw-dev-ssh-keys` is installed only in `iot-gw-image-dev` and
-  `iot-gw-image-desktop`. Prod ships with empty `/root/.ssh/authorized_keys`.
-- `iotgw-sshd-hardening`'s `99-iotgw.conf` sets
-  `PermitRootLogin prohibit-password` — root may only log in via key, never
-  via password.
-- Root password is empty/locked. No password login is possible.
+A prod image is a closed appliance with **one** login, the OTA operator, and
+**no administrator**.
 
-The result is "defense by absence": port 22 is reachable but auth-deadlocked
-unless an operator has provisioned a key. **An open port 22 on a prod
-device does not imply access is configured.** This is the intended shipping
-state.
+- No account has a password. Root's shadow entry is `*`
+  (`iot-gw-image-prod.bb`; the build fails if it is anything else), there is
+  no `devel` account, and the operator account has `*` too. The serial
+  console, `newrole` and `sudo` therefore refuse everyone: `*` matches no
+  password in `pam_unix`. `IOTGW_ROOT_PASSWORD_HASH` in `kas/local.yml` does
+  not reach prod (the recipe's `=` overrides it).
+- Root cannot log in over the network (`PermitRootLogin no`,
+  `AllowUsers iotgw-ops` in `10-iotgw-prod-auth.conf`), and the build refuses
+  a prod rootfs that carries `/root/.ssh/authorized_keys`.
+- `iotgw-ops` is the operator: key-only (the key file is named by
+  `IOTGW_PROD_OPS_AUTH_KEYS_FILE` in `kas/local.yml`; the prod build fails
+  without it), SELinux `staff_t`, no elevation. It may copy a bundle to
+  `/data/ota-tmp`, run `rauc install`, `rauc status` and the mark commands,
+  and read the journal; nothing else on the device is writable to it. The key
+  is read from `/etc/ssh/authorized_keys.d/iotgw-ops` in the image, so an
+  update rotates or revokes it.
+- `sshd` is bound to IPv4 port 22 (`05-iotgw-listen.conf`) with password and
+  keyboard-interactive authentication off and all forwarding disabled; the
+  firewall admits the port from any IPv4 source.
 
-### Recovery options (in order of preference)
+### What administers a prod device
 
-1. **Serial console / local operator session.** The supported recovery
-   path. You get a root shell directly, no SSH involved. Use this whenever
-   physical/UART access is available.
-2. **OTA bundle install with a recovery image.** If the device is fielded
-   and you control the OTA channel, ship a bundle whose rootfs has
-   `iotgw-dev-ssh-keys` (or your operator authorized_keys) installed.
-   Standard `iotgw-rauc-install` then reboot.
-3. **Add an authorized key via the `/data` overlay upper.** Possible from
-   any context that can write to `/data/overlays/root/upper/.ssh/` — most
-   commonly a serial session, occasionally a recovery initramfs or
-   SD-card mount on a host. Do **not** edit the immutable rootfs; do
-   **not** edit a slot's mounted `/root` directly during OTA install.
-   The overlay upper is the only correct persistent surface.
+| Mechanism | What it does | Depends on |
+|---|---|---|
+| OTA, automatic (`ota-updater.timer`) — **dev only** | Prod ships no updater (`packagegroup-iot-gw-prod` keeps periodic polling out by decision); on dev, 2 min after boot and then hourly, `ota-update-check` fetches the fleet manifest over mTLS and runs `rauc install <bundle-url>` when the manifest version is newer than the booted slot. RAUC verifies the bundle signature; the bundle hooks record the new slot as "on trial". | `/etc/ota/updater.conf` and a valid device certificate (`ota-certs-provision`: from `/boot/iotgw/ota/` on the card at first boot, then kept in `/data/ota/certs`); a reachable OTA server; a healthy `/data` (installs are refused on a degraded boot). |
+| A/B fallback (U-Boot boot counters) | Each slot has `BOOT_A_LEFT`/`BOOT_B_LEFT` attempts (3 by default) in the U-Boot environment on p2. A slot on trial is marked good by `rauc-mark-good.service` on its first healthy boot (`iotgw-mark-good-gate`: a degraded boot of a slot still on trial is *not* marked good); when the attempts are exhausted U-Boot boots the other slot. Both slots exhausted: U-Boot halts. | The `/uboot-env` partition (p2) and the previous slot still holding a bootable, signed image. |
+| Physical reflash | [Section 2](#2-flash-media): write the `.wic.zst` to the card. Writes every partition, including `/data`, so the device comes back provisioned from scratch (OTA certificate from the card's `/boot/iotgw/ota/` again). | Physical access. |
 
-Forget about adding keys "by SSH" without a key — that's the deadlock
-this section exists to recover from.
+| OTA operator over SSH (`iotgw-ops`) | `scp bundle.raucb iotgw-ops@<device>:/data/ota-tmp/`, then `ssh iotgw-ops@<device> rauc install /data/ota-tmp/bundle.raucb`; `rauc status`, `rauc status mark-good` / `mark-bad`, `journalctl` for diagnosis. The install itself runs in the RAUC daemon as on every tier. | The operator's key (built in), network reachability, a healthy `/data`. |
 
-### Runbook (from a serial-console root shell)
+What is **not** a mechanism on prod, because each needs an administrator shell: `iotgw-rauc-install` (its `systemd-run` dispatch), `systemctl`, the serial console, and the "key for this boot" procedure below (dev and desktop only).
 
-The overlay layout (from `overlayfs-setup.sh`) is:
+### Operational limits — know these before flashing prod
 
-```
-/root          ← overlay mount (lower = immutable slot rootfs, upper = persistent)
-/data/overlays/root/upper/    ← persistent upper layer (this survives reboots and OTAs)
-```
+- A broken automatic OTA path (expired or missing device certificate —
+  `ota-updater.service` has `ConditionPathExists=/etc/ota/device.crt` — or an
+  unreachable server) is recoverable by the operator over SSH with a staged
+  bundle, as long as the device is reachable and `/data` is healthy. A `/data`
+  that fails to mount or fsck (degraded boot) refuses installs and seeds the
+  operator's home from the image, so the key still works but nothing can be
+  staged: **reflash is the only path** there.
+- Operator rollback: `rauc status mark-active <other slot>` from the operator
+  account switches the next boot to the previous slot while it still holds a
+  bootable, signed image; the install after that overwrites it.
+- Diagnostics: `journalctl` and `rauc status` over SSH; offline, pull the card
+  and read `/data` (ext4: audit log under `/data/log/audit`, RAUC events in
+  `/data/rauc-events.log`, the pre-init log is not persisted).
+- A degraded boot is not visible from the outside. `edge-healthd` reports
+  through the observability stack when that is enabled; otherwise the
+  device simply stops taking updates.
 
-Files placed under `/data/overlays/root/upper/.ssh/` will appear at
-`/root/.ssh/` via the overlay.
+### Dev and desktop images
 
-1. **Verify the current sshd policy** (so you know what auth path will
-   work once a key is installed):
+Root has a password (`IOTGW_ROOT_PASSWORD_HASH` in `kas/local.yml`; the
+layer default is `*`) for the serial console and `newrole`; `devel` has
+`sudo` and its own hash. Both accounts get keys from `iotgw-dev-ssh-keys`.
+A key added on the device under `/home/devel/.ssh/authorized_keys` persists
+(`/home` is bound from `/data/home`); one under `/root/.ssh/authorized_keys`
+is gone at the next reboot (`/root` is a tmpfs overlay), so root keys are
+delivered through the build. The runbook below is for a dev or desktop
+device whose baked keys are wrong.
+
+### Runbook (dev/desktop): a key for this boot, from the serial console
+
+1. **Verify the current sshd policy**:
 
    ```bash
-   sshd -T 2>/dev/null | grep -iE 'permitrootlogin|passwordauthentication|pubkeyauthentication|authorizedkeysfile'
+   sshd -T -f /etc/ssh/sshd_config_readonly 2>/dev/null | grep -iE 'permitrootlogin|passwordauthentication|pubkeyauthentication|authorizedkeysfile'
    ls -l /etc/ssh/sshd_config.d/ 2>/dev/null
-   cat /etc/ssh/sshd_config.d/99-iotgw.conf 2>/dev/null
    ```
 
-   Expected on a stock prod image: `permitrootlogin prohibit-password`,
+   Expected: `permitrootlogin prohibit-password`, `passwordauthentication no`,
    `pubkeyauthentication yes`, `authorizedkeysfile .ssh/authorized_keys`.
 
-2. **Stage the persistent root SSH directory under the overlay upper**:
+2. **Install the key** (inline paste, or a file from a USB stick /
+   kermit-over-serial); for `devel`, use `/home/devel/.ssh` and `devel:devel`
+   ownership, and it persists:
 
    ```bash
-   install -d -m 0700 -o root -g root /data/overlays/root/upper/.ssh
-   ```
-
-   This creates the persistent directory. It will be visible at
-   `/root/.ssh/` immediately via the running overlay.
-
-3. **Install the operator authorized_keys**. Paste your public key
-   inline, or transfer the file via a USB stick / kermit-over-serial /
-   whatever the local context allows:
-
-   ```bash
-   # Example: inline paste
-   cat > /data/overlays/root/upper/.ssh/authorized_keys <<'EOF'
+   install -d -m 0700 -o root -g root /root/.ssh
+   cat >> /root/.ssh/authorized_keys <<'EOF'
    ssh-ed25519 AAAA... operator@workstation
    EOF
-   chmod 0600 /data/overlays/root/upper/.ssh/authorized_keys
-   chown root:root /data/overlays/root/upper/.ssh/authorized_keys
+   chmod 0600 /root/.ssh/authorized_keys
    ```
 
-   The file must be `0600` and owned by `root:root` or sshd will refuse
-   to use it (sshd's `StrictModes yes` default).
+   The file must be `0600` and owned by the account or sshd refuses it
+   (`StrictModes yes` default). No sshd reload is needed: `authorized_keys`
+   is read on every connection.
 
-4. **Verify the overlay sees the new file**:
-
-   ```bash
-   ls -la /root/.ssh/
-   # Expect: drwx------ 2 root root ... .
-   # Expect: -rw------- 1 root root ... authorized_keys
-   ```
-
-5. **No sshd reload needed.** `authorized_keys` is read on every
-   incoming connection — the next `ssh` attempt will see the new key
-   without any service action. (sshd reload would only be needed if
-   you'd edited `sshd_config` or a `sshd_config.d/*.conf` drop-in.)
-
-6. **Verify login from your workstation**:
+3. **Verify login from your workstation**:
 
    ```bash
-   # On the workstation:
    ssh -o StrictHostKeyChecking=accept-new -i ~/.ssh/<operator_key> root@<device>
    ```
 
-7. **Cleanup / removal** (once the recovery work is done and the
-   intended access pattern is restored, e.g. you've delivered a new
-   OTA bundle):
-
-   ```bash
-   # From the recovered session (or serial):
-   rm -f /data/overlays/root/upper/.ssh/authorized_keys
-   rmdir /data/overlays/root/upper/.ssh 2>/dev/null || true
-   ```
-
-   The overlay upper is the source of truth — once these files are
-   removed, the overlay falls through to the (empty) lower-layer
-   `/root/.ssh/`, and the device is back to the "no SSH login" posture.
-
 ### Cautions
 
-- **Do not relax sshd hardening permanently.** Adding
-  `PasswordAuthentication yes` or `PermitRootLogin yes` to a persistent
-  drop-in re-creates the very surface area the prod image is designed
-  to avoid. The key-in-overlay path above does not require any sshd
-  policy change.
-- **Avoid editing the main `sshd_config`** when a drop-in or a
-  persistent overlay file is enough. The main file is part of the
-  immutable rootfs; modifications would have to go through `/etc`'s
-  overlay (which `managed-paths.conf` will re-enforce on the next OTA).
-  An `sshd_config.d/*.conf` drop-in in the overlay upper is the
-  preferred path *if* a policy change is actually required.
-- **OTA overlay-reconcile behavior**: `/data/overlays/root/upper/` is
-  not enumerated in `managed-paths.conf`, so the operator authorized_keys
-  installed via this runbook **survives RAUC installs and slot
-  switches**. If you want the key removed on the next OTA, document
-  that as part of your bundle's pre/post-install hook — do not rely on
-  reconcile to do it for you. Conversely, files placed in `/etc/`
-  overlay are enforced against the slot's image content and may
-  disappear on OTA; that's why root authorized_keys lives under
-  `/root` overlay (not `/etc`).
-- **The `devel` user (when present in dev images)** uses
-  `/data/overlays/home/upper/devel/.ssh/authorized_keys` for the same
-  pattern. Prod images don't include `devel` by default, but the same
-  mechanism applies if your prod variant does.
+- **Do not relax sshd hardening.** `PasswordAuthentication yes` or
+  `PermitRootLogin yes` re-creates the surface the images are designed
+  to avoid, and an edit under `/etc` is discarded at the next reboot anyway:
+  `/etc` is the shipped configuration plus a tmpfs upper layer. Policy
+  changes ship in the image.
+- **OTA and reboot behaviour**: `/etc` and `/root` start from the slot's
+  image on every boot, so nothing written there survives a reboot, a RAUC
+  install or a slot switch. `/home` is bound from `/data/home` and does
+  survive all three, shared by both slots.
+- **The `devel` user (dev and desktop images)** has its home on
+  `/data/home/devel`. On the first boot of a `/data` without it, the pre-init
+  copies the image's `/home/devel` (including the
+  `iotgw-dev-ssh-keys` `authorized_keys`) there once. Later images do not
+  refresh that copy: a changed developer key reaches an existing device only
+  by editing `/home/devel/.ssh/authorized_keys` on it, or by deleting
+  `/data/home/devel` so the next boot copies it again.
 
 ## 6) Install OTA And Verify
 
@@ -326,86 +296,119 @@ Streaming OTA:
 iotgw-rauc-install https://<ota-host>:8443/bundles/<bundle>.raucb
 ```
 
-## 7) Validate Overlay Reconciliation
+## 7) Check The Boot Assembly
+
+Every image boots through `iotgw-preinit`, which mounts `/data` and assembles
+`/etc`, `/root` and `/home` before systemd. Its log and the degraded marker
+are in `/run/iotgw`:
 
 ```bash
-ls -l /data/iotgw/overlay-reconcile/
-cat /data/iotgw/overlay-reconcile/txn.json
-cat /data/iotgw/overlay-reconcile/state.tsv
-journalctl -u rauc.service --no-pager | rg "overlay-reconcile|bundle-hook"
+cat /run/iotgw/preinit.log
+cat /run/iotgw/degraded 2>/dev/null || echo "not degraded"
+findmnt -no SOURCE,FSTYPE /proc/1/root/home       # /dev/...p5[/home] ext4
+cat /uboot-env/iotgw-trial-slot 2>/dev/null       # slot on trial since its install, if any
 ```
 
-Architecture and policy details:
-- [Overlay Reconciliation Architecture](OVERLAY_RECONCILIATION.md)
+A degraded boot (no usable `/data`) keeps the shipped configuration (dev and
+desktop: baked keys and the console password still work; prod: still no
+login) and refuses OTA installs. It is marked good as
+usual, except on a slot still on trial since its install
+(`/uboot-env/iotgw-trial-slot`), which falls back to the previous slot.
 
 ## 8) Service Health Checks
 
 ```bash
-systemctl status mosquitto edge-healthd
+systemctl status edge-healthd
 journalctl -u edge-healthd --no-pager -n 100
 ```
 
 ## 9) Persistent Remote Session Pattern
 
-For repeated gateway operations, use persistent tmux on target:
+For repeated gateway operations, keep a tmux session on the target:
 
 ```bash
-ssh iotgw "mkdir -p /data/tmux && \
-  tmux -S /data/tmux/gateway.sock has-session -t gateway 2>/dev/null || \
-  tmux -S /data/tmux/gateway.sock new-session -d -s gateway; \
-  tmux -S /data/tmux/gateway.sock attach -t gateway"
+ssh -t root@<device> 'tmux new-session -A -s gateway'
 ```
 
-This keeps long-running OTA/debug sessions stable across SSH reconnects.
+`-A` attaches when the session exists and creates it otherwise. The server
+socket is tmux's default, `/tmp/tmux-<uid>/default`. `/tmp` is one tmpfs for
+the whole system, so the session outlives SSH reconnects; it does not outlive
+a reboot.
 
-## 10) SSH Sessions And Mount Namespaces
+A tmux server keeps the SELinux domain of the shell that started it, and so
+does every pane. A server started from a plain SSH login runs in that login's
+domain (`staff_t`, see Section 10); start it from an elevated shell when the
+panes are meant for administration. A client cannot attach to a server in
+another domain: give the admin session its own name
+(`tmux new-session -A -s gateway-admin`).
 
-Interactive SSH sessions can run in a service-hardening mount namespace
-where `/etc` appears `ro`, while PID1 and system units see the `/etc`
-overlay as `rw`. Do **not** conclude overlayfs is broken from an
-SSH-only check.
+## 10) SSH Sessions, Mounts And SELinux Domains
 
-Verify both contexts before diagnosing `/etc` write failures:
+`sshd` runs as one daemon (`sshd.service`, `sshd -D`) without a mount
+namespace sandbox. An SSH shell sees the same mounts, `/etc`, `/tmp` and
+`/run` as PID1 and the system services, so `findmnt /etc` or
+`/proc/self/mountinfo` from SSH is the real answer and needs no `nsenter`.
+What `/etc` is and what survives a reboot:
+[Persistent State Architecture](PERSISTENT_STATE.md).
+
+What differs between login paths is the SELinux domain. PAM's `pam_selinux`
+picks it at login from `/etc/selinux/<policy>/contexts`:
+
+| Login | Domain | Can administer the system |
+|---|---|---|
+| Serial console, `root` | `sysadm_t` | yes |
+| SSH, `root` (key only) | `staff_t` | no: elevate first |
+| SSH, `devel` (dev, desktop) | `staff_t` | no: elevate with `sudo` |
+| SSH, `iotgw-ops` (prod) | `staff_t` | no: stages and installs bundles only |
+
+The console mapping means physical access to the UART is administrator
+access. SSH sessions start with less and elevate explicitly:
 
 ```bash
-# PID1 mount namespace (source of truth for system services)
-nsenter -t 1 -m findmnt /etc
-nsenter -t 1 -m grep " /etc " /proc/1/mountinfo
-
-# Current shell namespace (may differ over ssh)
-findmnt /etc
-grep " /etc " /proc/self/mountinfo
+id -Z                      # current domain
+sudo -i                    # members of the sudo group: lands in sysadm_r:sysadm_t
+newrole -r sysadm_r        # any account whose SELinux user may hold sysadm_r; asks for the password
 ```
 
-For provisioning/OTA debugging, prefer the serial console or the
-persistent target tmux session (Section 9) to minimize namespace
-confusion.
+`sudo` takes the role and type from `/etc/sudoers.d/10-iotgw-admin-selinux`.
+`newrole` authenticates through PAM and asks for the account's own password,
+so it works only for an account that has one. Prod has no path to
+`sysadm_t`: no account is in the `sudo` group, no account has a password, and
+root cannot log in at all (no password, `PermitRootLogin no`). Its one login is
+the OTA operator, `iotgw-ops`, with the key given at build time: it copies a
+bundle to `/data/ota-tmp`, runs `rauc install`, `rauc status` and the mark
+commands, and reads the journal. Everything else on prod is changed through
+OTA images or a reflash.
+
+Under enforcing, a `Permission denied` for root in an SSH shell is usually
+the `staff_t` domain, not a file mode or a mount. Check the domain first, then
+read the denial from an administrator shell: `staff_t` cannot read the audit
+log, and `ausearch` there prints `<no matches>` whatever the log holds.
+
+```bash
+id -Z                      # in the SSH shell
+newrole -r sysadm_r        # then, as sysadm_t:
+ausearch -m avc -ts recent
+```
+
+Containers are rootless and belong to the `iotgw-ctr` account (its user
+manager, Quadlets under `/etc/containers/systemd/users/968/`, store under its
+home on `/data/home`; see `docs/CONTAINERS.md`). No container store is
+administered as `sysadm_t`: there is no rootful engine, and `podman` started
+from an administrator shell would use a volatile store of its own.
 
 ## 11) Persistent State
 
 `/var` is volatile; only an explicit set of paths persists on `/data`. The full
 layout — what is volatile, what persists, and what survives A/B updates — is in
-[Persistent State Architecture](PERSISTENT_STATE.md). During OTA validation,
-confirm the narrowed shape from PID1's view (per Section 10):
-
-```bash
-stat -f -c %T /proc/1/root/var/volatile                    # tmpfs
-findmnt -no SOURCE --target /var/volatile/log/journal      # /dev/...p5[/log/journal]
-findmnt -no SOURCE --target /var/volatile/log/audit        # /dev/...p5[/log/audit]
-systemctl --failed
-```
-
-The on-target smoke check includes a `/var narrowing & /data persistence`
-section:
-
-```bash
-scripts/run-target-checks.sh <device-ip> ota-smoke
-```
+[Persistent State Architecture](PERSISTENT_STATE.md), together with the
+checks of the layout from PID1's view and the `ota-smoke` target check that
+covers it.
 
 ## Related
 
 - [RAUC Update Runbook](RAUC_UPDATE.md) - install semantics and troubleshooting
-- [Overlay Reconciliation Architecture](OVERLAY_RECONCILIATION.md) - policy architecture and tradeoffs
+- [Persistent State Architecture](PERSISTENT_STATE.md) - what persists, the bind list, the pre-init
 - [Security Hardening](SECURITY.md) - hardening baseline
-- [Observability Stack](OBSERVABILITY.md) - stack behavior and credential flow
+- [Observability Stack](OBSERVABILITY.md) - stack behavior
 - [FIT Boot and Signing Guide](FIT_BOOT_SIGNING.md) - FIT boot/signing path

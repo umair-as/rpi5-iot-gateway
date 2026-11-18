@@ -4,7 +4,7 @@ Canonical orientation for AI coding agents working in this repository. Agent-agn
 
 ## What this repo is
 
-A Yocto/OpenEmbedded distribution (`iotgw`) for the Raspberry Pi 5, built with KAS. Produces hardened IoT-gateway images with RAUC A/B OTA, OpenThread Border Router, optional containers/observability/TPM, and a U-Boot FIT boot flow.
+A Yocto/OpenEmbedded distribution (`iotgw`) for the Raspberry Pi 5, built with KAS. Produces hardened IoT-gateway images with RAUC A/B OTA, mandatory signed FIT boot, a dm-verity root, SELinux enforcing, a container runtime, and optional OpenThread Border Router, TPM and DEEPX DX-M1 support.
 
 - Yocto release: **wrynose** (Yocto 6.0 LTS; colon-based override syntax — see `.claude/rules/yocto-patterns.md`, which applies to any agent regardless of name)
 - Target machine: `raspberrypi5` (aarch64, hard-float)
@@ -17,26 +17,27 @@ Everything goes through the `Makefile`, which wraps `kas shell -c bitbake ...` a
 
 ```bash
 make help                # authoritative target catalogue — check before raw bitbake
-make dev|prod|base       # image variants (desktop: kas build kas/desktop.yml)
+make dev|prod|base       # image variants (desktop lab image: make desktop)
 make bundle-dev-full-fit # FIT-format RAUC bundle (file-key signed)
 make parse               # bitbake -p (parse-only sanity — cheapest validation)
 make layers              # bitbake-layers show-layers
 make clean-lock          # remove stale build/bitbake.lock
 ```
 
-`make help` is the source of truth for the full catalogue (prod bundles, HSM re-signing, signing-tool tests, uv venv). FIT/HSM signing is **operator-driven** (YubiKey PIN+touch, or SoftHSM for YK-less devs) — profiles, tooling (`scripts/fit-signing/sign_fit.py`), and the resign flow are documented in `docs/FIT_BOOT_SIGNING.md`; do not run HSM signing targets unattended. **FIT signed boot is the only flow and is mandatory:** the distro selects the FIT kernel unconditionally and image builds hard-fail (at u-boot `do_configure`, via `iotgw-fit-signing-guard.bbclass`) unless an operator signing key is configured in `kas/local.yml` (file-key, YubiKey, or SoftHSM). Metadata inspection (`make parse`, `bitbake -e`) is not blocked.
+`make help` is the source of truth for the full catalogue (prod bundles, HSM re-signing, signing-tool tests, uv venv). FIT/HSM signing is **operator-driven** (YubiKey PIN+touch, or SoftHSM for YK-less devs) — profiles, tooling (`scripts/fit-signing/sign_fit.py`), and the resign flow are documented in `docs/FIT_BOOT_SIGNING.md`; do not run HSM signing targets unattended. **FIT signed boot is the only flow and is mandatory:** the distro selects the FIT kernel unconditionally and image builds hard-fail (at u-boot `do_configure`, via `iotgw-fit-signing-guard.bbclass`) unless the build-time FIT signing key (`UBOOT_SIGN_KEYDIR` / `UBOOT_SIGN_KEYNAME`, `fit_signing` block: a file key, or a PKCS#11 URI) is configured in `kas/local.yml`. A YubiKey cannot sign the build-time FIT; it is a DTB trust root and the post-build re-signer. Metadata inspection (`make parse`, `bitbake -e`) is not blocked.
 
 Feature toggles (env vars; default off unless an overlay sets them):
 
 ```
 IOTGW_ENABLE_OTBR
-IOTGW_ENABLE_CONTAINERS
 IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS
-IOTGW_ENABLE_OBSERVABILITY
 IOTGW_ENABLE_BTF_CORE_DEV
+IOTGW_ENABLE_DEEPX_DXM1
 ```
 
 Example: `IOTGW_ENABLE_OTBR=1 make bundle-dev-full-fit`.
+
+The container runtime is not a toggle: every image ships it (`iotgw-common.inc`).
 
 ### KAS composition
 
@@ -44,9 +45,11 @@ The Makefile picks `BASE = kas/local.yml` if present, else `kas/rauc.yml` (RAUC 
 
 - `kas/local.yml` — developer-local secrets/WiFi/RAUC keys and shared cache paths (gitignored; copy from `local.yml.example`)
 - `kas/rauc.yml` — RAUC OTA stack
-- `kas/otbr.yml`, `kas/containers.yml`, `kas/tpm.yml`, `kas/cve.yml`, `kas/spdx.yml` — feature overlays
+- `kas/otbr.yml`, `kas/tpm.yml`, `kas/cve.yml`, `kas/spdx.yml` — feature overlays
 - `kas/uboot-prod-hardening.yml` — applied to `prod` and `bundle-prod-full-fit` automatically when present
-- `kas/desktop.yml` — desktop image variant
+- `kas/fit-release-trust.yml` — release FIT trust profile (YubiKey anchor only); composed automatically with `prod` and `bundle-prod-full-fit`
+- `kas/deepx.yml` — DEEPX DX-M1 layer + `IOTGW_ENABLE_DEEPX_DXM1=1`; composed by every non-prod target (`base`, `dev`, their bundles, `bitbake-task`, `parse`) and included by `kas/desktop.yml`. Prod stays without it until the module-signing key is protected (`docs/DEEPX_DXM1.md` §7)
+- `kas/desktop.yml` — desktop image variant; includes `kas/deepx.yml` (the desktop is the AI demo station)
 
 Shared layers are not cloned manually: kas checks them out into the gitignored `.kas/` (`KAS_WORK_DIR`) using bare-mirror alternates from `KAS_REPO_REF_DIR` (an operator-local layer cache set by `scripts/env.sh`), preserving the SHA pins in `rpi5.yml`. `kas/local.yml` supplies the shared `DL_DIR`/`SSTATE_DIR`.
 
@@ -93,14 +96,14 @@ meta-iot-gateway/            # the custom layer (everything project-specific liv
   recipes-core/images/       # iot-gw-image-{base,dev,prod,desktop}.bb
   recipes-kernel/            # linux-iotgw* recipes, kernel fragments, bpftool
   recipes-ota/               # rauc, bundles, ota-updater, ota-certs, ota-user
-  recipes-connectivity/      # mosquitto, openssh, otbr (custom OTBR overlay)
+  recipes-connectivity/      # openssh, otbr (custom OTBR overlay), wpa-supplicant, avahi
   recipes-containers/        # podman/buildah/skopeo wiring
   recipes-observability/     # logging/metrics
-  recipes-security/          # nftables, apparmor, hardening bits
+  recipes-security/          # nftables, SELinux refpolicy + relabel, audit, hardening bits
   recipes-support/           # misc project utilities
   files/wic/                 # partition layouts (RAUC A/B WKS variants)
 docs/                        # OPERATIONS, SECURITY, KERNEL, PARTITIONS, RAUC_UPDATE,
-                             #   OTBR, FIT_BOOT_SIGNING, OVERLAY_RECONCILIATION, …
+                             #   OTBR, FIT_BOOT_SIGNING, PERSISTENT_STATE, …
 scripts/                     # host-side tooling (release, OTA bench, signing, TPM utils)
 .claude/
   rules/yocto-patterns.md    # wrynose syntax + parser limits + identity/rootfs patterns
@@ -118,6 +121,7 @@ scripts/                     # host-side tooling (release, OTA bench, signing, T
 - **Cross-compile target is aarch64-poky-linux** — `.claude/rules/cross-compilation.md` covers SDK setup, CMake/Rust/Go specifics, and verification commands.
 - **Public-repo discipline** — committed files reference only repo-relative paths or public `docs/`; never absolute `/home/<user>/...` paths, device IPs, or home-lab topology. Operator-local material goes in `kas/local.yml` / `scripts/env.sh`-managed locations (gitignored).
 - **Commit style**: `<type>(<scope>): <subject>` — imperative, no period. Types: `feat|fix|docs|refactor|test|chore|build|ci|perf|style|revert` — the set `cliff.toml` parses; anything else lands in the changelog's "Other" bucket. Scopes may be hyphenated (`ota-certs`, `sbom-cve`) or comma-composed (`fit,uboot`). Enforced by the `commit-msg` hook. Prefer a lowercase subject, but leading initialisms (`CVE`, `FIT`, `TPM`) are fine and the hook does not block them. AI-assisted commits carry attribution trailers — see §"AI attribution in commits".
+- **Commit body length scales with the change**: trivial (bump, rename, typo, a few lines) — no body or 1–2 lines; normal — at most 10 lines: what and why, plus one line on what verified it; large or behaviour-changing — at most 25. Long evidence goes in `docs/` or the PR, and the body points to it. The `commit-msg` hook blocks bodies over 25 lines (trailers and blank lines not counted).
 - **Branch naming**: `<type>-<scope>-<subject>`, matching commit style (e.g. `feat-rauc-pki-yubikey-stage1`).
 - **PR scope**: bundle trivial recipe/version bumps into a related feature PR rather than landing them standalone.
 - **Don't write CHANGELOG entries for trivial bumps** — changelog is assembled in batches before a release.
@@ -134,8 +138,11 @@ make hooks     # run once after cloning; idempotent
   `keys/`. Defense-in-depth over `.gitignore`, which does not stop
   `git add -f` or a `git mv` into `keys/`. Checks renames too.
 - `commit-msg` — enforces the Conventional Commit subject above, so the
-  git-cliff release notes stay parseable. Merge/revert/fixup subjects
-  pass through untouched.
+  git-cliff release notes stay parseable, and the 25-line body cap.
+  Merge/revert/fixup subjects pass through untouched.
+- Both also apply an optional per-clone pattern list,
+  `.git/info/commit-patterns` (untracked; one regex per line), to added
+  lines and commit messages. No file, no check.
 
 `core.hooksPath` is local config, not a tracked file: a fresh clone has
 **both hooks silently disabled** until `make hooks` runs. Neither hook is
@@ -173,8 +180,7 @@ and their own rules — including the hard rule that a `Backport` patch's header
 is never touched. See `.claude/rules/recipe-conventions.md` §"AI attribution in
 patch headers" before adding a trailer to anything under `files/`.
 
-Rationale: this repo previously banned trailers. That was reversed because
-provenance turned out to matter more than terse messages — commits originate
+Rationale: provenance matters more than terse messages — commits originate
 from several tools (Claude Code, Codex), and knowing which model reasoned about
 a change is what makes a later review of it auditable.
 
@@ -219,8 +225,9 @@ What makes it actually work:
   a total that mixes signal with feed noise.
 - **Keep the commands re-runnable** and logged next to the work, so the numbers can
   be reproduced instead of believed.
-- **Put the result in the commit body** — what was run, what it showed. When a claim
-  could not be verified, say so plainly. "Unverified" is a valid state; a confident
+- **Put the result in the commit body** — one line: what was run, what it showed
+  (longer evidence goes in `docs/` or the PR). When a claim could not be verified,
+  say so plainly. "Unverified" is a valid state; a confident
   sentence covering for one is not.
 
 ## Working economically
@@ -248,7 +255,7 @@ What makes it actually work:
 | Yocto syntax, parser limits, identity/rootfs patterns | `.claude/rules/yocto-patterns.md` |
 | Cross-compiling apps outside bitbake | `.claude/rules/cross-compilation.md` |
 | FIT boot signing, HSM/YubiKey/SoftHSM | `docs/FIT_BOOT_SIGNING.md` |
-| Flashing, provisioning, target ops, SSH-namespace caveat | `docs/OPERATIONS.md` |
+| Flashing, provisioning, target ops, SSH sessions and SELinux login domains | `docs/OPERATIONS.md` |
 | RAUC OTA install/rollback | `docs/RAUC_UPDATE.md`, `docs/OTA_UPDATE.md` |
 | Kernel config / CVE & driver backports | `docs/KERNEL.md`, `docs/KERNEL_CVE_PATCH.md`, `docs/KERNEL_DRIVER_BACKPORT.md` |
 | SBOM / CVE scanning, reading reports, userspace triage | `docs/SBOM_CVE.md` |
@@ -258,6 +265,10 @@ What makes it actually work:
 | Deciding whether a CVE applies: stages, evidence, what may suppress | `docs/CVE_APPLICABILITY.md` |
 | Kernel applicability — build-object oracle, CNA re-derivation, the compiled-source blind spot | `docs/KERNEL_CVE_APPLICABILITY.md` |
 | Release workflow | `docs/RELEASE.md` |
+| Shared sstate not reused across builds; hash-equivalence DB; measuring with `bitbake -n` | `docs/SSTATE_SHARING.md` |
 | Partition layouts | `docs/PARTITIONS.md` |
+| Persistent state, pre-init, `/data`, degraded boot | `docs/PERSISTENT_STATE.md` |
+| SELinux concepts, local wiring, reading a denial | `docs/SELINUX.md` |
+| SELinux enforcing: runtime trials, open findings | `docs/SELINUX_ENFORCING.md` |
 
-One operational warning worth carrying everywhere: on running targets, an interactive SSH shell may sit in a service-hardening mount namespace where `/etc` looks read-only while PID1 sees it read-write — do **not** diagnose overlayfs as broken from an SSH-only check. Verification commands: `docs/OPERATIONS.md` §10.
+One operational warning worth carrying everywhere: on running targets, an SSH login as `root` lands in the SELinux `staff_t` domain, not `sysadm_t` (only the serial console does). Under enforcing, a `Permission denied` for root over SSH is usually that domain, not a file mode, a mount or a broken `/etc` — check `id -Z` and the AVC denials before diagnosing anything else. Root over SSH elevates with `newrole -r sysadm_r` only (root has no sudoers entry); named admin accounts in the `sudo` group (e.g. `devel`) use `sudo -i`. SSH shells share PID1's mount namespace, so mounts seen from them are the real ones. Details: `docs/OPERATIONS.md` §10.

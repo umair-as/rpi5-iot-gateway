@@ -26,10 +26,22 @@ local_conf_header:
     DL_DIR     = "/path/to/shared/downloads"
     SSTATE_DIR = "/path/to/shared/sstate"
 
+  llvm_targets: |
+    # LLVM backend list is a distro setting (LLVM_TARGETS_TO_BUILD in
+    # iotgw-common.inc) so every host shares llvm/rust sstate. Override here only
+    # to experiment; a per-host value stops that sharing.
+    # LLVM_TARGETS_TO_BUILD = "AArch64;ARM;BPF;X86"
+
   wifi: |
     # Inject Wi‑Fi profiles (static IPv4) — create 'kas/local.yml' from this file and edit.
     # Multiple lines separated by \n; format: ssid|psk|iface|method|priority|ipv4addr/prefix|gateway|dns1;dns2
     IOTGW_WIFI_NETWORKS = "HomeWiFi|Secret|wlan0|manual|100|192.168.0.222/24|192.168.0.1|1.1.1.1;8.8.8.8\nESP|Secret2|wlan0|manual|100|192.168.28.50/24|192.168.28.1|1.1.1.1;8.8.8.8"
+    # Regulatory domain (ISO 3166-1 alpha-2). No layer default; unset leaves the
+    # world domain "00", which rejects or never scans most 5 GHz channels.
+    IOTGW_WIFI_COUNTRY = "DE"
+    # Every wlan0 route gets this metric (layer default 2048, above br0's 1024),
+    # so the wired uplink wins when both are on the same subnet.
+    # IOTGW_WIFI_ROUTE_METRIC = "2048"
 
   rauc_keys: |
     # Legacy flat-signed RAUC keys (single self-signed cert as both leaf signer
@@ -173,7 +185,7 @@ local_conf_header:
     # IOTGW_FIT_TRUST_FILE_KEY = "1"
     # IOTGW_FIT_TRUST_YK_KEY = "1"
     # IOTGW_FIT_YK_KEYDIR = "${IOTGW_RAUC_KEY_DIR}/rauc-ca/fit"
-    # IOTGW_FIT_YK_KEYNAME = "iotgw-fit-yk-2026"
+    # IOTGW_FIT_YK_KEYNAME = "iotgw-fit-yk-2027"
 
   fit_dtb_softhsm_dev_trust: |
     # DEV-ONLY: optional SoftHSM-based FIT-signing trust root for engineers
@@ -185,7 +197,7 @@ local_conf_header:
     # Two reasonable dev models:
     #
     #   1. Dual dev trust (recommended for shared hardware) — flip both
-    #      YK and SoftHSM gates ON. DTB carries iotgw-fit-yk-2026 AND
+    #      YK and SoftHSM gates ON. DTB carries iotgw-fit-yk-2027 AND
     #      iotgw-fit-softhsm-dev with /signature/required-mode = "any".
     #      The same image boots either a real YK-signed FIT or a
     #      SoftHSM-signed FIT, so a YK-less developer and a YK-equipped
@@ -219,16 +231,26 @@ local_conf_header:
     # Broader alternative (keeps image history but skips package history):
     # BUILDHISTORY_FEATURES:remove = "package"
 
-  tpm_crypto_providers: |
-    # Optional TPM crypto provider userspace integrations:
-    # tpm2-pkcs11, tpm2-openssl, tpm2-tss-engine
-    # Effective when TPM SPI profile is enabled on your build.
-    # IOTGW_ENABLE_TPM_SLB9672 = "1"
-    # IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS = "1"
+  tpm: |
+    # === TPM (SLB9672 over SPI) — one switch, off by default ===
+    # Composing kas/tpm.yml (add it to `includes:` above) brings the TPM layers
+    # and sets IOTGW_ENABLE_TPM = "1", which turns on together: the SPI TPM
+    # profile + firmware overlay, the crypto providers (tpm2-pkcs11,
+    # tpm2-openssl, tpm2-tss-engine), OTA updater TPM mTLS and PKCS#11 RAUC
+    # streaming. The target then needs its TPM-backed device keys provisioned
+    # (scripts/ota/ota-pkcs11-provision-check.sh), or streaming cannot
+    # authenticate.
+    # Keep kas/tpm.yml included but switch the TPM off (its layers also carry
+    # meta-integrity, which IMA needs) by overriding the same block name:
+    # tpm_spi: |
+    #   IOTGW_ENABLE_TPM = "0"
+    # IOTGW_ENABLE_TPM = "1"
+    # Optional overlay override if wiring/CS differs:
+    # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
 
   ota_tpm_mtls: |
-    # Optional OTA updater TPM-backed mTLS key flow (disabled by default).
-    # When enabled:
+    # OTA updater TPM-backed mTLS key flow. Follows IOTGW_ENABLE_TPM; set it
+    # only to diverge from the switch. When enabled:
     # - ota-updater uses TPM key handle URI instead of /etc/ota/device.key
     # - ota-certs allows keyless cert provisioning (device.crt + ca.crt)
     # IOTGW_ENABLE_OTA_TPM_MTLS = "1"
@@ -237,7 +259,8 @@ local_conf_header:
     # IOTGW_OTA_OPENSSL_CONF = "/etc/ota/openssl-tpm2.cnf"
 
   rauc_pkcs11_streaming: |
-    # Optional RAUC streaming PKCS#11 key flow (disabled by default).
+    # RAUC streaming key mode. Follows IOTGW_ENABLE_TPM (pkcs11 with the TPM on,
+    # file with it off); set it only to diverge from the switch.
     # IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
     # IOTGW_RAUC_PKCS11_BACKEND = "tpm2"
     # TPM2 preset (defaults in layer):
@@ -290,14 +313,10 @@ local_conf_header:
     # Profile A': the DEFAULT — file-key mTLS, bundles encrypted (crypt).
     # Needs only a recipient source:
     # RAUC_OTA_CA_DIR = "$HOME/rauc-keys/ota-dev-ca"
-    # Profile B: full TPM + PKCS#11 + encrypted-bundle lane
-    # IOTGW_ENABLE_TPM_SLB9672 = "1"
-    # IOTGW_ENABLE_OTA_TPM_MTLS = "1"
-    # IOTGW_OTA_TPM_KEY_URI = "handle:0x81000001"
-    # IOTGW_OTA_TPM_KEY_ENGINE = "tpm2tss"
-    # IOTGW_OTA_OPENSSL_CONF = "/etc/ota/openssl-tpm2.cnf"
-    # IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
-    # IOTGW_RAUC_PKCS11_BACKEND = "tpm2"
+    # Profile B: full TPM + PKCS#11 + encrypted-bundle lane (include
+    # kas/tpm.yml; its IOTGW_ENABLE_TPM = "1" sets the TPM mTLS and PKCS#11
+    # streaming defaults)
+    # IOTGW_ENABLE_TPM = "1"
     # IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"
     # IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/home/you/rauc-keys/ota-dev-ca/device-filekey.crt"
     # IOTGW_RAUC_ENCRYPTION_KEY = "/etc/ota/device.key"
@@ -307,3 +326,92 @@ local_conf_header:
     # Optional kernel BTF/CO-RE lab metadata gate.
     # Keep disabled by default; enable for eBPF/libbpf CO-RE workflows.
     # IOTGW_ENABLE_BTF_CORE_DEV = "1"
+
+  # --- Feature switches (each is a layer on/off; off unless noted) ---
+  otbr_toggle: |
+    # Native OpenThread Border Router (otbr-rpi5) in dev + prod images. Needs an
+    # RCP radio dongle on the target. kas/otbr.yml sets the same switch.
+    # IOTGW_ENABLE_OTBR = "1"
+    # Infrastructure link of the Border Router: wlan0 (default) or br0 (wired;
+    # gives br0 an IPv6 link-local address and accepts router advertisements).
+    # IOTGW_OTBR_INFRA_IFACE = "br0"
+  containers_toggle: |
+    # Image/build tooling (buildah/skopeo/podman-compose). The container runtime
+    # itself ships in every image and is not a switch.
+    # IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS = "1"
+  ima_toggle: |
+    # IMA measurement (kernel fragment + userspace tooling). Needs
+    # meta-integrity, which kas/tpm.yml composes.
+    # IOTGW_ENABLE_IMA = "1"
+  crash_debug_toggle: |
+    # Lab crash-debug profile (DT ramoops + panic/oops/sysrq flow).
+    # IOTGW_ENABLE_CRASH_DEBUG_DEV = "1"
+  rauc_adaptive: |
+    # RAUC adaptive updates (block-hash-index).
+    # IOTGW_RAUC_ADAPTIVE = "1"
+  kernel_features: |
+    # Kernel feature fragments. Setting this REPLACES the list, including what
+    # kas/desktop.yml adds, so only set it to pin a set deliberately.
+    # IOTGW_KERNEL_FEATURES = "igw_compute_media igw_containers igw_networking_iot igw_security_prod igw_ima igw_observability_dev"
+  uboot_hardening: |
+    # Base U-Boot features (surface_reduce fit_enforce watchdog) come from the
+    # distro. Force a set locally, e.g. to test appliance_lockdown on dev:
+    # IOTGW_UBOOT_FEATURES = "surface_reduce fit_enforce watchdog appliance_lockdown"
+  ota_updater: |
+    # OTA updater endpoint (mTLS) and manifest path on that server.
+    # IOTGW_OTA_SERVER_URL = "https://ota.example.invalid:8443"
+    # IOTGW_OTA_MANIFEST_PATH = "/api/v1/manifest.json"
+  nodejs_runtime: |
+    # The OTBR web UI needs a newer Node.js than the default 20.x.
+    # IOTGW_NODEJS_BIN_VERSION = "22.22.0"
+  rtc_test: |
+    # RPi5 RTC battery charge target (3.0 V), for bring-up validation only.
+    # RPI_EXTRA_CONFIG:append = "\ndtparam=rtc_bbat_vchg=3000000\n"
+
+  # --- Build host and developer settings ---
+  parallelism: |
+    # Match your build host; rpi5.yml carries the defaults.
+    # BB_NUMBER_THREADS = "10"
+    # PARALLEL_MAKE = "-j12"
+  rm_work_exclude: |
+    # Keep kernel/U-Boot workdirs for debugging. rm_work itself comes from
+    # rpi5.yml; do not remove it (build/tmp grows into the hundreds of GB).
+    # RM_WORK_EXCLUDE += " linux-iotgw-mainline u-boot"
+    # While working on SELinux policy, keep the refpolicy tree too:
+    # RM_WORK_EXCLUDE += " refpolicy-mcs"
+  prod_ops_key: |
+    # Prod's only login: the OTA operator account (key-only SSH, staff_t, may
+    # stage and install bundles, cannot elevate). The prod build fails without it.
+    # IOTGW_PROD_OPS_AUTH_KEYS_FILE = "/home/you/.ssh/iotgw-ops.pub"
+  bench_console_passwords: |
+    # Console passwords for the bench (dev/desktop only; prod keeps root "*").
+    # The layer ships no password: both hashes default to "*" (no password
+    # login; SSH keys only). Generate: openssl passwd -6
+    # IOTGW_ROOT_PASSWORD_HASH = "$6$...."
+    # IOTGW_DEVEL_PASSWORD_HASH = "$6$...."
+  selinux_mode: |
+    # Every image boots SELinux enforcing (iotgw-common.inc). Permissive only to
+    # collect the access surface of new software before its policy exists;
+    # applies to every image built in this composition. See docs/SELINUX.md.
+    # IOTGW_SELINUX_MODE = "permissive"
+  sdk_tooling: |
+    # Extra target dev packages in the SDK (for app cross-builds).
+    # TOOLCHAIN_TARGET_TASK:append = " pkgconf-dev libmnl-dev systemd-dev sdbus-c++-dev nlohmann-json-dev"
+  desktop_apps: |
+    # Desktop HDMI app (hdmi-wave-demo): fetched from GitHub by default; point
+    # it at a local clone only to build unpushed work.
+    # HDMI_WAVE_DEMO_GIT = "git:///home/you/src/hdmi-wave-demo;protocol=file"
+  externalsrc_dev: |
+    # Build a project from a local checkout instead of its pinned GitHub SRCREV.
+    # Development only; released images use the pinned SRCREV. The global
+    # INHERIT is required: a recipe's conditional inherit does not see a
+    # pn-scoped EXTERNALSRC override at parse time. externalsrc is a no-op
+    # for recipes with no EXTERNALSRC set. After a PV bump, delete the
+    # checkout's build-sdk directory (stale CMake cache).
+    # INHERIT += "externalsrc"
+    # EXTERNALSRC:pn-edge-healthd = "/home/you/src/edge-healthd"
+    # EXTERNALSRC_BUILD:pn-edge-healthd = "/home/you/src/edge-healthd/build-sdk"
+    # EXTERNALSRC:pn-otbr-webui = "/home/you/src/otbr-webui"
+    # EXTERNALSRC_BUILD:pn-otbr-webui = "/home/you/src/otbr-webui-build-sdk"
+    # EXTERNALSRC:pn-tpm-ops = "/home/you/src/tpm-ops"
+    # EXTERNALSRC_BUILD:pn-tpm-ops = "/home/you/src/tpm-ops/build-sdk"

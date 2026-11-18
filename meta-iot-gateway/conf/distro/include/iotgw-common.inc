@@ -22,6 +22,8 @@ DISTRO_CODENAME ?= "rpi5"
 # positives live in per-recipe bbappends; this include is only for dispositions
 # that span many recipes of one project. Harmless outside the CVE/SBOM flow.
 require conf/distro/include/iotgw-cve-ignores.inc
+# CVE database revisions (weak defaults; inert outside the CVE/SBOM flow).
+require conf/distro/include/iotgw-cve-db.inc
 
 # RAUC bundle version policy:
 #   <distro-version>-<machine>-<image-track>-b<build-id>
@@ -72,6 +74,16 @@ IOTGW_NODEJS_BIN_VERSION ?= "20.12.2"
 PREFERRED_VERSION_nodejs-bin ?= "${IOTGW_NODEJS_BIN_VERSION}"
 PREFERRED_VERSION_nodejs-bin-native ?= "${IOTGW_NODEJS_BIN_VERSION}"
 
+# LLVM backends (llvm, llvm-native; rust links llvm). OE-core builds eight CPU
+# backends plus LLVM_TARGETS_GPU (AMDGPU, NVPTX, SPIRV) whenever opengl or
+# vulkan is a distro feature. Needed: AArch64 target, ARM, X86 build host and
+# qemux86-64, BPF eBPF objects. The GPU backends serve only mesa-native's
+# gallium-llvm drivers and target llvm; no image task graph contains either
+# (base, dev, desktop, prod), and the RPi5's VideoCore VII driver (v3d) does
+# not use LLVM. Distro-wide so all hosts share llvm and rust sstate. A change
+# rebuilds both from scratch.
+LLVM_TARGETS_TO_BUILD ?= "AArch64;ARM;BPF;X86"
+
 # Policy and QA
 INHERIT += "sanity"
 INHERIT += "insane"
@@ -83,8 +95,8 @@ ERROR_TO_WARN_QA ?= "version-going-backwards"
 # only in the gitignored kas/local.yml — so a clean checkout silently built the
 # stock linux-raspberrypi kernel, unsigned. FIT is now unconditional and tracked;
 # there is no non-FIT flow. Operator key *paths* stay in kas/local.yml.
-PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline-fit"
-PREFERRED_VERSION_linux-iotgw-mainline-fit = "6.18%"
+PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline"
+PREFERRED_VERSION_linux-iotgw-mainline = "6.18%"
 KERNEL_BOOTCMD = "bootm"
 
 # Keep the FIT flow isolated from meta-raspberrypi's stock kernel recipes.
@@ -101,12 +113,26 @@ FIT_GENERATE_KEYS = "0"
 IOTGW_FIT_SIGNING ?= "1"
 UBOOT_SIGN_ENABLE = "${@bb.utils.contains('IOTGW_FIT_SIGNING','1','1','0',d)}"
 
+# FIT DTB trust roots (see kas/local.yml.example fit_dtb_*_trust blocks for the
+# rotation pattern). Read by the kernel recipe, which injects the public keys
+# into the board DTB, and by the image recipes (iotgw-fit-gate, the
+# release-trust WIC warning), which check what was injected. Set distro-wide so
+# both datastores see the same values. The file key defaults on so a developer
+# without a YubiKey or SoftHSM builds normally; the YK and SoftHSM gates default
+# off. SoftHSM trust is dev-only — never enable it on production.
+IOTGW_FIT_TRUST_FILE_KEY    ?= "1"
+IOTGW_FIT_TRUST_YK_KEY      ?= "0"
+IOTGW_FIT_YK_KEYDIR         ?= ""
+IOTGW_FIT_YK_KEYNAME        ?= "iotgw-fit-yk-2027"
+IOTGW_FIT_TRUST_SOFTHSM_KEY ?= "0"
+IOTGW_FIT_SOFTHSM_KEYDIR    ?= ""
+IOTGW_FIT_SOFTHSM_KEYNAME   ?= "iotgw-fit-softhsm-dev"
+
 # ── U-Boot feature tokens ────────────────────────────────────────────────────
-# IOTGW_UBOOT_FEATURES is read in three recipe datastores that do not share
-# variables: the u-boot recipe (builds the matching cfg/patch), the
+# IOTGW_UBOOT_FEATURES is read in two recipe datastores that do not share
+# variables: the u-boot recipe (builds the matching cfg/patch) and the
 # rpi-bootfiles-archive-* recipe (self-heals the matching boot-critical env vars
-# into the RAUC bundle), and the image recipes (write /etc/default/
-# iotgw-uboot-policy). The default is set here, distro-wide, so all three see the
+# into the RAUC bundle). The default is set here, distro-wide, so both see the
 # same tokens; a per-recipe default would leave the bootfiles recipe (which has
 # none of its own) blind to it.
 #
@@ -116,8 +142,9 @@ UBOOT_SIGN_ENABLE = "${@bb.utils.contains('IOTGW_FIT_SIGNING','1','1','0',d)}"
 #                   RAUC/FIT boot path and the exhausted-slot halt, stopped
 #                   before bootm
 #
-# prod adds appliance_lockdown via kas/uboot-prod-hardening.yml (global, reaches
-# the u-boot recipe) and iot-gw-image-prod.bb (image datastore).
+# prod adds appliance_lockdown through kas/uboot-prod-hardening.yml (a global
+# :append, composed by the prod make targets); the prod hygiene gate fails the
+# image when it is missing, so a prod image cannot be built without it.
 IOTGW_UBOOT_FEATURES ?= "surface_reduce fit_enforce watchdog"
 
 
@@ -127,6 +154,19 @@ VIRTUAL-RUNTIME_init_manager ?= "systemd"
 # Journald-only policy: do not pull classic syslog daemons from packagegroups.
 VIRTUAL-RUNTIME_base-utils-syslog = ""
 DISTRO_FEATURES:append = " systemd bluetooth virtualization usrmerge security"
+# Container runtime: every image variant ships it (iot-gw-image-base.inc), with
+# no toggle. Containers run rootless as the iotgw-ctr principal from Quadlet
+# units in its user manager (packagegroup-iot-gw-containers, iotgw-ctr-user);
+# the rootful engine is installed for administration but has no units. An
+# image with Quadlet units but no engine builds and boots, then fails on
+# hardware.
+VIRTUAL-RUNTIME_container_engine ?= "podman"
+VIRTUAL-RUNTIME_container_runtime ?= "crun"
+VIRTUAL-RUNTIME_container_networking ?= "netavark"
+VIRTUAL-RUNTIME_container_dns ?= "aardvark-dns"
+# Rootless networking is pasta (passt, in the containers packagegroup); podman
+# recommends slirp4netns as well, which would ship a second, unused helper.
+BAD_RECOMMENDATIONS:append = " slirp4netns"
 # RAUC is mandatory in this distro
 DISTRO_FEATURES:append = " rauc"
 DISTRO_FEATURES:append = " luks"
@@ -144,10 +184,36 @@ DISTRO_FEATURES:append = " selinux"
 # stay in sync with packagegroup-iot-gw-selinux's refpolicy RDEPENDS.
 PREFERRED_PROVIDER_virtual/refpolicy = "refpolicy-mcs"
 
-# Permissive floor: AVC denials log to audit, nothing is blocked. Flip to
-# "enforcing" only after policy coverage is validated against the full image
-# surface. Recovery escape stays the selinux=0 kernel param.
-DEFAULT_ENFORCING = "permissive"
+# Boot mode of the shipped policy. DEFAULT_ENFORCING lands in
+# /etc/selinux/config of the refpolicy package, which every image of a kas
+# composition shares, so the mode is per composition, not per image. Every
+# image boots enforcing; a composition may set IOTGW_SELINUX_MODE = "permissive"
+# to collect the access surface of new software before its policy exists. The
+# kernel command line is signed into the slot FIT, so recovery from a slot that
+# fails under enforcing is the A/B fallback (boot counters), not a boot
+# parameter.
+IOTGW_SELINUX_MODE ??= "enforcing"
+
+# Static user and group IDs. Files on /data keep their numeric owners across
+# OTA updates and A/B rollback, so every system account has one fixed ID for
+# all images (meta-iot-gateway/files/iotgw-passwd, iotgw-group). Dynamic
+# allocation would renumber accounts whenever the package set changes. A recipe
+# that adds an account without a table entry fails the build; accounts created
+# by an image's EXTRA_USERS_PARAMS carry their IDs in the command itself.
+# Changing an assigned ID needs a /data migration (docs/PERSISTENT_STATE.md).
+USERADDEXTENSION = "useradd-staticids"
+USERADD_UID_TABLES = "files/iotgw-passwd"
+USERADD_GID_TABLES = "files/iotgw-group"
+USERADD_ERROR_DYNAMIC = "error"
+DEFAULT_ENFORCING = "${IOTGW_SELINUX_MODE}"
+
+# Per-domain permissive is a POLICY statement (`permissive X;`), applied by the
+# kernel regardless of CONFIG_SECURITY_SELINUX_DEVELOP, so the build checks the
+# built store instead: iotgw-rootfs.bbclass fails the image on any permissive
+# domain not listed here. This list is the staging allowlist for new domains
+# whose access surface is still being collected on an enforcing trial. It must
+# be EMPTY before DEFAULT_ENFORCING flips to enforcing.
+IOTGW_SELINUX_PERMISSIVE_DOMAINS_EXPECTED ?= ""
 
 # openssl unblocks systemd-creds/cryptenroll crypto flows. The systemd `tpm2`
 # PACKAGECONFIG (libtss2) is added by kas/tpm.yml, not here: tpm2-tss lives in
@@ -173,8 +239,9 @@ RPI_USE_U_BOOT ?= "1"
 # Wrynose (Yocto 6.0) auto-enables multiarch/opengl/ptest/vulkan/wayland by
 # default (via DISTRO_FEATURES_DEFAULTS, the BACKFILL replacement). ptest and
 # multiarch are stripped here for all image variants (no 32-bit userspace, no
-# on-target ptest); opengl/vulkan/wayland are stripped per-profile below
+# on-target ptest); vulkan/wayland are stripped per-profile below
 # (:remove:headless), with the desktop variant re-adding them via :append:desktop.
+# opengl stays on headless too: see the comment there.
 DISTRO_FEATURES:remove = " pcmcia 3g nfc ptest multiarch debuginfod sysvinit nfs"
 
 # Exclude unused RPC portmapper (pulled in by base packagegroups)
@@ -192,26 +259,35 @@ ROOT_HOME ?= "/root"
 # (wpa_supplicant@<iface> drop-in) and the RAUC managed-path all derive from this,
 # so overriding it in kas/local.yml keeps hardening + OTA management aligned.
 IOTGW_WIFI_IFACE ?= "wlan0"
+# Infrastructure (backbone) interface OTBR is attached to (otbr-agent -B) and
+# the only interface avahi/mDNS serves. Keep in step with otbr-agent.default.
+IOTGW_OTBR_INFRA_IFACE ?= "wlan0"
+# Container principal: names its Quadlet directory and the firewall rule that
+# keeps containers off the gateway's own services. Equal to the static id table.
+IOTGW_CTR_UID ?= "968"
+IOTGW_CTR_SUBID_START ?= "200000"
+IOTGW_CTR_SUBID_COUNT ?= "65536"
+IOTGW_CTR_SUBID_RANGE = "${IOTGW_CTR_SUBID_START}-${@int(d.getVar('IOTGW_CTR_SUBID_START')) + int(d.getVar('IOTGW_CTR_SUBID_COUNT')) - 1}"
 
 # Network-listening systemd socket units permitted in the image, as
 # "<unit>=<address>" pairs. Enforced by iotgw-listen-guard.bbclass at rootfs
 # assembly, by EXACT SET EQUALITY — so a listener that appears AND one that
 # silently disappears both fail the build.
 #
-# sshd is pinned to IPv4 because upstream's sshd.socket ships a bare
-# "ListenStream=22", which systemd binds dual-stack; with a global IPv6 address
-# on any interface that makes SSH reachable off-link with no NAT in the path.
-# The pin lives in recipes-connectivity/openssh/files/sshd.socket-iotgw.conf and
-# rides inside openssh-sshd so no image can install sshd without it.
+# Empty: sshd binds its own listener (sshd.service), so the image has no
+# network-listening socket unit. Its IPv4 pin is
+# recipes-connectivity/openssh/files/05-iotgw-listen.conf, shipped inside
+# openssh-sshd so no image can install sshd without it.
 #
 # Only covers socket-ACTIVATED units. A daemon that binds its own socket
-# directly is asserted at runtime instead, by an on-target check.
-IOTGW_NET_LISTEN_ALLOW ?= "sshd.socket=0.0.0.0:22"
+# directly is asserted at runtime instead, by an on-target check
+# (scripts/security/exposure-target.sh).
+IOTGW_NET_LISTEN_ALLOW ?= ""
 
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_WIFI_IFACE IOTGW_ENABLE_OTBR"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI IOTGW_ENABLE_DEEPX_DXM1"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI IOTGW_ENABLE_DEEPX_DXM1"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OTA_TPM_MTLS IOTGW_OTA_TPM_KEY_URI IOTGW_OTA_TPM_KEY_ENGINE IOTGW_OTA_OPENSSL_CONF"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_STREAMING_KEY_MODE IOTGW_RAUC_PKCS11_BACKEND IOTGW_RAUC_PKCS11_TLS_KEY IOTGW_RAUC_PKCS11_MODULE IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES IOTGW_TPM2_PKCS11_STORE"
@@ -220,11 +296,10 @@ BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_KEYRING_CERTS IOTGW_RAUC_ALLOWED_SI
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_RPI_EEPROM IOTGW_ENABLE_VCIO"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_IMA"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_ENCRYPTED_STORE_DEV"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PSTORE_PERSIST IOTGW_ENABLE_CRASH_DEBUG_DEV"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_HW_WATCHDOG IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_PANIC_ON_OOPS"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_UBOOT_EXTRA_KERNEL_ARGS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " BUNDLE_IMAGE_NAME"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_BUILD_ID IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR IOTGW_VERSION_PATCH"
 
@@ -241,8 +316,12 @@ OVERRIDES .= ":${IOTGW_PROFILE}"
 # vtcon-related startup warnings on framebuffer-less deployments.
 IOTGW_DISABLE_VCONSOLE_SETUP ?= "1"
 
-# Headless profile trims windowing/graphics/audio stacks
-DISTRO_FEATURES:remove:headless = " x11 wayland vulkan opengl pulseaudio"
+# Headless profile trims windowing/graphics/audio stacks. opengl is kept: it is
+# what makes Mesa buildable, and the dev image carries Mesa's v3d driver
+# (EGL/GLES/GBM on the V3D GPU, no window system). The feature is shared with
+# prod, which installs no GL userspace; the prod hygiene gate
+# (iotgw-rootfs.bbclass) fails the build if any reaches it.
+DISTRO_FEATURES:remove:headless = " x11 wayland vulkan pulseaudio"
 
 # Desktop profile: enable graphics/audio stacks, PAM and polkit (Wayland/Weston)
 DISTRO_FEATURES:append:desktop = " wayland opengl vulkan pulseaudio pam polkit"
@@ -309,6 +388,7 @@ IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
 #   igw_crash_debug_dev    - aggressive lab-only debug (sysrq, hung-task, panic-on-oops)
 #   igw_no_efi             - disable kernel EFI runtime/stub surface (opt-in)
 #   igw_ima                - IMA measurement (PCR10, SHA256, ima-ng template)
+#   igw_desktop            - desktop peripherals: HDMI-CEC, USB audio, BLE HID (UHID), Logitech/Wacom
 IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 
 # pstore persistence layer — production-safe. Reserves a 1 MiB ramoops region
@@ -318,8 +398,9 @@ IOTGW_KERNEL_FEATURES ?= "igw_networking_iot igw_security_prod"
 IOTGW_ENABLE_PSTORE_PERSIST ?= "1"
 
 # Aggressive crash-debug lab profile — opt-in. Adds sysrq, hung-task and
-# softlockup detectors, panic-on-oops, short panic timeout, and ftrace into
-# pstore. Implies pstore persistence. Not for production fleet.
+# softlockup detectors, panic-on-oops, and ftrace into pstore. Implies pstore
+# persistence. Not for production fleet.
+# Kernel command-line options cannot be injected at runtime under the signed FIT.
 IOTGW_ENABLE_CRASH_DEBUG_DEV ?= "0"
 
 # Effective persistence flag: crash-debug-dev always implies pstore-persist.
@@ -328,12 +409,14 @@ IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE = "${@'1' if (d.getVar('IOTGW_ENABLE_CRASH
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_PSTORE_PERSIST_EFFECTIVE', '1', ' igw_pstore_persist', '', d)}"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_CRASH_DEBUG_DEV', '1', ' igw_crash_debug_dev', '', d)}"
 
-# Crash-debug panic timeout (seconds). Drives the lab sysctl + U-Boot
-# cmdline policy for fast post-mortem turnaround. The kernel-baked default
-# (CONFIG_PANIC_TIMEOUT=30 in panic-recovery.cfg, always applied) is the
-# floor that covers early-boot/pre-sysctl panics. Lab sysctl overrides
-# this downward to 5s once userspace is up.
+# Crash-debug panic timeout (seconds), for fast post-mortem turnaround. The
+# kernel-baked default (CONFIG_PANIC_TIMEOUT=30 in panic-recovery.cfg, always
+# applied) is the floor that covers early-boot/pre-sysctl panics.
 IOTGW_CRASH_PANIC_TIMEOUT ?= "5"
+# The crash-debug command-line options are signed into the slot FIT with the
+# rest of the command line (iotgw-verity-image.bbclass), so they are set here
+# at build time; nothing on the device can add kernel arguments.
+IOTGW_VERITY_KERNEL_ARGS:append = "${@(' panic=%s oops=panic sysrq_always_enabled=1' % (d.getVar('IOTGW_CRASH_PANIC_TIMEOUT') or '5')) if d.getVar('IOTGW_ENABLE_CRASH_DEBUG_DEV') == '1' else ''}"
 
 # Escalate kernel oops to panic so the panic timeout above actually fires
 # for kernel-thread/driver oopses (default-on for fleet posture). Override
@@ -342,23 +425,6 @@ IOTGW_CRASH_PANIC_TIMEOUT ?= "5"
 # panic-on-oops.cfg into the kernel build.
 IOTGW_ENABLE_PANIC_ON_OOPS ?= "1"
 
-# Build-time U-Boot EXTRA_KERNEL_ARGS policy. Applied at first boot (and
-# on every fresh OTA install) by iotgw-provision.sh::apply_uboot_policy
-# via fw_setenv. Honoured by iotgw_set_bootargs in U-Boot, which appends
-# the value to bootargs after `root=PARTUUID` and `rauc.slot=`.
-#
-# Default empty — no runtime cmdline injection. The crash-debug lab profile
-# owns its panic/oops/sysrq cmdline through this policy so firmware
-# cmdline.txt stays a stable Raspberry Pi baseline.
-#
-# Production images with `appliance_lockdown` reject EXTRA_KERNEL_ARGS
-# writes via the env writeable-list, so this policy is dev-only at
-# runtime — the prod posture stays "no runtime cmdline injection from
-# anywhere". For prod-fleet cmdline tuning, change this variable in the
-# image build (rebuild + RAUC OTA). The fw_setenv path is gated; the
-# build-time path is signed.
-IOTGW_UBOOT_EXTRA_KERNEL_ARGS ?= "${@('panic=%s oops=panic sysrq_always_enabled=1' % (d.getVar('IOTGW_CRASH_PANIC_TIMEOUT') or '5')) if d.getVar('IOTGW_ENABLE_CRASH_DEBUG_DEV') == '1' else ''}"
-
 # BCM2712 hardware watchdog (default on). Mainline 6.18.37 carries BCM2712 PM
 # support and exposes /dev/watchdog0 on RPi5 unconditionally, so this flag no
 # longer gates a kernel patch — it is retained as the intent/dependency toggle
@@ -366,7 +432,7 @@ IOTGW_UBOOT_EXTRA_KERNEL_ARGS ?= "${@('panic=%s oops=panic sysrq_always_enabled=
 # /dev/watchdog0 does not reboot.
 IOTGW_ENABLE_HW_WATCHDOG ?= "1"
 
-# systemd hardware watchdog integration (enabled by default; issue #56).
+# systemd hardware watchdog integration (enabled by default).
 # PID1 opens /dev/watchdog and pings it at RuntimeWatchdogSec cadence, so a
 # wedged kernel/PID1 self-recovers by hardware reset. Requires
 # IOTGW_ENABLE_HW_WATCHDOG=1 (or another driver source) for /dev/watchdog to
@@ -375,8 +441,8 @@ IOTGW_ENABLE_HW_WATCHDOG ?= "1"
 #
 # RUNTIME must stay <= the BCM2712 HW max heartbeat (bcm2835_wdt
 # max_hw_heartbeat_ms ~= 16s). At <=16s systemd programs the hardware timeout
-# directly and pings at RUNTIME/2 (7.5s here) — validated stable on-target
-# (issue #56). ABOVE 16s (e.g. 20s/30s) the kernel must *bridge* the software
+# directly and pings at RUNTIME/2 (7.5s here) — validated stable on-target.
+# ABOVE 16s (e.g. 20s/30s) the kernel must *bridge* the software
 # timeout past the HW max via the watchdog-core worker; the worker->PID1
 # fd-open handoff is racy on BCM2712 and resets the board erratically
 # (reproduced at 20s: reset in ~7-40s; 15s soaks clean). So keep RUNTIME <=15s.
@@ -386,10 +452,19 @@ IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "1"
 IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "15s"
 IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"
 
+# TPM feature switch. One on/off choice for the whole TPM stack: it sets the
+# defaults of the TPM hardware profile, the TPM crypto providers, the OTA
+# updater TPM mTLS key and the RAUC streaming key mode below. Each of those
+# can still be overridden on its own. Turning it on also needs the TPM-backed
+# device keys provisioned on the target (scripts/ota/ota-pkcs11-provision-check.sh),
+# or RAUC streaming cannot authenticate. kas/tpm.yml composes the TPM layers
+# and sets it to "1".
+IOTGW_ENABLE_TPM ?= "0"
+
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
 # Enable to pull built-in TPM kernel config and Raspberry Pi firmware overlay.
 # Overlay default maps to Raspberry Pi's upstream TPM SPI overlay.
-IOTGW_ENABLE_TPM_SLB9672 ?= "0"
+IOTGW_ENABLE_TPM_SLB9672 ?= "${IOTGW_ENABLE_TPM}"
 IOTGW_TPM_DTO_OVERLAY ?= "tpm-slb9670"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1', ' igw_tpm_slb9672', '', d)}"
 
@@ -397,13 +472,12 @@ IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672',
 #  - tpm2-pkcs11
 #  - tpm2-openssl
 #  - tpm2-tss-engine
-# Keep disabled by default until app/client integration is wired.
-IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS ?= "0"
+IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS ?= "${IOTGW_ENABLE_TPM}"
 
 # Optional OTA mTLS TPM key mode (ota-updater + ota-certs behavior):
 # - 0: default file-key flow (/etc/ota/device.key required)
 # - 1: TPM key-handle flow (keyless cert provisioning allowed; updater uses TPM key URI)
-IOTGW_ENABLE_OTA_TPM_MTLS ?= "0"
+IOTGW_ENABLE_OTA_TPM_MTLS ?= "${IOTGW_ENABLE_TPM}"
 IOTGW_OTA_TPM_KEY_URI ?= "handle:0x81000001"
 IOTGW_OTA_TPM_KEY_ENGINE ?= "tpm2tss"
 IOTGW_OTA_OPENSSL_CONF ?= "/etc/ota/openssl-tpm2.cnf"
@@ -411,9 +485,10 @@ IOTGW_OTA_OPENSSL_CONF ?= "/etc/ota/openssl-tpm2.cnf"
 IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE ?= "${@'1' if ((d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') == '1' and (d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS') or '0') == '1') else '0'}"
 
 # RAUC streaming TLS key mode:
-# - file:   tls-key=/etc/ota/device.key (default)
-# - pkcs11: tls-key=<pkcs11:...> via configured PKCS#11 backend
-IOTGW_RAUC_STREAMING_KEY_MODE ?= "file"
+# - file:   tls-key=/etc/ota/device.key (default with the TPM off)
+# - pkcs11: tls-key=<pkcs11:...> via configured PKCS#11 backend (default with
+#           the TPM on)
+IOTGW_RAUC_STREAMING_KEY_MODE ?= "${@'pkcs11' if (d.getVar('IOTGW_ENABLE_TPM') or '0') == '1' else 'file'}"
 
 # PKCS#11 backend selector used when IOTGW_RAUC_STREAMING_KEY_MODE=pkcs11:
 # - tpm2:  tpm2-pkcs11 provider + TPM2 token/object
@@ -463,7 +538,7 @@ IOTGW_RAUC_PKCS11_USES_TPM2 ?= "${@'1' if ((d.getVar('IOTGW_RAUC_STREAMING_KEY_M
 # IOTGW_RAUC_PKCS11_USES_TPM2 in a recipe-scoped .bbappend -- bbappends only
 # mutate their own recipe's datastore, so this derived gate would evaluate
 # differently in that recipe than in the image-rootfs / other-recipe context.
-# Set the underlying primitives (IOTGW_ENABLE_TPM_SLB9672,
+# Set IOTGW_ENABLE_TPM, or the underlying primitives (IOTGW_ENABLE_TPM_SLB9672,
 # IOTGW_ENABLE_OTA_TPM_MTLS, IOTGW_RAUC_STREAMING_KEY_MODE,
 # IOTGW_RAUC_PKCS11_BACKEND) at distro / local.conf / kas-overlay level, not
 # in a bbappend.
@@ -473,8 +548,15 @@ IOTGW_NEED_TPM_POLICY ?= "${@'1' if ((d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS_EFFECT
 # See meta-iot-gateway/classes/iotgw-rootfs.bbclass for the mechanism. The
 # 'ota:iotgwtpm' pair fires whenever the iotgw-tpm-policy package is pulled
 # in (which is what causes iotgwtpm to exist in /etc/group at all).
+# HDMI screen app on the desktop image: hdmi-wave-demo, enabled at boot.
+# Only the desktop image installs it.
+IOTGW_ENABLE_HDMI_APPS ?= "1"
+
 IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS ??= ""
 IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'ota:iotgwtpm' if (d.getVar('IOTGW_NEED_TPM_POLICY') or '0') == '1' else ''}"
+# The DX-M1 probe account (iotgw-dx-demo-probe, in every DX-M1 image through
+# packagegroup-iot-gw-deepx) needs the device group of iotgw-deepx-runtime.
+IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS += "${@'dxdemo:dxrt' if d.getVar('IOTGW_ENABLE_DEEPX_DXM1') == '1' else ''}"
 
 # === RAUC bundle encryption — CRYPT IS THE DEFAULT POSTURE ===
 #
@@ -589,14 +671,26 @@ IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_BTF_CORE_DEV'
 
 # DEEPX DX-M1 PCIe NPU accelerator. TWO SEPARATE GATES, deliberately not one:
 #   1. layer availability  — compose kas/deepx.yml (makes meta-deepx-m1 parse)
-#   2. feature enablement  — this toggle. TODAY it only pulls in the kernel
-#                            symbol whitelist that lets the out-of-tree driver
-#                            link. It installs NOTHING into an image: no
-#                            packagegroup exists yet.
-# Composing the layer must NOT by itself put a proprietary accelerator driver
-# into an image; enabling the feature is a separate, explicit act.
+#   2. feature enablement  — this toggle: the kernel symbol whitelist, the
+#                            PCIe ASPM cmdline argument, and
+#                            packagegroup-iot-gw-deepx in every image
+#                            (iot-gw-image-base.inc).
+# kas/deepx.yml sets the toggle; the Makefile composes it for base, dev and
+# desktop. Prod composes neither until the module-signing key is protected.
 IOTGW_ENABLE_DEEPX_DXM1 ?= "0"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_DEEPX_DXM1', '1', ' igw_deepx_dxm1', '', d)}"
+
+# Runtime root dm-verity — the only root flow, like signed FIT boot; there is
+# no toggle. Each A/B slot carries an ext4 image with an appended dm-verity
+# hash tree, and the root hash is authenticated by the signed per-slot FIT: its
+# device tree holds the whole verity table as the kernel command line, and
+# U-Boot boots that device tree with the environment `bootargs` cleared. A
+# corrupted or substituted root then fails closed and the RAUC boot counter
+# falls back to the other slot. See iotgw-verity-image.bbclass.
+#
+# Devices still on the pre-verity ext4 slot layout must be reflashed; the
+# bundle hook refuses to install onto a non-raw root slot.
+IOTGW_KERNEL_FEATURES:append = " igw_rootfs_verity"
 
 # Optional dev TPM/LUKS loopback store (/data/encstore). Keep opt-in to avoid
 # boot-time/setup overhead on images where encrypted-store testing is not active.
@@ -611,7 +705,7 @@ IOTGW_RPI5_KERNEL_DTBS_DEFAULT ?= "broadcom/bcm2712-rpi-5-b.dtb"
 IOTGW_RPI5_KERNEL_DTBS_DEFAULT:append = "${@bb.utils.contains('IOTGW_RPI5_INCLUDE_CM5_DTBS', '1', ' broadcom/bcm2712-rpi-cm5-cm5io.dtb broadcom/bcm2712-rpi-cm5-cm4io.dtb broadcom/bcm2712-rpi-cm5l-cm5io.dtb broadcom/bcm2712-rpi-cm5l-cm4io.dtb', '', d)}"
 IOTGW_RPI5_KERNEL_DTBS_MAINLINE ?= "broadcom/bcm2712-rpi-5-b.dtb"
 
-# linux-iotgw-mainline-fit is the only kernel provider; it ships only the
+# linux-iotgw-mainline is the only kernel provider; it ships only the
 # rpi-5-b DTB and none of meta-raspberrypi's overlay dtbo set.
 RPI_KERNEL_DEVICETREE:raspberrypi5 = "${IOTGW_RPI5_KERNEL_DTBS_MAINLINE}"
 RPI_KERNEL_DEVICETREE_OVERLAYS:raspberrypi5 = ""
