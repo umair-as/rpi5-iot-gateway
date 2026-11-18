@@ -1,7 +1,7 @@
 .PHONY: help base dev prod \
         bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm sign-slot-fits-yk sign-slot-fits-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
         tools-venv test-sign-fit test-sign-fit-softhsm test-sbom-cve test-kernel-fragment-gate test-boot-scripts \
-        test-selinux-policy \
+        test-selinux-policy test-preflight preflight bitbake-task \
         desktop bundle-desktop-full-fit \
         sbom-cve cve-report sbom-report layers parse clean-lock hooks kernel-hardening-report
 
@@ -95,6 +95,9 @@ help:
 	@echo "  make test-kernel-fragment-gate    # Run kernel fragment-gate tests (no build)"
 	@echo "  make test-boot-scripts            # Run RAUC hook + pre-init shell tests (no device)"
 	@echo "  make test-selinux-policy          # Run policy source-check tests (no build)"
+	@echo "  make test-preflight               # Run preflight path-mapping tests (no build)"
+	@echo "  make preflight                    # Cheapest checks for what changed (host tier; no BitBake)"
+	@echo "  make preflight PREFLIGHT_ARGS=--bitbake  # ...plus targeted BitBake tasks (refuses while a build runs)"
 	@echo "  -- Utilities --"
 	@echo "  make hooks                        # Enable the repo git hooks (run once per clone)"
 	@echo "  make layers                       # Show layers for RAUC stack"
@@ -235,6 +238,22 @@ test-boot-scripts:
 
 test-selinux-policy:
 	$(UV) run pytest scripts/selinux/tests/
+
+test-preflight:
+	$(UV) run pytest scripts/preflight/tests/
+
+# Map the changed paths to the cheapest checks that exercise them, before an
+# image build. The bitbake tier (PREFLIGHT_ARGS=--bitbake) refuses to start
+# while another build holds the build directory.
+PREFLIGHT_ARGS ?=
+preflight:
+	python3 scripts/preflight/preflight.py $(PREFLIGHT_ARGS)
+
+# One BitBake task with the same environment wiring as the image targets.
+# Used by preflight's bitbake tier, e.g. BB_TASK="refpolicy-mcs -c compile".
+bitbake-task: | $(KAS_WORK_DIR)
+	$(if $(BB_TASK),,$(error BB_TASK is required, e.g. BB_TASK="refpolicy-mcs -c compile"))
+	$(call iotgw_bitbake,bitbake $(BB_TASK),$(IMAGE_KAS))
 
 bundle-dev-full-fit-resign: | $(KAS_WORK_DIR)
 	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(IMAGE_KAS),iot-gw-image-dev)
