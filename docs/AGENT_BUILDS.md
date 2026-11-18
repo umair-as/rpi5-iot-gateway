@@ -55,7 +55,10 @@ a dead or missing pane means unknown/interrupted. Logging can fail independently
 The helper holds a separate advisory lock for the resolved build directory.
 Concurrent helper launches for that directory are rejected. A target that runs
 BitBake is also refused while any bitbake or kas process runs on the host, in any
-worktree: one build at a time. Direct make/kas invocations do not take the lock;
+worktree: one build at a time. That process check alone races (two launches can
+both pass it before either starts BitBake), so the runner of a BitBake target also
+holds a host-wide lock (`$XDG_RUNTIME_DIR/iotgw-agent-build.lock`) for the whole
+build, taken before the launch reports success. Direct make/kas invocations do not take the lock;
 BitBake's own locking still applies. Never
 remove BitBake's lock automatically. Keep the build directory fixed in local
 configuration; overriding it indirectly through custom make logic bypasses the

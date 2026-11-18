@@ -120,6 +120,58 @@ class LauncherTest(unittest.TestCase):
                 for session in sessions:
                     subprocess.run(["tmux", "-L", SOCKET, "kill-session", "-t", session], capture_output=True)
 
+    def test_host_lock(self):
+        """One BitBake build per host across worktrees, decided by the runners' host
+        lock: the process check alone races (both launches can pass it before either
+        build starts BitBake)."""
+        with tempfile.TemporaryDirectory(prefix="agent build host ") as tmp:
+            base = Path(tmp)
+            roots = []
+            for name in ("one", "two"):
+                root = base / name
+                root.mkdir()
+                (root / "Makefile").write_text("parse:\n\t@sleep 3\n" "dev:\n\t@true\n"
+                                                "notabuild:\n\t@true\n")
+                roots.append(root)
+            env = dict(os.environ, IOTGW_AGENT_BUILD_HOST_LOCK=str(base / "host.lock"))
+            for key in ("KAS_BUILD_DIR", "KAS_WORK_DIR"):
+                env.pop(key, None)
+            sessions = []
+
+            def start(root, target):
+                result = subprocess.run([sys.executable, str(LAUNCHER), "start", "--worktree",
+                                         str(root), target, "--", target], env=env,
+                                        text=True, capture_output=True)
+                runs = sorted((root / "scratch/builds").iterdir(), key=lambda p: p.stat().st_mtime_ns)
+                sessions.append(json.loads((runs[-1] / "run.json").read_text())["session"])
+                return result, runs[-1]
+
+            def finish(run):
+                deadline = time.monotonic() + 15
+                while not (run / "result.json").exists():
+                    self.assertLess(time.monotonic(), deadline, str(run))
+                    time.sleep(0.05)
+                return json.loads((run / "result.json").read_text())["exit_code"]
+
+            try:
+                first, run_a = start(roots[0], "parse")
+                self.assertEqual(first.returncode, 0, first.stderr)
+                self.assertEqual(json.loads((run_a / "run.json").read_text())["host_lock"],
+                                 str(base / "host.lock"))
+                second, _ = start(roots[1], "dev")
+                self.assertNotEqual(second.returncode, 0)
+                self.assertIn("one build at a time", second.stderr)
+                other, run_c = start(roots[1], "notabuild")   # not a BitBake target: no host lock
+                self.assertEqual(other.returncode, 0, other.stderr)
+                self.assertIsNone(json.loads((run_c / "run.json").read_text())["host_lock"])
+                self.assertEqual(finish(run_a), 0)
+                again, run_b = start(roots[1], "dev")
+                self.assertEqual(again.returncode, 0, again.stderr)
+                self.assertEqual(finish(run_b), 0)
+            finally:
+                for session in sessions:
+                    subprocess.run(["tmux", "-L", SOCKET, "kill-session", "-t", session], capture_output=True)
+
 
 if __name__ == "__main__":
     unittest.main()

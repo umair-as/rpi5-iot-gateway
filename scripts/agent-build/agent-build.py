@@ -33,6 +33,11 @@ BUILD_TARGETS = {"base", "dev", "prod", "desktop", "parse", "layers", "bitbake-t
                  "bundle-prod-full-fit", "bundle-prod-full-fit-resign",
                  "sbom-cve", "cve-report", "sbom-report", "kernel-hardening-report"}
 RUNNING = r"bin/(bitbake|bitbake-server|kas|kas-container)( |$)"
+# One BitBake build per host, across worktrees and build directories. The
+# runner takes this lock before it reports ready and holds it for the whole
+# build, so two launches that both pass the process check cannot both start.
+HOST_LOCK = Path(os.environ.get("IOTGW_AGENT_BUILD_HOST_LOCK")
+                 or Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "iotgw-agent-build.lock")
 
 
 def tmux(*args):
@@ -78,12 +83,20 @@ def runner(run):
     meta = json.loads((run / "run.json").read_text())
     build = Path(meta["build_dir"])
     build.mkdir(parents=True, exist_ok=True)
-    with (build / ".agent-build.lock").open("a") as lock:
+    with (build / ".agent-build.lock").open("a") as lock, \
+            open(meta.get("host_lock") or os.devnull, "a") as host_lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             (run / "startup-error").write_text("Another launcher build owns this build directory\n")
             return 1
+        if meta.get("host_lock"):
+            try:
+                fcntl.flock(host_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                (run / "startup-error").write_text(
+                    "Another launcher build is running on this host; one build at a time\n")
+                return 1
         (run / "ready").touch()
         try:
             wait_for(run / "start", 30)
@@ -99,7 +112,7 @@ def runner(run):
         # Keep the supervisor alive long enough to record make's exit status.
         signal.signal(signal.SIGINT, lambda *_: None)
         process = subprocess.Popen(meta["command"], cwd=meta["worktree"], env=env,
-                                   pass_fds=(lock.fileno(),))
+                                   pass_fds=(lock.fileno(), host_lock.fileno()))
         code = process.wait()
         write_json(run / "result.json", {"finished": now(), "exit_code": code})
         print(f"\nBUILD EXIT={code}", flush=True)
@@ -144,6 +157,7 @@ def start(args):
     run.mkdir(parents=True, mode=0o700)
     session = "build-" + run_id
     meta = {"created": now(), "worktree": str(root), "build_dir": str(build),
+            "host_lock": str(HOST_LOCK) if BUILD_TARGETS & set(command) else None,
             "source": git_state(root), "session": session, "command": ["make", *command], "environment": env}
     write_json(run / "run.json", meta)
     # Start a waiting runner, configure capture, then release it. No send-keys
