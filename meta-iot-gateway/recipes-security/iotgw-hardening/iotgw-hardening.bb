@@ -19,8 +19,6 @@ SRC_URI = " \
     file://service-hardening.conf \
     file://service-hardening-net.conf \
     file://service-hardening-wpa-supplicant.conf \
-    file://sshd@.service \
-    file://service-hardening-mosquitto.conf \
 "
 
 S = "${UNPACKDIR}"
@@ -66,12 +64,11 @@ do_install() {
     install -d ${D}${sysconfdir}/systemd/system/wpa_supplicant@${IOTGW_WIFI_IFACE}.service.d
     install -m 0644 ${UNPACKDIR}/service-hardening-wpa-supplicant.conf ${D}${sysconfdir}/systemd/system/wpa_supplicant@${IOTGW_WIFI_IFACE}.service.d/override.conf
 
-    install -d ${D}${sysconfdir}/systemd/system/mosquitto.service.d
-    install -m 0644 ${UNPACKDIR}/service-hardening-mosquitto.conf ${D}${sysconfdir}/systemd/system/mosquitto.service.d/override.conf
 
-    # Ship hardened sshd@ unit directly.
-    install -d ${D}${sysconfdir}/systemd/system
-    install -m 0644 ${UNPACKDIR}/sshd@.service ${D}${sysconfdir}/systemd/system/sshd@.service
+    # No sshd unit here: sshd runs as OE-Core's plain sshd.service (see
+    # openssh_%.bbappend). A mount-namespace sandbox on the SSH server is
+    # inherited by every admin session it spawns, and SELinux confines those
+    # sessions by domain instead.
 
     # Restrictive umask (AUTH-9328)
     install -d ${D}${sysconfdir}/profile.d
@@ -91,9 +88,7 @@ FILES:${PN} = " \
     ${sysconfdir}/systemd/system/systemd-networkd.service.d/override.conf \
     ${sysconfdir}/systemd/system/wpa_supplicant@${IOTGW_WIFI_IFACE}.service.d/override.conf \
     ${sysconfdir}/systemd/system/dnsmasq.service.d/override.conf \
-    ${sysconfdir}/systemd/system/mosquitto.service.d/override.conf \
     ${sysconfdir}/systemd/system/avahi-daemon.service.d/override.conf \
-    ${sysconfdir}/systemd/system/sshd@.service \
     ${sysconfdir}/profile.d/umask.sh \
 "
 

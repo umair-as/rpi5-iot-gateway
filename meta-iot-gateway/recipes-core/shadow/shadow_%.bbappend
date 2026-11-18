@@ -3,6 +3,12 @@
 # https://nvd.nist.gov/vuln/detail/CVE-2016-15024
 CVE_STATUS[CVE-2016-15024] = "cpe-incorrect: refers to the doomsider/shadow project, not shadow-utils"
 
+FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
+
+# Console login PAM stack (pam_selinux close/open in Fedora's order, plus
+# pam_loginuid, which neither OE-Core's nor meta-selinux's login stack has).
+SRC_URI:append = " file://iotgw-pam-login"
+
 # Harden /etc/login.defs at package build time so values survive RAUC OTA updates.
 # shadow-utils does not support login.defs.d/ include directories, so patching
 # must happen here rather than via a drop-in fragment.
@@ -32,3 +38,16 @@ do_install:append() {
         && sed -i 's/^ENCRYPT_METHOD.*/ENCRYPT_METHOD SHA512/' "$defs" \
         || echo 'ENCRYPT_METHOD SHA512' >> "$defs"
 }
+
+do_install:append:class-target() {
+    if ${@bb.utils.contains('DISTRO_FEATURES', 'pam', 'true', 'false', d)}; then
+        install -m 0644 ${UNPACKDIR}/iotgw-pam-login ${D}${sysconfdir}/pam.d/login
+    fi
+}
+
+# Every module named in iotgw-pam-login that shadow's PAM_PLUGINS does not
+# already pull: a "required" module that is not installed refuses the login,
+# and the serial console is the recovery path.
+RDEPENDS:${PN}-base:append:class-target = " ${@bb.utils.contains('DISTRO_FEATURES', 'pam', \
+    'pam-plugin-loginuid pam-plugin-keyinit pam-plugin-unix', '', d)} \
+    ${@bb.utils.contains('DISTRO_FEATURES', 'pam selinux', 'pam-plugin-selinux', '', d)}"

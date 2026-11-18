@@ -19,10 +19,12 @@
 #   ip -4 -o addr show scope global | awk '{print $4}' | cut -d/ -f1
 #   ip -6 -o addr show scope global | awk '{print $4}' | cut -d/ -f1
 #
-# --otbr: this image was built with IOTGW_ENABLE_OTBR=1, so ports 80/8081
-# are expected open. It defaults off, matching the distro's own default;
-# without it, 80/8081 are reported as INFO (observed, not asserted), since
-# this host has no way to know whether the target image has OTBR at all.
+# --otbr: this image carries the OTBR web UI (IOTGW_ENABLE_OTBR=1 on the dev
+# or desktop image), so port 80 is expected open. Without it, 80 is reported
+# as INFO (observed, not asserted), since this host cannot know whether the
+# target has the web UI. Port 8081 (the OTBR agent REST API) binds loopback
+# and is dropped by the firewall on every image, so it is always asserted
+# closed.
 #
 # Exit status: 0 if the observed reachability matches the expected policy
 # (IPv4 management reachable, IPv6 not) AND every asserted probe returned a
@@ -30,8 +32,8 @@
 # address, no route, DNS failure) is a FAIL, never a silent pass.
 #
 # Expected policy after the IPv4-only listener pin:
-#   v4: 22 open (management), 80/8081 open only with --otbr, 1883 filtered,
-#       443 closed
+#   v4: 22 open (management), 80 open only with --otbr,
+#       443 and 8081 closed
 #   v6: nothing open
 
 set -u
@@ -39,10 +41,10 @@ set -u
 V4=""
 V6=""
 OTBR=0
-PORTS="22 80 443 1883 8081"
+PORTS="22 80 443 8081"
 TIMEOUT=3
 
-usage() { sed -nE 's/^# ?//p' "${BASH_SOURCE[0]}" | sed -n '1,33p'; }
+usage() { sed -nE 's/^# ?//p' "${BASH_SOURCE[0]}" | sed -n '1,36p'; }
 
 is_uint() { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
 
@@ -163,7 +165,7 @@ if [ -n "$V4" ]; then
     for p in $PORTS; do
         case "$p" in
             22) assert IPv4 "$V4" "$p" open ;;
-            80|8081)
+            80)
                 if [ "$OTBR" -eq 1 ]; then
                     assert IPv4 "$V4" "$p" open
                 else
@@ -180,7 +182,7 @@ if [ -n "$V6" ]; then
     # Every port must be closed over IPv6 regardless of --otbr: OTBR's web UI
     # and agent REST bind IPv4-only by design, so this is a policy invariant,
     # not an OTBR-presence question. The management plane is IPv4-only by
-    # policy: the sshd.socket listener is pinned to 0.0.0.0:22 and the firewall
+    # policy: sshd listens on 0.0.0.0:22 only (05-iotgw-listen.conf) and the firewall
     # rules are family-qualified. A single open port here means one of those two
     # controls regressed.
     for p in $PORTS; do

@@ -2,9 +2,10 @@
 # not intend.
 #
 # Runs as a ROOTFS_POSTPROCESS_COMMAND against the assembled rootfs, not a
-# pre-do_configure recipe check: the defect this guards against (SSH's
-# inherited dual-stack sshd.socket) lived in a unit no recipe here
-# referenced, so nothing about it exists before packages are installed.
+# pre-do_configure recipe check: the defect this guards against (a
+# dual-stack socket unit inherited from an upstream package) lives in a unit
+# no recipe here references, so nothing about it exists before packages are
+# installed.
 #
 # Covers socket-activated units only. A daemon that binds its own socket
 # directly is asserted at runtime instead, by a separate on-target check.
@@ -15,7 +16,9 @@
 # by EXACT SET EQUALITY. A listener that silently disappears is as much a
 # regression as one that appears.
 
-IOTGW_NET_LISTEN_ALLOW ??= "sshd.socket=0.0.0.0:22"
+# Default: no network-listening socket units. The distro sets the real value
+# in conf/distro/include/iotgw-common.inc.
+IOTGW_NET_LISTEN_ALLOW ??= ""
 
 ROOTFS_POSTPROCESS_COMMAND += "iotgw_rootfs_listen_guard;"
 
@@ -52,8 +55,13 @@ iotgw_rootfs_listen_guard() {
                             # AF_UNIX (path/abstract) and ListenNetlink= are
                             # not network listeners; several system services
                             # use the latter and would false-positive here.
+                            # systemd expands specifiers before classifying the
+                            # address, and the directory ones (%t runtime, %S
+                            # state, %C cache, %L logs, %E config, %T/%V tmp,
+                            # %h home) expand to absolute paths: AF_UNIX too,
+                            # e.g. podman.socket's %t/podman/podman.sock.
                             case "$_lg_v" in
-                                /*|@*) : ;;
+                                /*|@*|%[tSCLETVh]/*) : ;;
                                 *) _lg_val="${_lg_val:+$_lg_val,}$_lg_v" ;;
                             esac
                             ;;
@@ -77,9 +85,13 @@ iotgw_rootfs_listen_guard() {
 A bare port (e.g. 'ListenStream=22') binds DUAL-STACK. To pin a family, ship
 a drop-in at <unit>.d/override.conf with an empty ListenStream= reset
 followed by the pinned address (ListenStream= is a list; without the reset
-the drop-in adds a listener instead of replacing one). Example:
-recipes-connectivity/openssh/files/sshd.socket-iotgw.conf. If this listener
-is intended, add it to IOTGW_NET_LISTEN_ALLOW in
+the drop-in adds a listener instead of replacing one):
+
+  [Socket]
+  ListenStream=
+  ListenStream=0.0.0.0:<port>
+
+If this listener is intended, add it to IOTGW_NET_LISTEN_ALLOW in
 conf/distro/include/iotgw-common.inc."
     fi
 }

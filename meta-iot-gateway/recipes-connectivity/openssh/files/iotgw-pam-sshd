@@ -1,0 +1,27 @@
+#%PAM-1.0
+# sshd PAM stack, in Fedora's order.
+#
+# pam_selinux close must be the first session module: anything before it
+# would run with a context left over from an earlier stack. pam_selinux open
+# computes the login context (sshd_t -> the user's default role, see
+# /etc/selinux/*/contexts), sets it as the exec context for the shell, and
+# also sets the key-creation context, so pam_keyinit after it creates the
+# session keyring in the user's context. Only modules meant to run for the
+# user's session follow it.
+#
+# No env_params on pam_selinux open: upstream OpenSSH has no user/role login
+# syntax, and a role requested through the PAM environment must not let an
+# SSH login pick sysadm_r. Elevation over SSH is sudo or newrole, both of
+# which re-check the policy.
+auth       include      common-auth
+account    required     pam_nologin.so
+account    include      common-account
+password   include      common-password
+session    required     pam_selinux.so close
+session    required     pam_loginuid.so
+session    required     pam_selinux.so open
+session    optional     pam_keyinit.so force revoke
+session    required     pam_limits.so
+session    required     pam_env.so
+session    optional     pam_motd.so
+session    include      common-session
