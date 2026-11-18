@@ -1,0 +1,60 @@
+From db74a923fd6d4e0b71d69587ecff6dd8621b0371 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Sat, 7 Nov 2026 17:33:38 +0100
+Subject: [PATCH] selinux-image: validate contexts against the image policy
+
+selinux_set_labels runs setfiles without -c, so setfiles validates every
+file context against the policy loaded on the build host. On a host that
+runs SELinux with a different policy (for example Fedora's targeted
+policy), the target policy's types are unknown to the host and labelling
+fails with "has invalid context". The image then falls back to a first
+boot relabel, which a read-only root cannot complete.
+
+Pass the image's own binary policy with -c so validation does not depend
+on the build host.
+
+Also append the function to IMAGE_PREPROCESS_COMMAND without the legacy
+trailing ';'. With it, do_image's signature depends on a variable named
+"selinux_set_labels;" rather than on the function, so changes to
+selinux_set_labels never re-run do_image. execute_pre_post_process()
+splits on whitespace and ';' alike, so execution is unchanged.
+
+Upstream-Status: Pending
+Assisted-by: claude-code:claude-opus-5-5
+---
+ classes/selinux-image.bbclass | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/classes/selinux-image.bbclass b/classes/selinux-image.bbclass
+index 852db5f6..ab303624 100644
+--- a/classes/selinux-image.bbclass
++++ b/classes/selinux-image.bbclass
+@@ -1,7 +1,15 @@
+ selinux_set_labels() {
+     if [ -f ${IMAGE_ROOTFS}/${sysconfdir}/selinux/config ]; then
+         POL_TYPE=$(sed -n -e "s&^SELINUXTYPE[[:space:]]*=[[:space:]]*\([0-9A-Za-z_]\+\)&\1&p" ${IMAGE_ROOTFS}/${sysconfdir}/selinux/config)
+-        if ! setfiles -m -r ${IMAGE_ROOTFS} ${IMAGE_ROOTFS}/${sysconfdir}/selinux/${POL_TYPE}/contexts/files/file_contexts ${IMAGE_ROOTFS}
++        # Validate contexts against the image's own binary policy. Without -c,
++        # setfiles checks them against the policy loaded on the build host,
++        # which fails on any host running SELinux with a different policy.
++        POL_OPT=""
++        POL_FILE=$(ls ${IMAGE_ROOTFS}/${sysconfdir}/selinux/${POL_TYPE}/policy/policy.* 2>/dev/null | sort -V | tail -n 1)
++        if [ -n "$POL_FILE" ]; then
++            POL_OPT="-c $POL_FILE"
++        fi
++        if ! setfiles -m $POL_OPT -r ${IMAGE_ROOTFS} ${IMAGE_ROOTFS}/${sysconfdir}/selinux/${POL_TYPE}/contexts/files/file_contexts ${IMAGE_ROOTFS}
+         then
+             bbwarn "Failed to set security contexts. Restoring security contexts will run on first boot."
+             echo "# first boot relabelling" > ${IMAGE_ROOTFS}/.autorelabel
+@@ -19,7 +27,7 @@ python selinux_setlabels_handler() {
+     if d.getVar('FIRST_BOOT_RELABEL') == '1':
+         return
+ 
+-    d.appendVar('IMAGE_PREPROCESS_COMMAND', ' selinux_set_labels; ')
++    d.appendVar('IMAGE_PREPROCESS_COMMAND', ' selinux_set_labels ')
+     d.appendVarFlag('do_image', 'depends', ' policycoreutils-native:do_populate_sysroot')
+ }
+ 
+-- 
+2.55.0
+

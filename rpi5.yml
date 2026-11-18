@@ -23,11 +23,9 @@ repos:
 
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
-    # wrynose branch tip, 2026-07-30 (bumped from the yocto-6.0 tag, which was
-    # 281 commits behind: 117 of them CVE fixes covering 205 distinct CVE ids
-    # -- expat x12, vim x9, openssh x9, cups x8, curl x7, gnutls x5, plus
-    # python3, sudo, busybox, libarchive, sqlite3, tar, libpng).
-    commit: f09a0f28aeb54ddd90415dd458338e1565bb5a49
+    # wrynose branch tip. meta-openembedded stays at its own pin below: the
+    # class/python API is stable within wrynose.
+    commit: 0f03c732a0a2d0506b41b1abe60b3f368b2300dc
     layers:
       meta:
 
@@ -46,15 +44,16 @@ repos:
 
   meta-raspberrypi:
     url: https://github.com/agherzan/meta-raspberrypi.git
-    # No wrynose branch upstream (agherzan/meta-raspberrypi#1598); master
-    # carries LAYERSERIES_COMPAT=wrynose. Pinned by commit.
-    branch: master
-    commit: b0f0a6c0bfbf5d0e464c13944dda73fa69f31f6b
+    # wrynose branch tip, pinned by commit.
+    branch: wrynose
+    commit: 919588393f41b48cb6c5d832aa35e58a19b6762d
 
   meta-virtualization:
     url: https://git.yoctoproject.org/meta-virtualization
+    # wrynose branch tip, 2026-11-05. Moves independently of the poky cluster:
+    # it is mostly container-stack CVE fixes and declares no newer oe-core API.
     branch: wrynose
-    commit: 781735b97ae5013cacabbecd38e6da6b510cf3fb
+    commit: 4a9f704d82a8a5d65aaffa598eeaeb86f1cb5b86
 
   # meta-rust-bin dropped: wrynose OE-core ships rust/cargo 1.94.1 (the version
   # meta-rust-bin used to pin), and meta-rust-bin master lacks wrynose
@@ -68,10 +67,38 @@ repos:
   # whenever DISTRO_FEATURES contains "selinux". The distro-features wiring
   # lives in iotgw-common.inc; the kernel-side LSM symbols in
   # security-prod.cfg. See docs/SELINUX.md.
+  #
+  # Pinned on master, not wrynose: master carries the refpolicy 2.20260616
+  # release (systemd-networkd denial fixes, subs_dist /sbin aliasing) and still
+  # declares LAYERSERIES_COMPAT "wrynose". Return to the wrynose branch once it
+  # carries that refpolicy. This is the last wrynose-compatible master commit:
+  # master moved to LAYERSERIES_COMPAT "blacksail" right after it, so later
+  # wrynose-branch fixes are carried below as verbatim upstream patches.
   meta-selinux:
     url: https://git.yoctoproject.org/meta-selinux
-    branch: wrynose
-    commit: 1c3a699f363167571ab39fecb0fe6f56691a4e20
+    branch: master
+    commit: 7351443c6579671bcf048817438f1740ad23eaab
+    patches:
+      # seunshare CVE-2026-59676/59677 from the wrynose branch: CVE_STATUS for
+      # the components that do not build seunshare, and the selinux-sandbox fix.
+      # Drop these when the pin returns to the wrynose branch.
+      0001-cve-2026-59676-status:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0001-selinux-ignore-CVE-2026-59676-in-components-excludin.patch
+      0002-cve-2026-59677-status:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0002-selinux-ignore-CVE-2026-59677-in-components-excludin.patch
+      0003-selinux-sandbox-cve-2026-59676:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0003-selinux-sandbox-fix-CVE-2026-59676.patch
+      0004-selinux-sandbox-cve-2026-59677:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0004-selinux-sandbox-fix-CVE-2026-59677.patch
+      # Build-host independence: label the image against its own policy, not
+      # the policy loaded on the build host (fails on SELinux-enforcing hosts).
+      0005-selinux-image-validate-contexts:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0005-selinux-image-validate-contexts-against-the-image-policy.patch
 
   # Project layer lives in this repo. No url/path: kas resolves it against the
   # repo containing this kas file, so layer paths under `layers:` are relative
@@ -165,5 +192,14 @@ local_conf_header:
     # the shared SSTATE location (not inside build/) so hash-equivalence — and
     # therefore native/cross/allarch sstate — is reused across builds sharing
     # the same SSTATE_DIR.
+    #
+    # Sstate objects are found by unihash, and each hash-equivalence DB hands
+    # out its own unihashes. Builds sharing one SSTATE_DIR only share work when
+    # they also share this DB path; otherwise identical tasks diverge from the
+    # root of the dependency chain. Moving to another DB path is not free: work
+    # already recorded under this DB stops matching (and build/cache/
+    # bb_unihashes.dat must be removed for the move to take effect at all).
+    # Change it together with a layer-pin move, when everything rebuilds
+    # anyway. Measurements: docs/SSTATE_SHARING.md.
     BB_HASHSERVE = "auto"
     BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"

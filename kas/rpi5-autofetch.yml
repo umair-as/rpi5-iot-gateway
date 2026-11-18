@@ -6,7 +6,7 @@ distro: iotgw
 machine: raspberrypi5
 
 target:
-  - iot-gw-image
+  - iot-gw-image-base
 
 repos:
   # Full standalone wrynose stack (SHA-pinned to match rpi5.yml / kas/rauc.yml
@@ -14,17 +14,17 @@ repos:
   # meta-lts-mixins removed for wrynose.
   bitbake:
     url: https://git.openembedded.org/bitbake
-    commit: 33581c84f3a85008239acbd940501a35de48dc91
+    commit: fae9db3168dbff1b8c76fe9c6726a9687ff97514
     layers: {}
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
-    commit: 42fa856a00ac16b2a7a83d7ecfa60a5be192b16c
+    commit: 0f03c732a0a2d0506b41b1abe60b3f368b2300dc
     layers:
       meta:
 
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
-    commit: 420222862f5a6d95023b8f5f3b7e1808b2264ef9
+    commit: 6bf0d8ad57b33950bab4c7f6c037e1ccb6f6e2eb
     layers:
       meta-oe:
       meta-python:
@@ -33,13 +33,35 @@ repos:
 
   meta-raspberrypi:
     url: https://github.com/agherzan/meta-raspberrypi.git
-    branch: master
-    commit: b0f0a6c0bfbf5d0e464c13944dda73fa69f31f6b
+    branch: wrynose
+    commit: 919588393f41b48cb6c5d832aa35e58a19b6762d
 
   meta-virtualization:
     url: https://git.yoctoproject.org/meta-virtualization
     branch: wrynose
-    commit: 781735b97ae5013cacabbecd38e6da6b510cf3fb
+    commit: 4a9f704d82a8a5d65aaffa598eeaeb86f1cb5b86
+
+  # Pin and carried patches mirror rpi5.yml; the rationale lives there.
+  meta-selinux:
+    url: https://git.yoctoproject.org/meta-selinux
+    branch: master
+    commit: 7351443c6579671bcf048817438f1740ad23eaab
+    patches:
+      0001-cve-2026-59676-status:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0001-selinux-ignore-CVE-2026-59676-in-components-excludin.patch
+      0002-cve-2026-59677-status:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0002-selinux-ignore-CVE-2026-59677-in-components-excludin.patch
+      0003-selinux-sandbox-cve-2026-59676:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0003-selinux-sandbox-fix-CVE-2026-59676.patch
+      0004-selinux-sandbox-cve-2026-59677:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0004-selinux-sandbox-fix-CVE-2026-59677.patch
+      0005-selinux-image-validate-contexts:
+        repo: rpi5-iot-gw
+        path: patches/meta-selinux/0005-selinux-image-validate-contexts-against-the-image-policy.patch
 
   meta-secure-core:
     url: https://github.com/Wind-River/meta-secure-core
@@ -132,8 +154,10 @@ local_conf_header:
     # Add Ubuntu 24.04 to tested distributions to avoid warnings
     SANITY_TESTED_DISTROS:append = " ubuntu-24.04"
   hashserve: |
-    # Enable hash equivalence for better sstate reuse
+    # Hash-equivalence DB in the shared SSTATE_DIR, as in rpi5.yml (rationale
+    # there): builds share sstate only when they also share this DB path.
     BB_HASHSERVE = "auto"
+    BB_HASHSERVE_DB_DIR = "${SSTATE_DIR}"
   rauc_providers: |
     PREFERRED_RPROVIDER_virtual-rauc-conf = "rauc-conf-iotgw"
   boot_splash_opt_in: |
