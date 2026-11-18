@@ -257,8 +257,8 @@ for u in ota-certs-provision.service edge-healthd.service bluetooth.service; do
     fi
 done
 if [ "$degraded" -eq 1 ]; then
-    for u in ota-certs-provision.service; do
-        unit_present "$u" || continue
+    u=ota-certs-provision.service
+    if unit_present "$u"; then
         cr=$(systemctl show -p ConditionResult --value "$u")
         ts=$(systemctl show -p ConditionTimestampMonotonic --value "$u")
         if [ "${ts:-0}" = "0" ]; then
@@ -268,7 +268,7 @@ if [ "$degraded" -eq 1 ]; then
         else
             say_fail "$u ran in recovery mode (ConditionResult=$cr)"
         fi
-    done
+    fi
     if systemctl is-active --quiet edge-healthd.service; then
         say_pass "edge-healthd runs in recovery mode"
     else
