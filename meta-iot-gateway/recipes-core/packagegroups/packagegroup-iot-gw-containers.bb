@@ -7,7 +7,11 @@ inherit packagegroup
 # Avoid allarch due to possible dynamic package renames across arches
 PACKAGE_ARCH = "${MACHINE_ARCH}"
 
-# Runtime stack needed to run containers on target.
+# Runtime stack needed to run containers on target. Containers run rootless
+# as the iotgw-ctr principal (iotgw-ctr-user: account, home with the store on
+# /data, linger, Quadlet directory); passt provides pasta, the rootless
+# network helper (slirp4netns is not installed: BAD_RECOMMENDATIONS in
+# iotgw-common.inc).
 # tzdata-core: podman's tz="local" resolves the host /etc/localtime when
 # configuring container timezones and hard-fails when it is absent; the
 # base image ships no zoneinfo at all.
@@ -17,12 +21,12 @@ IOTGW_CONTAINER_RUNTIME_PACKAGES ?= " \
     crun \
     netavark \
     aardvark-dns \
-    slirp4netns \
-    fuse-overlayfs \
+    passt \
     catatonit \
     tzdata-core \
     packagegroup-iot-gw-containers-ops \
     container-host-config \
+    iotgw-ctr-user \
 "
 
 # Optional image/build tooling (adds significant Go/Rust build load).
