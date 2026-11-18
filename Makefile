@@ -1,8 +1,9 @@
 .PHONY: help base dev prod \
-        bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
-        tools-venv test-sign-fit test-sign-fit-softhsm test-sbom-cve \
-        dev-deepx bundle-dev-deepx-full-fit desktop desktop-deepx bundle-desktop-deepx-full-fit \
-        sbom-cve cve-report sbom-report layers parse clean-lock hooks
+        bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm sign-slot-fits-yk sign-slot-fits-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
+        tools-venv test-sign-fit test-sign-fit-softhsm test-sbom-cve test-kernel-fragment-gate test-boot-scripts \
+        test-selinux-policy \
+        desktop bundle-desktop-full-fit \
+        sbom-cve cve-report sbom-report layers parse clean-lock hooks kernel-hardening-report
 
 KAS ?= kas
 
@@ -36,10 +37,23 @@ SBOM_CVE_IMAGE ?= iot-gw-image-dev
 # Default to RAUC builds always; prefer local RAUC config if present
 BASE ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
 
+# The DX-M1 card is part of the platform: base, dev and desktop always build
+# with the DeepX layer and IOTGW_ENABLE_DEEPX_DXM1 = 1 (set by kas/deepx.yml).
+# Prod uses $(BASE) without it until the module-signing key is protected
+# (docs/DEEPX_DXM1.md). IMAGE_KAS is the chain for every non-prod target.
+DEEPX_KAS ?= kas/deepx.yml
+IMAGE_KAS = $(BASE):$(DEEPX_KAS)
+
+# dev/desktop/prod kernels differ, but share work-shared kernel-build-artifacts.
+# After a build in another composition, make-mod-scripts keeps a current stamp
+# for an artifacts tree the other kernel has since recreated, and dx-driver
+# then fails with "No rule to make target 'modules'". Cleaning it first costs a
+# kernel `make prepare` and does not change any task signature.
+MOD_SCRIPTS_RESET = bitbake make-mod-scripts -c clean &&
+
 # Export optional toggles so users can do:
 #   IOTGW_ENABLE_OTBR=1 make dev|prod|bundle-*
 export IOTGW_ENABLE_OTBR
-export IOTGW_ENABLE_CONTAINERS
 export IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS
 export IOTGW_ENABLE_BTF_CORE_DEV
 export IOTGW_ENABLE_DEEPX_DXM1
@@ -51,7 +65,7 @@ $(KAS_WORK_DIR):
 	@mkdir -p $@
 
 help:
-	@echo "Targets (RAUC-enabled by default):"
+	@echo "Targets (RAUC-enabled by default; base/dev/desktop carry the DX-M1 stack, prod does not yet):"
 	@echo "  -- Images --"
 	@echo "  make dev                          # Developer image"
 	@echo "  make prod                         # Production image (WIC intermediate under release-trust)"
@@ -59,18 +73,16 @@ help:
 	@echo "  -- Bundles (rootfs + signed FIT boot assets) --"
 	@echo "  make bundle-dev-full-fit          # FIT bundle from dev image"
 	@echo "  make bundle-dev-full-fit-resign   # Re-assemble dev bundle around HSM-signed FIT (unattended)"
-	@echo "  make bundle-prod-full-fit         # FIT bundle from prod image (release trust)"
-	@echo "  make bundle-prod-full-fit-resign  # Re-assemble prod bundle around YK-signed FIT [FINAL RELEASE ARTIFACT]"
-	@echo "  -- DX-M1 accelerator (composes kas/deepx.yml) --"
-	@echo "  make dev-deepx                    # Dev image with the DX-M1 stack"
-	@echo "  make bundle-dev-deepx-full-fit    # FIT bundle from the DX-M1 dev image (OTA-installable)"
+	@echo "  make bundle-prod-full-fit         # Release bundle from prod image (run after sign-slot-fits-yk) [RELEASE ARTIFACT]"
+	@echo "  make bundle-prod-full-fit-resign  # Re-assemble prod bundle around a YK-signed bootfiles FIT (not the slot-FIT release flow)"
 	@echo "  -- Desktop LAB variant (NOT hardened) --"
-	@echo "  make desktop                      # Weston/HDMI lab image"
-	@echo "  make desktop-deepx                # Lab image + DX-M1 demo stack (on-screen inference)"
-	@echo "  make bundle-desktop-deepx-full-fit # FIT bundle from the lab image (OTA-installable)"
+	@echo "  make desktop                      # Weston/HDMI lab image + DX-M1 demo stack (on-screen inference)"
+	@echo "  make bundle-desktop-full-fit      # FIT bundle from the lab image (OTA-installable)"
 	@echo "  -- HSM detached signing (operator; PIN/touch) --"
 	@echo "  make sign-bootfiles-fit-yk        # Re-sign FIT in deploy tarball on YubiKey (interactive)"
 	@echo "  make sign-bootfiles-fit-softhsm   # Re-sign FIT in deploy tarball via SoftHSM (dev only)"
+	@echo "  make sign-slot-fits-yk            # Re-sign an image's dm-verity slot FITs (a+b) with the YubiKey (SLOT_FITS_IMAGE=)"
+	@echo "  make sign-slot-fits-softhsm       # Same via SoftHSM (dev only)"
 	@echo "  -- Host-side signing env (uv-based) --"
 	@echo "  make tools-venv                   # Sync .venv via uv (run once or after dep bumps)"
 	@echo "  make test-sign-fit                # Run signing-tool tests (no SoftHSM required)"
@@ -80,42 +92,47 @@ help:
 	@echo "  make cve-report                   # Summarise the CVE report (buckets, kernel split, CVE_STATUS scaffold)"
 	@echo "  make sbom-report                  # Summarise the SBOM (license inventory + HIGH-risk review)"
 	@echo "  make test-sbom-cve                # Run sbom-cve report/cohort tests (fixtures, no build)"
+	@echo "  make test-kernel-fragment-gate    # Run kernel fragment-gate tests (no build)"
+	@echo "  make test-boot-scripts            # Run RAUC hook + pre-init shell tests (no device)"
+	@echo "  make test-selinux-policy          # Run policy source-check tests (no build)"
 	@echo "  -- Utilities --"
 	@echo "  make hooks                        # Enable the repo git hooks (run once per clone)"
 	@echo "  make layers                       # Show layers for RAUC stack"
 	@echo "  make parse                        # Parse-only for RAUC stack"
+	@echo "  make kernel-hardening-report      # kernel-hardening-checker report on the prod kernel .config (report-only)"
 	@echo "  make clean-lock                   # Remove stale bitbake.lock"
 
 # One kas + bitbake invocation for every image / bundle / report target.
-# Forwards the IOTGW_ENABLE_* feature toggles into the kas shell env (and
+# Exports the IOTGW_ENABLE_* feature toggles into the kas shell env (and
 # whitelists them — plus BUNDLE_IMAGE_NAME for bundle targets — for bitbake
 # passthrough), then composes the kas overlay chain.
-#   $(1) = bitbake invocation       (e.g. "bitbake iot-gw-image-dev",
-#                                     "bitbake -C do_configure iot-gw-bundle-full-fit")
+#   $(1) = bitbake invocation(s)    (e.g. "bitbake iot-gw-image-dev",
+#                                     "bitbake -C do_configure iot-gw-bundle-full-fit";
+#                                     the env is exported, so an `a && b` chain
+#                                     gives both commands the same toggles)
 #   $(2) = kas overlay chain        (e.g. $(BASE), $(PROD_KAS_OVERLAYS), $(BASE):$(CVE_KAS))
 #   $(3) = BUNDLE_IMAGE_NAME value  (optional; empty for plain image / report builds)
 define iotgw_bitbake
-  $(KAS) shell -c 'BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS$(if $(3), BUNDLE_IMAGE_NAME) IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_DEEPX_DXM1" \
+  $(KAS) shell -c 'export BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS$(if $(3), BUNDLE_IMAGE_NAME) IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_DEEPX_DXM1" \
                    $(if $(3),BUNDLE_IMAGE_NAME=$(3)) IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
-                   IOTGW_ENABLE_CONTAINERS=$(IOTGW_ENABLE_CONTAINERS) \
                    IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-                   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
+                   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV); \
                    $(1)' $(2)
 endef
 
 PROD_KAS_OVERLAYS = $(BASE)$(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),:$(UBOOT_PROD_HARDENING_KAS))$(if $(wildcard $(FIT_RELEASE_TRUST_KAS)),:$(FIT_RELEASE_TRUST_KAS))
 
 base: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-image-base,$(BASE))
+	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-image-base,$(IMAGE_KAS))
 
 dev: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-image-dev,$(BASE))
+	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-image-dev,$(IMAGE_KAS))
 
 prod: | $(KAS_WORK_DIR)
 	$(call iotgw_bitbake,bitbake iot-gw-image-prod,$(PROD_KAS_OVERLAYS))
 
 bundle-dev-full-fit: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-bundle-full-fit,$(BASE),iot-gw-image-dev)
+	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-bundle-full-fit,$(IMAGE_KAS),iot-gw-image-dev)
 
 # Detached HSM signing flow. The build and the HSM-signing step run in
 # separate processes — possibly on separate machines — so CI runners
@@ -175,6 +192,25 @@ sign-bootfiles-fit-softhsm: export SOFTHSM2_CONF ?= $(CURDIR)/keys/dev/softhsm/s
 sign-bootfiles-fit-softhsm:
 	$(UV) run python scripts/fit-signing/sign_fit.py sign-bootfiles --profile softhsm-dev $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
 
+# Runtime dm-verity: re-sign an image's two slot FITs (<image>.fitImage-a/-b)
+# as a pair with the operator's key. Stage 2 of the release flow in
+# docs/FIT_BOOT_SIGNING.md: after `make prod` (or bundle-prod-full-fit, whose
+# assembly gate refuses file-signed FITs), before re-running the bundle target.
+# Operator-run only (PIN/touch); never a prerequisite of another target.
+#   make sign-slot-fits-yk [SLOT_FITS_IMAGE=iot-gw-image-dev] [SIGN_SLOT_FITS_ARGS='--force']
+SLOT_FITS_IMAGE ?= iot-gw-image-prod
+SLOT_FITS_MACHINE ?= raspberrypi5
+SLOT_FITS_DEPLOY = $(KAS_BUILD_DIR)/tmp/deploy/images/$(SLOT_FITS_MACHINE)
+SIGN_SLOT_FITS_ARGS ?=
+SIGN_SLOT_FITS = $(UV) run python scripts/fit-signing/sign_fit.py sign-slot-fits \
+	--image $(SLOT_FITS_IMAGE)-$(SLOT_FITS_MACHINE).rootfs --deploy-dir $(SLOT_FITS_DEPLOY) \
+	--archive $(SLOT_FITS_DEPLOY)/bootfiles-fit.tar.gz $(SIGN_SLOT_FITS_ARGS)
+sign-slot-fits-yk:
+	$(SIGN_SLOT_FITS) --profile yubikey-9a
+sign-slot-fits-softhsm: export SOFTHSM2_CONF ?= $(CURDIR)/keys/dev/softhsm/softhsm2.conf
+sign-slot-fits-softhsm:
+	$(SIGN_SLOT_FITS) --profile softhsm-dev
+
 # Host-side Python environment (uv-based). Used by the operator signing
 # tools and tests; Yocto/BitBake builds do not depend on this venv.
 tools-venv:
@@ -191,8 +227,17 @@ test-sign-fit-softhsm:
 test-sbom-cve:
 	$(UV) run pytest scripts/sbom-cve/tests/
 
+test-kernel-fragment-gate:
+	$(UV) run pytest scripts/kernel/tests/
+
+test-boot-scripts:
+	$(UV) run pytest scripts/ota/tests/ scripts/preinit/tests/ scripts/sshd/tests/
+
+test-selinux-policy:
+	$(UV) run pytest scripts/selinux/tests/
+
 bundle-dev-full-fit-resign: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(BASE),iot-gw-image-dev)
+	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(IMAGE_KAS),iot-gw-image-dev)
 
 # Release bundles. PROD_KAS_OVERLAYS composes kas/fit-release-trust.yml,
 # so iot-gw-image-prod builds with the release FIT trust profile
@@ -210,67 +255,32 @@ bundle-prod-full-fit: | $(KAS_WORK_DIR)
 bundle-prod-full-fit-resign: | $(KAS_WORK_DIR)
 	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(PROD_KAS_OVERLAYS),iot-gw-image-prod)
 
-# SBOM + CVE reporting. Builds SBOM_CVE_IMAGE with the kas/cve.yml overlay
-# composed onto BASE, emitting wrynose SPDX SBOM + cve-check reports into the
-# deploy dir. Split out from the image/bundle targets because CVE/SBOM report
-# generation is slow and should be opt-in, not on every build.
-# DX-M1 accelerator development image: composes the DeepX overlay and enables
-# the feature. Exists so nobody has to hand-roll a raw kas invocation — passing
-# IOTGW_ENABLE_DEEPX_DXM1 as a bare env var to `kas shell` silently does
-# nothing, because bitbake filters the environment unless the variable is also
-# in BB_ENV_PASSTHROUGH_ADDITIONS (which iotgw_bitbake handles).
-#
-# Produces a dev image whose kernel and DX-M1 modules come from the SAME build.
-# That matters: the module signing key is autogenerated per kernel build, so a
-# module is only loadable by the kernel it was built alongside.
-DEEPX_KAS ?= kas/deepx.yml
-dev-deepx: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-image-dev,$(BASE):$(DEEPX_KAS))
-
-# RAUC bundle built from the DX-M1 dev image.
-#
-# Deliberately NOT reusing bundle-dev-full-fit: that target composes $(BASE)
-# only, so meta-deepx-m1 is absent and it silently produces a bundle with no
-# accelerator in it — a failure that only shows up on target, after an install.
-#
-# full-fit (not a rootfs-only bundle) is required, not a preference. It sets
-# IOTGW_RAUC_UPDATE_BOOTFILES=1, so the bundle carries the FIT kernel and
-# cmdline.txt alongside the rootfs. The kernel's module-signing key is
-# AUTOGENERATED per kernel build, so a rootfs-only update would deliver modules
-# signed by a key the running kernel does not have — they would fail to load
-# with EKEYREJECTED and the accelerator would go quietly dead.
-bundle-dev-deepx-full-fit: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-bundle-full-fit,$(BASE):$(DEEPX_KAS),iot-gw-image-dev)
-
 # Desktop LAB variant. NOT a hardened/shipping image — see the recipe SUMMARY.
 #
 # These targets exist because `kas build kas/desktop.yml`, which AGENTS.md
 # documents, has two silent traps:
 #
-#  1. kas/desktop.yml includes only kas/rauc.yml, never kas/local.yml, so the
+#  1. kas/desktop.yml includes kas/rauc.yml and kas/deepx.yml, never kas/local.yml, so the
 #     operator FIT signing key is absent and the build hard-fails at u-boot
 #     do_configure (iotgw-fit-signing-guard.bbclass). Composing $(BASE) fixes it.
-#  2. kas/desktop.yml:16 and kas/local.yml:72 BOTH assign IOTGW_KERNEL_FEATURES
-#     with `=`, not `+=`. Whichever kas emits last wins, so one of the two
-#     feature sets is silently discarded. Pinning the composition order here at
-#     least makes the outcome deterministic and reviewable in one place.
+#  2. kas/desktop.yml and kas/local.yml can BOTH assign IOTGW_KERNEL_FEATURES
+#     with `=`. Whichever kas emits last wins, so a local assignment replaces
+#     the desktop list (desktop adds igw_desktop via :append, which survives
+#     only if local.yml does not reassign). Pinning the composition order here
+#     makes the outcome deterministic and reviewable in one place.
+#
+# The desktop is the on-screen AI demo station, so kas/desktop.yml includes
+# kas/deepx.yml: there is no desktop build without the DX-M1 stack.
 DESKTOP_KAS ?= kas/desktop.yml
 desktop: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-image-desktop,$(BASE):$(DESKTOP_KAS))
+	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-image-desktop,$(BASE):$(DESKTOP_KAS))
 
-# Desktop + the DX-M1 demo stack: dx-rt, the dx-stream GStreamer elements and
-# the sample payload, on a Weston image that can actually display the pipeline.
-# The accelerator packagegroup is gated on IOTGW_ENABLE_DEEPX_DXM1, which
-# kas/deepx.yml sets — composing the layer is what enables it.
-desktop-deepx: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-image-desktop,$(BASE):$(DESKTOP_KAS):$(DEEPX_KAS))
-
-# RAUC bundle built FROM the desktop+DX-M1 lab image, so an iteration on that
+# RAUC bundle built FROM the desktop lab image, so an iteration on that
 # image can be delivered to the other slot instead of re-flashing the card.
 #
-# Same two rules as bundle-dev-deepx-full-fit, for the same reasons:
-#  * the kas composition must carry $(DESKTOP_KAS):$(DEEPX_KAS), or the bundle
-#    is silently built without the desktop stack or the accelerator;
+# Two rules, shared with bundle-dev-full-fit:
+#  * the kas composition must carry $(DESKTOP_KAS), or the bundle is silently
+#    built without the desktop stack or the accelerator;
 #  * full-fit, not rootfs-only. With IOTGW_MODULE_SIG_KEY_FILE unset the
 #    module-signing key is autogenerated per kernel build, so a rootfs-only
 #    bundle would ship DX-M1 modules signed by a key the running kernel does
@@ -284,11 +294,16 @@ desktop-deepx: | $(KAS_WORK_DIR)
 # BUNDLE_IMAGE_NAME (3rd macro arg) overrides the recipe's iot-gw-image-dev
 # default and lands in BUNDLE_BASENAME, so the artifact is distinguishable in
 # DEPLOY_DIR_IMAGE rather than overwriting the dev bundle.
-bundle-desktop-deepx-full-fit: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-bundle-full-fit,$(BASE):$(DESKTOP_KAS):$(DEEPX_KAS),iot-gw-image-desktop)
+bundle-desktop-full-fit: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-bundle-full-fit,$(BASE):$(DESKTOP_KAS),iot-gw-image-desktop)
 
+# SBOM + CVE reporting. Builds SBOM_CVE_IMAGE with the kas/cve.yml overlay
+# composed onto IMAGE_KAS (the dev composition, DX-M1 included), emitting
+# wrynose SPDX SBOM + cve-check reports into the deploy dir. Split out from the
+# image/bundle targets because CVE/SBOM report generation is slow and should be
+# opt-in, not on every build.
 sbom-cve: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake $(SBOM_CVE_IMAGE),$(BASE):$(CVE_KAS))
+	$(call iotgw_bitbake,bitbake $(SBOM_CVE_IMAGE),$(IMAGE_KAS):$(CVE_KAS))
 
 # Host-side report readers over the sbom-cve-check deploy artifacts. Stdlib-only
 # Python (no venv), read-only — run after `make sbom-cve` produced the reports.
@@ -307,10 +322,13 @@ sbom-report:
 	python3 scripts/sbom-cve/sbom-report.py $(SBOM_REPORT_ARGS)
 
 layers: | $(KAS_WORK_DIR)
-	$(KAS) shell -c 'bitbake-layers show-layers' $(BASE)
+	$(KAS) shell -c 'bitbake-layers show-layers' $(IMAGE_KAS)
 
 parse: | $(KAS_WORK_DIR)
-	$(KAS) shell -c 'bitbake -p' $(BASE)
+	$(KAS) shell -c 'bitbake -p' $(IMAGE_KAS)
+
+kernel-hardening-report: | $(KAS_WORK_DIR)
+	$(call iotgw_bitbake,bitbake virtual/kernel -c iotgw_khc_report,$(PROD_KAS_OVERLAYS))
 
 clean-lock:
 	rm -f build/bitbake.lock
@@ -322,4 +340,4 @@ hooks:
 	@git config core.hooksPath scripts/hooks
 	@echo "core.hooksPath -> scripts/hooks"
 	@echo "  pre-commit  : refuse staged private-key / keys/ material"
-	@echo "  commit-msg  : enforce the Conventional Commit subject (AGENTS.md)"
+	@echo "  commit-msg  : enforce the Conventional Commit subject and body cap (AGENTS.md)"

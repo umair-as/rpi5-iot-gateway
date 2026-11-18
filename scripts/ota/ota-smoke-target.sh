@@ -8,40 +8,24 @@
 # and CI consumption.
 #
 # Usage:
-#   # On target directly:
+#   # On target directly (with lib/target-check.sh copied to ../lib):
 #   sudo ./ota-smoke-target.sh
 #
 #   # From host over SSH (no copy needed):
-#   ssh <gw> 'sudo bash -s' < scripts/ota/ota-smoke-target.sh
+#   cat scripts/lib/target-check.sh scripts/ota/ota-smoke-target.sh | ssh <gw> 'sudo bash -s'
 #
 # Pairs with:
 #   scripts/ota/ota-certs-sync.sh    — operator workflow to provision OTA certs
 #   scripts/ota/ota-bench-target.sh  — OTA throughput / install-time benchmark
 
 set -u
-PASS=0
-FAIL=0
-SKIP=0
 
-say_pass() { printf '  \e[32mPASS\e[0m %s\n' "$1"; PASS=$((PASS+1)); }
-say_fail() { printf '  \e[31mFAIL\e[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
-say_skip() { printf '  \e[33mSKIP\e[0m %s — %s\n' "$1" "${2:-}"; SKIP=$((SKIP+1)); }
-section()  { printf '\n== %s ==\n' "$1"; }
-
-# Run a command, pass if exit 0
-check() {
-    local name="$1"; shift
-    if "$@" >/dev/null 2>&1; then say_pass "$name"; else say_fail "$name"; fi
-}
-
-# Run a command, capture stdout, pass if matches regex
-check_match() {
-    local name="$1" regex="$2"; shift 2
-    local out
-    out=$("$@" 2>/dev/null) || { say_fail "$name (command failed)"; return; }
-    if printf '%s' "$out" | grep -qE "$regex"; then say_pass "$name"
-    else say_fail "$name (no match for '$regex')"; fi
-}
+# Reporting helpers: streamed ahead of this script by run-target-checks.sh,
+# otherwise sourced from the repo layout.
+if ! command -v say_pass >/dev/null 2>&1; then
+    # shellcheck source=../lib/target-check.sh
+    . "$(dirname -- "${BASH_SOURCE[0]:-$0}")/../lib/target-check.sh" || exit 2
+fi
 
 # ---------------------------------------------------------------------------
 section "RAUC slot accounting"
@@ -146,12 +130,16 @@ else
     say_fail "/sys/class/rtc/rtc0/name unreadable"
 fi
 
-# RP1 SPI0 controller (patch linux/files/0003)
+# RP1 SPI0 controller (patch linux/files/0003). The patch ships only with the
+# TPM profile (IOTGW_ENABLE_TPM), so a DT without any spi@ node is a
+# TPM-off build, not a failure.
 if ls /sys/class/spi_master/spi* >/dev/null 2>&1; then
     n=$(ls /sys/class/spi_master/ | wc -l)
     say_pass "$n SPI master(s) registered"
+elif [ -z "$(find /proc/device-tree -name 'spi@*' 2>/dev/null | head -1)" ]; then
+    say_skip "SPI masters" "no spi@ node in the device tree — TPM profile off in this build"
 else
-    say_fail "no SPI masters under /sys/class/spi_master/ — RP1 SPI0 patch not applied?"
+    say_fail "no SPI masters under /sys/class/spi_master/ although the device tree has an spi@ node"
 fi
 
 # TPM on RP1 SPI0 CS1 (patch linux/files/0004 + iotgw-common.inc gate)
@@ -161,7 +149,7 @@ if [ -e /dev/tpm0 ]; then
         check "tpm2_getcap properties-fixed responds" tpm2_getcap properties-fixed
     fi
 else
-    say_skip "/dev/tpm0" "absent — IOTGW_ENABLE_TPM_SLB9672 likely disabled in this build"
+    say_skip "/dev/tpm0" "absent — IOTGW_ENABLE_TPM likely disabled in this build"
 fi
 
 # VCIO mailbox userspace driver (patch linux/files/0006)
@@ -209,7 +197,7 @@ case "$state" in
 esac
 
 # Services we care about (only check those expected on this image)
-for svc in iotgw-provision.service rauc.service iotgw-nftables.service; do
+for svc in rauc.service iotgw-nftables.service; do
     if systemctl list-unit-files "$svc" >/dev/null 2>&1 && systemctl cat "$svc" >/dev/null 2>&1; then
         if systemctl is-active --quiet "$svc" || systemctl is-enabled --quiet "$svc" 2>/dev/null; then
             say_pass "$svc present and active/enabled"
@@ -222,7 +210,7 @@ for svc in iotgw-provision.service rauc.service iotgw-nftables.service; do
     fi
 done
 
-# SSH is socket-activated and hardened in this layer (sshd.socket).
+# SSH runs as the sshd.service daemon in this layer (sshd -D).
 # Accept any of the conventional unit names being active or enabled.
 ssh_unit=
 for svc in sshd.socket sshd.service openssh-sshd.service ssh.service; do
@@ -302,12 +290,21 @@ section "Quick dmesg sanity"
 #   - dw_spi_mmio DMA init failure (driver falls back to PIO, SPI still works)
 #   - Infineon SLB9670/9672 self-test error (256) — kernel does manual startup, recovers
 benign='brcm-pcie.*link down|dw_spi_mmio.*DMA init failed|tpm tpm0: A TPM error \(256\) occurred attempting the self test|no PMU driver|will be ignored'
-err_count=$(journalctl -k -p err --no-pager -b 2>/dev/null | grep -vE "$benign" | wc -l)
+# DEEPX DX-M1 vendor driver, dx-driver 2.6.0 (SRCREV 7074748e): a successful
+# probe of the card on the external PCIe port logs these three lines at err
+# level. Matched as whole messages, so any other dx_dma_pcie or debugfs error
+# still fails. Re-check the exact text on every dx-driver re-pin.
+dx_probe_noise='dx_dma_pcie 0001:01:00\.0: dw->dx_ver: 3
+debugfs: '\''0001:01:00\.0'\'' already exists in '\''dmaengine'\''
+dx_dma_pcie 0001:01:00\.0: \[dx_dma_pcie_probe\] Probe Done!!'
+kernel_errs=$(journalctl -k -p err --no-pager -q -b -o cat 2>/dev/null \
+    | grep -vE "$benign" | grep -vxE "$dx_probe_noise")
+err_count=$(printf '%s' "$kernel_errs" | grep -c .)
 if [ "$err_count" -eq 0 ]; then
     say_pass "no kernel errors at level err+ this boot"
 else
     say_fail "$err_count kernel error lines this boot (journalctl -k -p err -b)"
-    journalctl -k -p err --no-pager -b 2>/dev/null | head -10 | sed 's/^/      /'
+    printf '%s\n' "$kernel_errs" | head -10 | sed 's/^/      /'
 fi
 
 # ---------------------------------------------------------------------------
@@ -394,15 +391,20 @@ case "$ctx" in
     *)             say_skip "/etc/passwd context" "unexpected context '$ctx'" ;;
 esac
 
-# AVC denials this boot — informational in permissive mode (logged, not blocked).
-# Surfaced for policy triage before any enforcing flip; not a failure here.
-if command -v journalctl >/dev/null 2>&1; then
-    avc=$(journalctl -k -b --no-pager 2>/dev/null | grep -c 'avc:[[:space:]]*denied')
+# AVC denials this boot. Once auditd runs, denials go to audit.log and stop
+# reaching the kernel log, so the kernel log cannot show that there were none.
+# ausearch reads stdin when it is not a terminal: --input-logs and /dev/null
+# keep it on the logs when this script is streamed over SSH. A non-zero count
+# is listed for triage, not a failure here. staff_t cannot read audit.log.
+if [ -r /var/log/audit/audit.log ] && command -v ausearch >/dev/null 2>&1; then
+    avc=$(ausearch --input-logs -m avc,user_avc -ts boot </dev/null 2>/dev/null | grep -c 'avc:[[:space:]]*denied')
     if [ "${avc:-0}" -eq 0 ]; then
         say_pass "no AVC denials logged this boot"
     else
-        say_skip "AVC denials" "$avc this boot — review before enforcing (journalctl -k -b | grep 'avc:  denied')"
+        say_skip "AVC denials" "$avc this boot in audit.log; review them"
     fi
+else
+    say_skip "AVC denials" "audit.log not readable from this domain"
 fi
 
 # ---------------------------------------------------------------------------
@@ -477,8 +479,8 @@ section "/var narrowing & /data persistence"
 # onto dedicated /data-backed binds/redirects. This block asserts the narrowed
 # shape; on a pre-narrowing image (/var still overlaid) it SKIPs cleanly.
 
-# Read the true fstype from PID1's view — the SSH session's mount namespace can
-# misreport mounts.
+# Read the fstype through PID1's root, so the answer does not depend on the
+# calling shell's mount namespace.
 vv_fs=$(stat -f -c %T /proc/1/root/var/volatile 2>/dev/null)
 [ -z "$vv_fs" ] && vv_fs=$(stat -f -c %T /var/volatile 2>/dev/null)
 
@@ -524,7 +526,7 @@ else
     command -v journalctl >/dev/null 2>&1 && du=$(journalctl --disk-usage 2>/dev/null) && [ -n "$du" ] && say_pass "journald: $du"
 
     # The /data persistence set (must-exist backing dirs).
-    for d in /data/log /data/log/journal /data/log/audit /data/ssh /data/mosquitto; do
+    for d in /data/log /data/log/journal /data/log/audit /data/ssh; do
         if [ -d "$d" ]; then say_pass "backing dir present: $d"; else say_fail "backing dir missing: $d"; fi
     done
     # Feature/state-dependent dirs — SKIP when the feature/pairing has not populated them.
@@ -557,9 +559,4 @@ fi
 # ota-certs-provision provisioning workflow). Not re-checked here.
 
 # ---------------------------------------------------------------------------
-printf '\n== summary ==\n'
-printf '  PASS: %d\n' "$PASS"
-printf '  FAIL: %d\n' "$FAIL"
-printf '  SKIP: %d\n' "$SKIP"
-
-[ "$FAIL" -eq 0 ]
+summary

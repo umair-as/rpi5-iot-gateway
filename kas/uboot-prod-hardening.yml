@@ -1,10 +1,36 @@
 header:
   version: 18
 
+# Production composition overlay. Composed automatically by the Makefile's
+# prod targets (PROD_KAS_OVERLAYS); the prod hygiene gate in
+# iotgw-rootfs.bbclass fails the image build when its effect is missing, so a
+# prod image built from any other composition does not pass silently.
+#
+# kas writes local_conf_header blocks into local.conf sorted by KEY NAME, not
+# by overlay order (kas/config.py, _get_conf_header). A plain "=" here only
+# wins over kas/local.yml when this block's key sorts after local.yml's key
+# for the same variable; ":append" and ":remove" are applied at finalisation
+# and are immune to that ordering, so they are used wherever possible.
 local_conf_header:
   uboot_prod_hardening: |
-    # Production U-Boot profile: keep command-surface reduction enabled, enforce
-    # signed FIT images, arm the pre-Linux watchdog, and add appliance lockdown.
-    # Global (reaches the u-boot recipe); hard-set, so it re-lists the base tokens
-    # from IOTGW_UBOOT_FEATURES in iotgw-common.inc — keep the two in sync.
-    IOTGW_UBOOT_FEATURES = "surface_reduce fit_enforce watchdog appliance_lockdown"
+    # Production U-Boot profile: on top of the distro default (surface_reduce
+    # fit_enforce watchdog, iotgw-common.inc), lock the appliance gate
+    # variables against mutation from the U-Boot console. Global, so the
+    # u-boot recipe (cfg/patch selection, prod key guard), the bootfiles
+    # recipe (bundle env self-heal) and the image (prod hygiene gate) all
+    # read the same token list.
+    IOTGW_UBOOT_FEATURES:append = " appliance_lockdown"
+  prod_hygiene: |
+    # Dev-only toggles kas/local.yml may leave on. The prod image gate
+    # (iotgw-rootfs.bbclass) fails the build if any still reaches prod.
+    # The "=" lines depend on "prod_hygiene" sorting after local.yml's toggle
+    # keys (btf_core_dev_toggle, crash_debug_toggle); the gate is the backstop.
+    IOTGW_ENABLE_CRASH_DEBUG_DEV = "0"
+    IOTGW_ENABLE_BTF_CORE_DEV = "0"
+    # Dev kernel fragments: eBPF/ftrace/kprobes (observability), SysRq/lockup
+    # detectors/dynamic debug (crash-debug), DWARF/BTF (CO-RE). The kernel is
+    # one recipe per composition, so kas/local.yml's IOTGW_KERNEL_FEATURES
+    # would otherwise reach the prod kernel unchanged.
+    IOTGW_KERNEL_FEATURES:remove = "igw_observability_dev igw_crash_debug_dev igw_btf_core_dev"
+    # Prod cannot be switched to permissive at runtime.
+    IOTGW_KERNEL_FEATURES:append = " igw_selinux_locked"
