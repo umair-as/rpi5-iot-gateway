@@ -29,8 +29,14 @@
 -w /etc/crontab             -p wa -k cron
 -w /etc/cron.d              -p wa -k cron
 
-## SSH server config
--w /etc/ssh/sshd_config     -p wa -k sshd
+## SSH server config. sshd runs with -f /etc/ssh/sshd_config_readonly
+## (SSHD_OPTS in /etc/default/ssh, written by the read-only-rootfs image
+## feature), and the policy lives in the drop-ins that file includes; the
+## stock sshd_config is kept under watch for a daemon started by hand.
+-w /etc/ssh/sshd_config          -p wa -k sshd
+-w /etc/ssh/sshd_config_readonly -p wa -k sshd
+-w /etc/ssh/sshd_config.d        -p wa -k sshd
+-w /etc/default/ssh              -p wa -k sshd
 
 ## systemd configuration directory
 -w /etc/systemd             -p wa -k systemd

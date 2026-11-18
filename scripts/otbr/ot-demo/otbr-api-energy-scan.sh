@@ -6,7 +6,8 @@ set -euo pipefail
 # Usage:
 #   scripts/otbr/ot-demo/otbr-api-energy-scan.sh
 #   scripts/otbr/ot-demo/otbr-api-energy-scan.sh --channels 11,12,13,14 --count 1 --period 32
-#   BASE_URL=http://<otbr-host>:8081 scripts/otbr/ot-demo/otbr-api-energy-scan.sh
+#   ssh -N -L 8081:127.0.0.1:8081 <otbr-host> &   # REST binds the gateway's loopback
+#   scripts/otbr/ot-demo/otbr-api-energy-scan.sh
 
 BASE_URL="${BASE_URL:-http://127.0.0.1:8081}"
 JQ="${JQ:-jq}"

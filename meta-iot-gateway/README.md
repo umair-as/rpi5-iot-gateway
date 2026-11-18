@@ -16,10 +16,9 @@
 
 This layer provides IoT gateway packages and configurations used by this project:
 
-- 📡 **MQTT** — Mosquitto broker and clients for messaging
-- 📊 **Time-Series Databases** — Optimized for sensor data
-- 🐳 **Container Runtime** — Podman, Buildah, Skopeo support
-- 🔌 **IoT Protocols** — MQTT and Thread/OTBR support
+- 🐳 **Container Runtime** — rootless Podman (dedicated service account, `pasta` networking); Buildah/Skopeo opt-in
+- 🔌 **IoT Protocols** — Thread/OTBR (OpenThread Border Router)
+- 📊 **Observability** — edge-healthd; Telegraf/InfluxDB recipes opt-in
 
 ---
 

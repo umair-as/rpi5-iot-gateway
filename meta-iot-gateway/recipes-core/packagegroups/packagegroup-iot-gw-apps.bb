@@ -1,5 +1,5 @@
 SUMMARY = "IoT GW Applications package group"
-DESCRIPTION = "IoT gateway services: MQTT, protocols, DB, monitoring, Node.js"
+DESCRIPTION = "IoT gateway services: protocols, DB, monitoring, Node.js"
 LICENSE = "MIT"
 
 inherit packagegroup
@@ -9,7 +9,6 @@ PACKAGE_ARCH = "${MACHINE_ARCH}"
 
 PACKAGES = " \
     ${PN} \
-    ${PN}-mqtt \
     ${PN}-protocols \
     ${PN}-database \
     ${PN}-monitoring \
@@ -17,7 +16,6 @@ PACKAGES = " \
 "
 
 RDEPENDS:${PN} = " \
-    ${PN}-mqtt \
     ${PN}-protocols \
     ${PN}-database \
     ${PN}-monitoring \
@@ -26,15 +24,9 @@ RDEPENDS:${PN} = " \
 # Optional slices (enable per-image as needed)
 # - ${PN}-node-runtime: Node.js runtime for on-host apps
 
-RDEPENDS:${PN}-mqtt = " \
-    mosquitto \
-    mosquitto-clients \
-"
-
 RDEPENDS:${PN}-protocols = " \
     curl \
     wget \
-    nmap \
 "
 
 RDEPENDS:${PN}-database = " \

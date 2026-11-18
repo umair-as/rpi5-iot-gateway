@@ -401,6 +401,13 @@ if [ "${DIRECT_MODE}" -eq 0 ] && [ "${NO_SYSTEMD_RUN}" -eq 0 ]; then
             exit 130
         ' INT TERM
 
+        # systemd-run --pipe hands our descriptors to PID 1 over D-Bus. A
+        # terminal held under sudo cannot make that trip (the bus resets the
+        # connection), so give it pipes instead.
+        if [ -n "${SUDO_USER:-}" ]; then
+            exec </dev/null > >(cat) 2>&1
+        fi
+
         if systemd-run --quiet --wait --collect --pipe \
                 --unit "${unit}" \
                 --property=NoNewPrivileges=yes \

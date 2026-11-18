@@ -20,8 +20,6 @@ IMAGE_FEATURES += " \
 # Core packages and developer tools
 CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-dev \
-    ${@bb.utils.contains('IOTGW_ENABLE_DEEPX_DXM1', '1', 'packagegroup-iot-gw-deepx', '', d)} \
-    packagegroup-iot-gw-security \
     packagegroup-core-buildessential \
     dtc \
     bridge-utils \
@@ -30,9 +28,14 @@ CORE_IMAGE_EXTRA_INSTALL += " \
     btop \
     iotgw-dev-ssh-keys \
     iotgw-sudoers \
+    ${@bb.utils.contains('DISTRO_FEATURES', 'opengl', 'mesa kmscube', '', d)} \
     ${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672','1',' libtss2-tcti-device','',d)} \
-    ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5','',d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_OTBR','1',' otbr-rpi5 otbr-webui','',d)} \
 "
 
 # Extra space for development artifacts
 IMAGE_ROOTFS_EXTRA_SPACE = "1572864"
+
+# The OTBR web UI (unauthenticated HTTP on :80) is a dev-only convenience: install
+# it here and admit its port in the firewall at image time. Prod does neither.
+IOTGW_IMAGE_OTBR_WEBUI = "1"

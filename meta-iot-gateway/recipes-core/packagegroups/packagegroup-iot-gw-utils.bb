@@ -34,7 +34,6 @@ RDEPENDS:${PN} = " \
     iputils-arping \
     iputils-tracepath \
     traceroute \
-    iperf3 \
     curl \
     wget \
     ca-certificates \

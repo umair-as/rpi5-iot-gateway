@@ -1,10 +1,7 @@
 [Unit]
 Description=Telegraf metrics agent
 Documentation=https://github.com/influxdata/telegraf
-After=network.target mosquitto.service
-Wants=mosquitto.service
-ConditionFileNotEmpty=/etc/credstore/telegraf.service.mqtt_username
-ConditionFileNotEmpty=/etc/credstore/telegraf.service.mqtt_password
+After=network.target
 ConditionFileNotEmpty=/etc/credstore/telegraf.service.influxdb_username
 ConditionFileNotEmpty=/etc/credstore/telegraf.service.influxdb_password
 # Bound restart storms when credentials are missing or invalid.
@@ -22,8 +19,6 @@ EnvironmentFile=-/etc/default/iotgw-observability
 # Credentials are delivered into $CREDENTIALS_DIRECTORY (a per-unit tmpfs,
 # mode 0500) by systemd. The secretstores.systemd Telegraf plugin reads them
 # directly — no shell export, no rendered file, no argv exposure.
-LoadCredential=mqtt_username:/etc/credstore/telegraf.service.mqtt_username
-LoadCredential=mqtt_password:/etc/credstore/telegraf.service.mqtt_password
 LoadCredential=influxdb_username:/etc/credstore/telegraf.service.influxdb_username
 LoadCredential=influxdb_password:/etc/credstore/telegraf.service.influxdb_password
 ExecStart=/usr/bin/telegraf --config /etc/telegraf/telegraf.conf

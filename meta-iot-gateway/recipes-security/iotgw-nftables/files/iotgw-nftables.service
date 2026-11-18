@@ -1,14 +1,36 @@
 [Unit]
 Description=IoT Gateway nftables baseline rules
 Documentation=man:nft(8)
-After=network.target
+# The ruleset must be in the kernel before any interface is configured and
+# before any listener starts; otherwise there is a boot window with the
+# kernel's default accept-everything policy. network-pre.target is a passive
+# target that systemd-networkd orders itself after, so wanting it and being
+# before it puts this unit ahead of all interface configuration. sshd.service
+# orders itself on nothing network related, so it is named here directly.
+# DefaultDependencies=no takes the unit out of sysinit ordering (which would
+# come after network-pre); the explicit dependencies below replace it.
+DefaultDependencies=no
+Wants=network-pre.target
+Before=network-pre.target sshd.service shutdown.target
+After=local-fs.target
+Conflicts=shutdown.target
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
+# Fail closed: validate the file before touching the live table, so a bad
+# ruleset never reaches the delete-then-load sequence, and if loading fails
+# anyway (a kernel-side refusal that -c cannot see), ExecStopPost installs a
+# minimal known-good ruleset instead of leaving the kernel's accept policy
+# in place. The helper is a no-op when the unit stopped cleanly.
+ExecStartPre=/usr/sbin/nft -c -f /etc/nftables.conf
 # Reset only our baseline table; ignore failure when table is absent.
 ExecStartPre=-/usr/sbin/nft delete table inet filter
 ExecStart=/usr/sbin/nft -f /etc/nftables.conf
-RemainAfterExit=yes
+ExecReload=/usr/sbin/nft -c -f /etc/nftables.conf
+ExecReload=-/usr/sbin/nft delete table inet filter
+ExecReload=/usr/sbin/nft -f /etc/nftables.conf
+ExecStopPost=/usr/libexec/iotgw/iotgw-nftables-fallback
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true

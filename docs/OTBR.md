@@ -32,9 +32,20 @@ Key differences from the legacy web UI:
 | **Air-gapped** | Vendored JS/fonts | Vendored (Roboto, Material Icons, all npm deps) |
 | **Security** | systemd hardening | Same hardening + CSP headers, input validation, strict ot-ctl whitelist |
 
-The `otbr-rpi5` recipe builds the OTBR agent with `-DOTBR_WEB=OFF` and
-depends on `otbr-webui` for the web interface. Source:
+The `otbr-rpi5` recipe builds the OTBR agent with `-DOTBR_WEB=OFF`. The web UI
+(`otbr-webui`, unauthenticated HTTP on :80) is dev-only: the dev image recipe
+installs it when `IOTGW_ENABLE_OTBR=1`; prod never carries it. Source:
 [github.com/umair-as/otbr-webui](https://github.com/umair-as/otbr-webui)
+
+The agent's REST API (:8081) has no authentication either and returns the
+Thread network key, so on every image it binds loopback only
+(`--rest-listen-address 127.0.0.1` in `/etc/default/otbr-agent`; the recipe
+fails the build on any other value) and the firewall drops tcp 80 and 8081 on
+every interface but `lo`. The dev and desktop images re-admit 80 over IPv4 for
+the web UI, which reaches the REST API through `localhost`. The exposure check
+(`scripts/run-target-checks.sh <ip> exposure`, allowlist in
+`scripts/security/listen-allowlist.txt`) and the off-device probe
+(`scripts/security/exposure-probe-host.sh`) assert both.
 
 ---
 
@@ -79,8 +90,6 @@ idf.py flash
 
 ```bash
 IOTGW_ENABLE_OTBR=1 make dev
-# or
-IOTGW_ENABLE_OTBR=1 kas build kas/local.yml --target iot-gw-image-dev
 ```
 
 **Option 2: KAS Overlay**
@@ -95,17 +104,19 @@ local_conf_header:
 
 Then build normally:
 ```bash
-kas build kas/local.yml --target iot-gw-image-dev
+make dev
 ```
 
 ### What Gets Installed
 
 When enabled, the following are included:
 - `otbr-rpi5` package (otbr-agent + dependencies)
-- `otbr-webui` package (React/Fastify web UI + Node.js runtime)
-- systemd services: `otbr-agent.service`, `otbr-webui.service`
+- `otbr-webui` package (React/Fastify web UI + Node.js runtime; dev image only)
+- systemd services: `otbr-agent.service`, `otbr-webui.service` (dev image only)
+- `otbr-tun.conf` (`modules-load.d`: loads `tun` at boot for wpan0)
 - Dependencies (Avahi, radvd, Node.js runtime)
-- Firewall rules for OTBR web UI (only when `IOTGW_ENABLE_OTBR=1`)
+- Firewall rules: mDNS on the infrastructure interface; the web UI port on dev and desktop only
+- Infrastructure interface: `IOTGW_OTBR_INFRA_IFACE` (`wlan0` by default). Set to `br0` to use the wired LAN; `br0` then gets an IPv6 link-local address and accepts router advertisements, which border routing needs
 - Kernel features (netfilter, NAT support)
 
 **Note:** Ensure `igw_networking_iot` kernel features are enabled for nftables/NAT support.
@@ -281,10 +292,12 @@ scripts/otbr/ot-demo/otbr-api-discover.sh --device-count 10 --timeout 30
 scripts/otbr/ot-demo/otbr-api-energy-scan.sh --channels 11,12,13,14 --count 1 --period 32
 ```
 
-You can target a remote endpoint via `BASE_URL`:
+The REST API listens on the gateway's loopback only. To run the wrappers from a
+workstation, forward the port over SSH and keep the default `BASE_URL`:
 
 ```bash
-BASE_URL=http://<otbr-host>:8081 scripts/otbr/ot-demo/otbr-api-node.sh
+ssh -N -L 8081:127.0.0.1:8081 <otbr-host> &
+scripts/otbr/ot-demo/otbr-api-node.sh
 ```
 
 **Notes:**
@@ -300,7 +313,7 @@ BASE_URL=http://<otbr-host>:8081 scripts/otbr/ot-demo/otbr-api-node.sh
 **Firewall OTBR web interface (otbr-webui on port 80):**
 ```bash
 # Allow only local access
-nft add rule inet filter input tcp dport 80 ip saddr != 192.168.0.0/16 drop
+nft add rule inet filter input tcp dport 80 ip saddr != <lan-cidr> drop
 ```
 
 ### Commissioner Security
