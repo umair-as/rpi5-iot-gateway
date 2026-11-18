@@ -1,7 +1,13 @@
 [NetDev]
 Name=br0
 Kind=bridge
+# No MAC from networkd: the kernel then gives the bridge its port's address,
+# eth0's factory MAC, which U-Boot reads from OTP. The default would be a MAC
+# hashed from /etc/machine-id, which is per boot when /data is absent
+# (recovery mode), so the device would draw a new DHCP lease on every such
+# boot. 10-br0.link stops udev applying the same hash.
+MACAddress=none
 
 [Bridge]
 STP=no
-ForwardDelay=0
+ForwardDelaySec=0

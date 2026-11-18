@@ -69,10 +69,10 @@ Fragments give policy flexibility without touching the base.
 | `iot-gw-image-base` / `iot-gw-image-dev` | `surface_reduce fit_enforce` | `2` (keyed autoboot, type `igw`) |
 | `iot-gw-image-prod` | `surface_reduce fit_enforce appliance_lockdown` | `-2` (no interactive window) |
 
-The `IOTGW_UBOOT_BOOTDELAY` variable handles the meta-raspberrypi
-BOOTDELAY override — meta-raspberrypi forces `-2` via
-`do_configure:append`; our layer counteracts with a higher-priority
-append that restores `2` for dev and keeps `-2` for prod.
+`BOOTDELAY` is compiled in (`CONFIG_BOOTDELAY`): `2` from `iotgw-uboot.cfg`,
+`-2` from the `appliance_lockdown` fragment. There is no runtime setting for
+it. meta-raspberrypi forces `-2` in its own `do_configure:append`; the layer's
+U-Boot bbappend re-applies the intended value after it.
 
 ---
 
@@ -86,9 +86,9 @@ BCM2712 ROM
     -> BL31 (TF-A)
       -> U-Boot (IoT-Gateway)
         -> iotgw_rauc_select   (A/B slot selection, bootcount decrement)
-        -> iotgw_set_bootargs  (PARTUUID root=, rauc.slot=)
+        -> iotgw_set_bootargs  (slot-partition check; clears env bootargs/fdt_addr so the FIT's own DTB and its /chosen/bootargs are used)
         -> iotgw_load_boot     (per-slot FIT: fitImage-a / fitImage-b)
-        -> iotgw_exec_fit      (bootm with FIT config + signature verify)
+        -> iotgw_exec_fit      (bootm <fit> -: signed default config with its own fdt; cmdline carries the dm-verity table)
           -> Linux kernel
 ```
 
@@ -101,7 +101,7 @@ U-Boot-side slot selection, bootargs, FIT loading (`fatload`), and env save.
 FIT signature verification and kernel handoff happen inside `bootm`, *after*
 the watchdog is stopped — so the kernel never inherits an armed timer, but the
 signature-verify step itself is not watchdog-covered. Linux PID1 watchdog
-feeding is a separate mechanism, now on by default
+feeding is a separate mechanism, on by default
 (`IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG=1`): systemd feeds `/dev/watchdog0` at
 `RuntimeWatchdogSec=15s`, kept ≤ the ~16s BCM2712 hardware maximum.
 
@@ -117,26 +117,39 @@ scanning`). Key variables:
 | `BOOT_A_LEFT` / `BOOT_B_LEFT` | Remaining boot attempts | Yes (RAUC) |
 | `rauc_slot` | Selected slot for this boot | Runtime |
 | `bootcount` | Boot attempt counter | Yes (RAUC) |
-| `iotgw_appliance` | Appliance mode gate | Read-only (prod) |
-| `iotgw_enable_netboot` | Netboot gate | Read-only (prod) |
+| `ethaddr` / `usbethaddr` | Factory MAC, read from OTP at boot | Set by U-Boot only (prod) |
 
-In production (`appliance_lockdown`), appliance variables are locked via
-`CONFIG_ENV_FLAGS_LIST_STATIC` and `CONFIG_ENV_ACCESS_IGNORE_FORCE`.
+In production (`appliance_lockdown`), `CONFIG_ENV_WRITEABLE_LIST` imports
+only the variables marked writeable in `CONFIG_ENV_FLAGS_LIST_STATIC` from
+the stored environment; everything else comes from the built-in default, and
+`CONFIG_ENV_ACCESS_IGNORE_FORCE` stops `setenv -f` overriding a read-only
+variable.
+
+**Board MAC.** U-Boot asks the firmware for the factory MAC on every boot
+(the board code's `set_usbethaddr()`), sets `ethaddr`, and `bootm` writes it
+into the `ethernet0` node of the FIT's signed device tree, after the signature
+check, as it does for `/chosen`. The kernel's eth0, and br0 with it, therefore
+keep the same address on every boot, including a degraded boot whose
+machine-id is per boot. In prod an `ethaddr` placed in the stored environment
+is refused at import (it is not writeable), so the address comes only from
+OTP. Reading it is one firmware mailbox call; no network driver starts, and
+network boot stays impossible (no `boot_targets` entry, no network commands;
+see the command table below).
 
 ### Per-slot FIT naming
 
-Each RAUC slot writes its kernel as a named FIT image on the shared boot
-partition:
+Each RAUC slot has its own named FIT image on the shared boot partition:
 
 ```
-/boot/fitImage-a   <- slot A kernel
-/boot/fitImage-b   <- slot B kernel
-/boot/fitImage     <- fallback (first boot / migration)
+/boot/fitImage-a   <- slot A kernel + DTB (slot A dm-verity table)
+/boot/fitImage-b   <- slot B kernel + DTB (slot B dm-verity table)
 ```
 
-U-Boot selects the correct FIT based on `rauc_slot`. The RAUC bundle
-post-install hook (`bundle-hooks-fit.sh`) handles the slot-specific
-naming.
+U-Boot selects the correct FIT based on `rauc_slot`. Both files are written at
+flash time; an OTA rewrites the one for the slot it installs (the RAUC bundle
+post-install hook, `bundle-hooks-fit.sh`). There is no fallback: a generic FIT
+carries no verity table, so a missing slot FIT zeroes that slot's boot attempts
+and resets.
 
 ---
 
@@ -155,7 +168,8 @@ Commands removed from the U-Boot binary:
 | Information disclosure | `CMD_LICENSE`, `CMD_BDINFO` |
 | Boot script | `CMD_SOURCE` (prevents `boot.scr` fallback) |
 
-**Preserved:** `CMD_BOOTM`, `CMD_BOOTI`, `CMD_FDT`, `CMD_MMC`,
+**Preserved:** `CMD_BOOTM`, `CMD_BOOTI` (dev only; `appliance_lockdown`
+removes it, see below), `CMD_FDT`, `CMD_MMC`,
 `CMD_EXT4`, `CMD_FAT`, `CMD_BOOTSTAGE`, `CMD_SAVEENV`, `CMD_SETEXPR`
 (needed by RAUC bootcount decrement).
 
@@ -187,61 +201,37 @@ Note: `CONFIG_FIT_SIGNATURE_ENFORCE` was removed upstream in U-Boot
 | Force flag blocked | `CONFIG_ENV_ACCESS_IGNORE_FORCE=y` |
 | Appliance vars read-only | `CONFIG_ENV_FLAGS_LIST_STATIC` |
 | `EXTRA_KERNEL_ARGS` runtime injection | Blocked — not on writeable list (explicit `:sr`) |
+| Unsigned boot paths removed | `CONFIG_CMD_BOOTI=n`, `CONFIG_CMD_GO=n` |
 
-### Runtime cmdline tuning: `EXTRA_KERNEL_ARGS` (dev-only)
+The last row is defence in depth. A dev U-Boot with `booti` boots an unsigned
+raw kernel `Image` with any command line from its prompt, skipping FIT
+verification entirely. On prod the lockdown above already leaves no way to
+reach it (no prompt, `bootcmd` not loadable from the env), so removing the
+commands only guards against a future boot-script bug. Signed-FIT `bootm` is
+the only boot command left.
 
-The compiled-in `iotgw_set_bootargs` U-Boot env honours `EXTRA_KERNEL_ARGS`
-when set: its value is appended to the kernel cmdline after `root=PARTUUID`
-and `rauc.slot=`. This is the documented runtime cmdline-tuning escape
-hatch (`fw_setenv EXTRA_KERNEL_ARGS "cma=256M"`, etc. — see
-[KERNEL.md](KERNEL.md)).
+### Kernel command line: fixed at build time
 
-**Dev images** (`surface_reduce + fit_enforce` only): the variable is
-freely writable. A root operator can set/clear it via `fw_setenv` and
-the value reaches `/proc/cmdline` on the next boot.
+The command line is the `/chosen/bootargs` of the slot's signed FIT device
+tree: the firmware `cmdline.txt` content, `IOTGW_VERITY_KERNEL_ARGS`, and the
+dm-verity table. `iotgw_set_bootargs` clears the environment `bootargs`, so no
+U-Boot environment variable (`EXTRA_KERNEL_ARGS` included) reaches the kernel
+on any image. Change the command line with `IOTGW_VERITY_KERNEL_ARGS` and
+rebuild; the change is then covered by the FIT signature.
 
-**Production images** (`appliance_lockdown` adds env-writeable-list
-enforcement): `EXTRA_KERNEL_ARGS` is **not** on the whitelist (explicit
-`:sr` entry in `CONFIG_ENV_FLAGS_LIST_STATIC`), and `CONFIG_ENV_ACCESS_IGNORE_FORCE=y`
-blocks the `-f` bypass. Writes are rejected at the U-Boot env layer.
-The `if test -n "${EXTRA_KERNEL_ARGS}"` branch in `iotgw_set_bootargs`
-becomes dead code at runtime — the variable can never become non-empty.
+On prod, `EXTRA_KERNEL_ARGS` is additionally kept off the env writeable list
+(lockdown table above).
 
-This matches the threat-model row "Env lockdown | Tampering | Prevent
-runtime boot policy override". Runtime kernel-args injection *is* a boot
-policy override; in prod it's blocked, in dev it's an intentional
-operator escape hatch.
+### OTA env refresh
 
-If a deployed prod fleet ever needs cmdline tuning, use a signed-image path:
-set build-time policy variable `IOTGW_UBOOT_EXTRA_KERNEL_ARGS` in the image
-build inputs.
-
-`IOTGW_UBOOT_EXTRA_KERNEL_ARGS` is consumed by provisioning policy wiring:
-`iotgw-provision.sh` applies it to U-Boot env only where runtime env writes are
-allowed (dev posture). Under `appliance_lockdown`, runtime writes are rejected
-by design, so production remains signed-image-driven.
-
-### OTA env-refresh caveat
-
-`iotgw_set_bootargs` itself is a *compiled-in default* in U-Boot. Once a
-device has run `bootcmd` (which calls `saveenv` after assembling
-bootargs), the persisted env in `/uboot-env/uboot.env` keeps whatever
-`iotgw_set_bootargs` value was current at that save. Subsequent boots
-load from persisted env, **not** the new compiled-in default.
-
-This means: when the U-Boot binary is updated via RAUC OTA (e.g., the
-fix that activated `EXTRA_KERNEL_ARGS` honouring), the persisted env
-still has the old `iotgw_set_bootargs` and the new behaviour doesn't
-take effect. Recovery is a one-time `env default iotgw_set_bootargs;
-saveenv` from the U-Boot prompt. Fresh WIC flashes pick up the new
-default automatically.
-
-Automation is now in place: provisioning (`iotgw-provision.sh`) detects stale
-persisted `iotgw_set_bootargs` values on non-lockdown images and clears them so
-the updated compiled default takes effect on the next boot.
-
-On `appliance_lockdown` images, this reconciliation is intentionally skipped
-because the env writeable-list blocks such writes by policy.
+Boot scripts such as `iotgw_set_bootargs` and `iotgw_load_boot` are compiled-in
+defaults, but a dev device's `bootcmd` `saveenv` persists them in
+`/uboot-env/uboot.env`, so a new U-Boot binary alone does not change them. The
+bundle post-install hook rewrites the boot-critical variables from the bundle's
+`uboot-env.txt` (runtime state such as `BOOT_ORDER` / `BOOT_x_LEFT` is
+untouched). Without a bundle, recovery is `env default <var>; saveenv` from the
+U-Boot prompt; fresh WIC flashes pick up the new defaults. Prod imports only
+writeable variables, so compiled-in scripts always win.
 
 ### Larger FIT kernels: `SYS_BOOTM_LEN`
 
@@ -286,7 +276,7 @@ When U-Boot is bumped to a new version, the `0003-defconfig-iotgw-base.patch`
 must be regenerated. Use the devtool workflow:
 
 ```bash
-kas shell kas/local.yml
+. scripts/env.sh && kas shell kas/local.yml
 devtool modify --no-overrides u-boot
 cd build/workspace/sources/u-boot
 
