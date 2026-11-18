@@ -27,6 +27,9 @@ S = "${UNPACKDIR}"
 IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "file"
 IOTGW_RAUC_PKCS11_USES_TPM2 ?= "0"
 IOTGW_RAUC_STREAMING_TLS_KEY = "${@bb.utils.contains('IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE', 'pkcs11', d.getVar('IOTGW_RAUC_PKCS11_TLS_KEY') or '', '/etc/ota/device.key', d)}"
+# Slot type of the two root slots. Runtime dm-verity: the slot receives the
+# ext4+hash-tree image, which RAUC has to write as an opaque `raw` block image.
+IOTGW_RAUC_ROOTFS_SLOT_TYPE = "raw"
 # No encryption defaults are declared here. The single canonical decision and
 # its crypt/verity mapping live in the distro include; this recipe reads the
 # same IOTGW_RAUC_BUNDLE_FORMAT_EFFECTIVE the bundle producer reads, so the
@@ -74,6 +77,7 @@ do_install() {
     # Render system.conf from template using bundle-compatible
     sed -e "s|@COMPATIBLE@|${RAUC_BUNDLE_COMPATIBLE}|g" \
         -e "s|@TLS_KEY@|${IOTGW_RAUC_STREAMING_TLS_KEY}|g" \
+        -e "s|@ROOTFS_SLOT_TYPE@|${IOTGW_RAUC_ROOTFS_SLOT_TYPE}|g" \
         ${UNPACKDIR}/iotgw-system.conf > ${D}${sysconfdir}/rauc/system.conf
 
     # Keyring locator: directory mode when IOTGW_RAUC_KEYRING_CERTS is set,

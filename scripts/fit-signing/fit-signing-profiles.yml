@@ -15,7 +15,7 @@
 
 fit_signing_profiles:
   yubikey-9a:
-    key_name_hint: "iotgw-fit-yk-2026"
+    key_name_hint: "iotgw-fit-yk-2027"
     uri: "pkcs11:object=Private%20key%20for%20PIV%20Authentication"
     engine_conf: "keys/dev/yk/openssl-engine.cnf"
     signer_alias: "YK-PRIMARY"

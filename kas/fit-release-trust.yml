@@ -9,7 +9,7 @@ local_conf_header:
     #   IOTGW_FIT_TRUST_SOFTHSM_KEY = "0"  drops the dev-only SoftHSM key
     #
     # from the U-Boot control FDT. The deployed DTB then carries exactly one
-    # /signature/key-* node — key-iotgw-fit-yk-2026. With a single trust root
+    # /signature/key-* node — key-iotgw-fit-yk-2027. With a single trust root
     # the recipe leaves /signature/required-mode unset; U-Boot's default
     # single-required-key verification applies.
     #
@@ -35,7 +35,7 @@ local_conf_header:
     # a release build MUST have the YubiKey trust root configured. Before
     # composing this overlay, ensure kas/local.yml sets:
     #   IOTGW_FIT_TRUST_YK_KEY  = "1"
-    #   IOTGW_FIT_YK_KEYDIR     = "<dir holding iotgw-fit-yk-2026.crt>"
-    #   IOTGW_FIT_YK_KEYNAME    = "iotgw-fit-yk-2026"
+    #   IOTGW_FIT_YK_KEYDIR     = "<dir holding iotgw-fit-yk-2027.crt>"
+    #   IOTGW_FIT_YK_KEYNAME    = "iotgw-fit-yk-2027"
     IOTGW_FIT_TRUST_FILE_KEY = "0"
     IOTGW_FIT_TRUST_SOFTHSM_KEY = "0"
