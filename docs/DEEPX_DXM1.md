@@ -6,11 +6,10 @@ upstream `meta-deepx-m1` layer; project-specific integration remains in
 `meta-iot-gateway`.
 
 **Status: hardware- and OTA-validated development integration.** A clean image
-built entirely from repository metadata was installed to RAUC slot B with the
-dedicated full-FIT bundle. It completed real DX-M1 inference, passed 25
-acceptance checks with zero failures, showed non-zero NPU utilization, and
-required no target-side hand edits. Production-key, firmware-delivery,
-SELinux, and model-lifecycle work remain open; see
+built entirely from repository metadata, installed with the dedicated full-FIT
+bundle, completes real DX-M1 inference, passes the acceptance suite with zero
+failures, shows non-zero NPU utilization, and needs no target-side hand edits.
+Production-key, firmware-delivery and model-lifecycle work remain open; see
 [Delivery and production status](#7-delivery-and-production-status).
 
 ---
@@ -18,15 +17,25 @@ SELinux, and model-lifecycle work remain open; see
 ## 1. Build and bundle
 
 ```bash
-make dev-deepx
-make bundle-dev-deepx-full-fit
+make dev                      # or: make base, make desktop
+make bundle-dev-full-fit      # or: make bundle-desktop-full-fit
 ```
 
-Both targets compose `kas/deepx.yml`, which makes `meta-deepx-m1` available and
-sets `IOTGW_ENABLE_DEEPX_DXM1=1`. The bundle target is deliberately
-`full-fit`: it carries the matching FIT kernel and `cmdline.txt` alongside the
-rootfs. Do not use the ordinary `bundle-dev-full-fit` target for a DX-M1 image;
-it does not compose the DEEPX overlay.
+The card is part of the platform, so every non-prod target carries the stack.
+`base`, `dev` and their bundles compose `kas/deepx.yml` (the Makefile's
+`IMAGE_KAS`), and `kas/desktop.yml` includes it. The overlay makes
+`meta-deepx-m1` available and sets `IOTGW_ENABLE_DEEPX_DXM1=1`. Base and dev get
+the driver and runtime; the desktop adds the demo stack. Prod composes neither
+until the module-signing key is protected (§7).
+
+Bundles are deliberately `full-fit`: they carry the matching slot FITs
+(kernel, device tree and command line) alongside the rootfs, so the modules
+always arrive with the kernel that trusts their signing key.
+
+The image targets clean `make-mod-scripts` before building. dev, desktop and
+prod kernels differ but share the `kernel-build-artifacts` tree, and after a
+build in another composition its stale stamp otherwise breaks `dx-driver` with
+`No rule to make target 'modules'`.
 
 Do not hand-roll raw `kas`/BitBake commands for this path. The Makefile carries
 the environment-passthrough wiring, bundle image selection, and overlay
@@ -37,41 +46,40 @@ composition that otherwise fail silently.
 | Gate | Mechanism | Effect |
 |---|---|---|
 | Layer availability | compose `kas/deepx.yml` | `meta-deepx-m1` parses |
-| Feature enablement | `IOTGW_ENABLE_DEEPX_DXM1` (default `0`) | kernel whitelist and packages are enabled |
+| Feature enablement | `IOTGW_ENABLE_DEEPX_DXM1` (distro default `0`, `kas/deepx.yml` sets `1` weakly) | ksyms trim disabled (`deepx-dxm1-ksyms.cfg`), `pcie_aspm=off`, packages installed |
 
-Composing the layer must not by itself put a proprietary accelerator driver in
-an image. `IOTGW_ENABLE_DEEPX_DXM1=0 make dev-deepx` leaves the layer present
-but disables the feature. Enabling the feature without the layer fails during
-parsing with a message that names `make dev-deepx`.
+The layer alone puts nothing into an image. `IOTGW_ENABLE_DEEPX_DXM1=0 make dev`
+leaves the layer present but disables the feature. Enabling the feature
+without the layer fails during parsing with a message that names the targets
+that compose it.
 
-## 2. Hardware acceptance milestone
+## 2. Validated configuration
 
-Validated on 2026-09-01 using a clean project dev image installed to RAUC slot
-B. Every fix came from repository metadata and the matching full-FIT bundle:
+Every fix comes from repository metadata and the matching full-FIT bundle:
 
 | Component | Validated state |
 |---|---|
 | Accelerator firmware | DX-M1 firmware `v2.7.4`, stored on the card |
-| Kernel | `6.18.37-v8-igw-00007-g9a0306b38b12` during bring-up |
 | Driver source/package | DX driver `v2.6.0`; PCIe component reports `v2.5.0` |
 | Runtime | DX-RT `v3.4.1` in the Yocto image |
 | PCIe | Gen2 x1, `Mem+ BusMaster+`, ASPM disabled, AER status clear |
 | Runtime result | `/dev/dxrt0` present; `dxrtd` active as user `dxrt` |
 | Inference | `YoloV5S_PPU.dxnn`; non-zero utilization on all three NPU cores |
 | Boot/update | slot-specific `fitImage-b`; `pcie_aspm=off`; `rauc.slot=B` |
-| Acceptance | `PASS=26 FAIL=0 SKIP=0 FINDING=1` after full-FIT RAUC installation |
+| Acceptance | zero FAIL after a full-FIT RAUC install |
 
-The single FINDING is the SELinux gap recorded in section 7: DX-M1 domains are
-still permissive, so acceptance records denials rather than failing on them. An
-earlier run reported `SKIP=1` because the `dxtop` sampler needs both `TERMINFO`
-and `TERM` plus a sized pty, which a piped ssh session does not provide; the
-suite now sets them, so the CPU-fallback check runs instead of degrading to a
-skip that reads like a pass.
+On the desktop image the DX-M1 domains are enforcing. The administrator
+console has no access to the accelerator or the compositor by design, so
+section 7 runs device status and the timed inference through
+`iotgw-dx-probe.service`, the launcher binary in its own domain
+(`iotgw_dxdemo_t`), and reads the result from the journal. The CPU-fallback
+discriminator is the accelerator's DMA interrupt (`dx-dma_0` in
+`/proc/interrupts`): no interrupt during the run means it did not reach the NPU.
+On an image without the launcher (headless dev), section 7 falls back to the
+administrator-shell path with `dxtop`, which needs the domain permissive.
 
 Observed sample rates vary substantially with the model and output pipeline and
-must not be presented as a general DX-M1 benchmark. `dxtop` utilization during
-the run is the evidence that inference reached the NPU rather than silently
-falling back to the CPU.
+must not be presented as a general DX-M1 benchmark.
 
 Run the reusable acceptance check from the build host:
 
@@ -118,7 +126,8 @@ ships inside `dx-rt` itself.
 `dxpreprocess`, `dxinfer`, `dxpostprocess` and `dxosd` — together with
 `dx-stream-sample`, which carries the precompiled `YoloV5S_PPU.dxnn` and an
 H.264 payload. It is separate so a production profile can take the runtime
-without the demo payload.
+without the demo payload. `iot-gw-image-base.inc` installs the base group into
+every image built with the feature on; the desktop adds `-demo`.
 
 ## 5. PCIe, driver loading, and runtime policy
 
@@ -127,8 +136,8 @@ controller into the kernel. The external bus therefore exists before
 userspace, eliminating a class of boot-order races for any PCIe endpoint.
 
 **Endpoint driver.** There is deliberately no `KERNEL_MODULE_AUTOLOAD` entry
-for `dx_dma`. Forced early loading previously let `dxrt_driver` initialize
-before the PCIe endpoint existed; it found zero devices and never rescanned.
+for `dx_dma`. Forced early loading lets `dxrt_driver` initialize before the
+PCIe endpoint exists; it finds zero devices and never rescans.
 The working path is event-driven:
 
 ```text
@@ -165,11 +174,15 @@ The real driver `v2.6.0` source is pinned explicitly. The upstream recipe named
 `2.6.0` pointed at an older commit whose module reported `2.2.0`; the project
 bbappend corrects that source/version mismatch.
 
-`CONFIG_TRIM_UNUSED_KSYMS=y` strips exports unused by in-tree modules. The
-project whitelist retains only symbols named by the DX-M1 driver's modpost
-failures. The authoritative list and evidence live in
-`meta-iot-gateway/recipes-kernel/linux/files/deepx-dxm1-ksyms.txt`; do not
-disable symbol trimming globally or add speculative entries.
+`CONFIG_TRIM_UNUSED_KSYMS=y` (from `security-prod.cfg`) strips exports unused
+by in-tree modules, and the out-of-tree `dx_dma.ko` is invisible to it. Images
+with the accelerator therefore turn the trim off: the `igw_deepx_dxm1` feature
+adds `deepx-dxm1-ksyms.cfg`, merged last so it wins over `security-prod.cfg`.
+Images without the accelerator, prod included, keep the trim. A symbol
+allowlist (`CONFIG_UNUSED_KSYMS_WHITELIST`) is not used: it breaks on every
+driver re-pin and on every kernel-surface change that removes an in-tree user
+of a symbol the driver needs; module signing, below, is the barrier against
+foreign modules.
 
 Modules are signed by Kbuild through `CONFIG_MODULE_SIG_ALL=y` during
 `modules_install`. `iotgw-kernel-module-signing.bbclass` verifies the exact
@@ -191,11 +204,10 @@ Whether a kernel rebuild breaks that trust depends on the signing key in use:
   modules become independently rebuildable. See `docs/KERNEL.md`, "Persistent
   module-signing key".
 
-**Full-FIT bundles are still required either way**, for a separate reason: the
-kernel/module pairing guard in `bundle-hooks-fit.sh` is fail-open when no
-bootfiles archive is present, so a rootfs-only bundle that moves modules is not
-checked at all. Do not read a working persistent key as making rootfs-only
-updates safe.
+Every bundle carries the bootfiles archive and both slot FITs
+(`IOTGW_RAUC_UPDATE_BOOTFILES = "1"`; the assembly gate fails without it), and
+under dm-verity a rootfs without its matching slot FIT cannot boot, so a
+rootfs-only update that moves modules is not possible.
 
 ## 7. Delivery and production status
 
@@ -207,25 +219,15 @@ before calling it production-complete:
   build host with no hardware protection — appropriate for development and lab
   images, not for production. It belongs in the same HSM/YubiKey handling as
   the FIT signing key (`docs/FIT_BOOT_SIGNING.md`).
-- **Fail-closed kernel/module pairing.** `bundle-hooks-fit.sh` reads
-  `expected_release` from the bootfiles archive, and `IOTGW_RAUC_UPDATE_BOOTFILES`
-  defaults to `0`, so a rootfs-only bundle carries no archive and the mismatch
-  check silently passes. It must compare against the running kernel when no
-  archive is present, or full-FIT must be enforced for every update that moves
-  modules.
 - **Firmware delivery and recovery.** Firmware `v2.7.4` is on the tested card,
   but the distro has no firmware payload, updater, rollback, or fleet policy.
-- **SELinux policy.** Acceptance currently records DX-M1 denials as findings
-  while the relevant domain remains permissive; production enforcing policy
-  is outstanding.
 - **Signed model delivery/model OTA.** The demo model is a build-time vendor
   asset, not a production model lifecycle.
 
-The validated OTA path is `make bundle-dev-deepx-full-fit`. It carries the
-rootfs and slot-specific FIT boot assets together; a rootfs-only update remains
-unsupported for DX-M1 because it can install modules the running kernel cannot
-verify. The acceptance gate compares the complete module signing-key
-fingerprint because vermagic remained identical across three builds with three
+The OTA paths are `make bundle-dev-full-fit` and, for the desktop image,
+`make bundle-desktop-full-fit`. Each carries the rootfs and slot-specific FIT
+boot assets together. The acceptance gate compares the complete module
+signing-key fingerprint because vermagic stays identical across builds with
 different generated keys.
 
 ## 8. Using the vendor suite alongside this image
@@ -304,9 +306,9 @@ assets live in the pinned upstream layer under `.kas/` (gitignored).
   x4 capability. Negotiating x1 is expected and cannot be fixed in software.
 - The validated configuration is Gen2 (5 GT/s). Gen3 is an uncertified signal-
   integrity experiment on Raspberry Pi 5 and must be tested separately from
-  correctness. This image's DTB does not expose the usual
-  `dtparam=pciex1_gen=3` override, so changing speed also requires explicit DT
-  work.
+  correctness. The device tree is signed into the slot FIT, so a `config.txt`
+  `dtparam=pciex1_gen=3` override does not reach the kernel; changing speed
+  requires a DTS change.
 - A `[virtual]` BAR in `lspci` means Linux reports a resource while the device
   BAR itself reads zero. It is worth recording, but successful inference shows
   it is not by itself proof of a missing required feature.

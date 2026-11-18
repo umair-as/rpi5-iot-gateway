@@ -1,0 +1,41 @@
+## <summary>iotgw project policy: RAUC daemon, OTA device key, volatile-binds overlay mounter.</summary>
+
+########################################
+## <summary>
+##	Send and receive D-Bus messages to and from the RAUC daemon.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`iotgw_rauc_dbus_chat',`
+	gen_require(`
+		type rauc_t;
+		class dbus send_msg;
+	')
+
+	allow $1 rauc_t:dbus send_msg;
+	allow rauc_t $1:dbus send_msg;
+')
+
+########################################
+## <summary>
+##	Read the device's private OTA key.
+## </summary>
+## <param name="domain">
+##	<summary>
+##	Domain allowed access.
+##	</summary>
+## </param>
+#
+interface(`iotgw_read_ota_key',`
+	gen_require(`
+		type iotgw_ota_key_t;
+	')
+
+	files_search_etc($1)
+	files_search_var_lib($1)
+	read_files_pattern($1, iotgw_ota_key_t, iotgw_ota_key_t)
+')

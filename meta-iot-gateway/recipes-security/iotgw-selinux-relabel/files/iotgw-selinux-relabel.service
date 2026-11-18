@@ -1,0 +1,22 @@
+[Unit]
+Description=Label /data with the SELinux file contexts
+# /data is outside the build-time-labelled read-only root. Run after every unit
+# that creates /data content early in boot without an SELinux-aware tool
+# (machine-id, the log binds, tmpfiles), so a first-boot
+# relabel covers all of it; later files inherit from correctly labelled
+# parents. Wanted, not required: a failed relabel must not fail the boot.
+DefaultDependencies=no
+ConditionSecurity=selinux
+ConditionPathIsMountPoint=/data
+After=data.mount iotgw-machine-id.service
+After=iotgw-log-persist-prep.service systemd-tmpfiles-setup.service
+Before=sysinit.target
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/iotgw-selinux-relabel
+
+[Install]
+WantedBy=sysinit.target

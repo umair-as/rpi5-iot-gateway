@@ -19,6 +19,7 @@ SRC_URI += " \
     file://otbr-config-paths.patch \
     file://var-lib-thread.mount \
     file://otbr-agent-thread-persist.conf \
+    file://otbr-tun.conf \
 "
 
 # Ship systemd units
@@ -51,7 +52,7 @@ RDEPENDS:${PN} += " \
     protobuf \
     protobuf-c \
     bash \
-    otbr-webui \
+    kernel-module-tun \
 "
 
 inherit cmake pkgconfig systemd useradd
@@ -66,7 +67,9 @@ SRC_URI += "gitsm://github.com/openthread/ot-br-posix.git;branch=main;protocol=h
 # Use a recent stable commit or tag
 SRCREV = "02225a5ba6f984a9ade970a799bc47e44837c2a3"
 
-# OTBR Configuration for Raspberry Pi 5 (agent only, web UI via otbr-webui)
+# OTBR Configuration for Raspberry Pi 5 (agent only). The web UI (otbr-webui,
+# unauthenticated HTTP on :80) is a DEV-ONLY package installed by the dev and
+# desktop image recipes, never by this RDEPENDS: prod must not carry it.
 # Keep flags minimal and rely on upstream defaults where possible.
 IOTGW_OT_THREAD_VERSION ?= "1.4"
 
@@ -81,7 +84,7 @@ EXTRA_OECMAKE = " \
     -DOTBR_MDNS=avahi \
     -DOTBR_BORDER_ROUTING=ON \
     -DOTBR_BACKBONE_ROUTER=ON \
-    -DOTBR_INFRA_IF_NAME=wlan0 \
+    -DOTBR_INFRA_IF_NAME=${IOTGW_OTBR_INFRA_IFACE} \
     -DOTBR_RADIO_URL=spinel+hdlc+uart:///dev/ttyACM0 \
     -DOT_THREAD_VERSION=${IOTGW_OT_THREAD_VERSION} \
     -DCMAKE_CXX_STANDARD=17 \
@@ -129,10 +132,27 @@ do_install:append() {
     # Provide default env for agent
     install -d ${D}${sysconfdir}/default
     install -m 0644 ${UNPACKDIR}/otbr-agent.default ${D}${sysconfdir}/default/otbr-agent
+    sed -i 's/@OTBR_INFRA_IFACE@/${IOTGW_OTBR_INFRA_IFACE}/g' ${D}${sysconfdir}/default/otbr-agent
+
+    # The REST API (:8081) has no authentication and returns the Thread network
+    # key, so it binds loopback only; the web UI reaches it through localhost.
+    # Without the option otbr-agent binds every address, so a missing or
+    # non-loopback value fails the build rather than shipping an open endpoint.
+    _rest_addr=$(sed -n 's/.*--rest-listen-address[[:space:]]\{1,\}\([^[:space:]"]*\).*/\1/p' \
+        ${D}${sysconfdir}/default/otbr-agent)
+    case "$_rest_addr" in
+        127.0.0.1|::1) ;;
+        *) bbfatal "otbr-agent.default: --rest-listen-address must be 127.0.0.1 or ::1, got '${_rest_addr:-<unset>}'" ;;
+    esac
 
     # Install ipset init helper
     install -d ${D}${libexecdir}/otbr
     install -m 0755 ${UNPACKDIR}/otbr-ipset-init.sh ${D}${libexecdir}/otbr/otbr-ipset-init
+    sed -i 's/@OTBR_INFRA_IFACE@/${IOTGW_OTBR_INFRA_IFACE}/g' ${D}${libexecdir}/otbr/otbr-ipset-init
+
+    # Load tun at boot: wpan0 is a tun device (otbr-tun.conf)
+    install -d ${D}${libdir}/modules-load.d
+    install -m 0644 ${UNPACKDIR}/otbr-tun.conf ${D}${libdir}/modules-load.d/otbr-tun.conf
 
     # tmpfiles rule to allow otbr to create /run sockets
     install -d ${D}${libdir}/tmpfiles.d
@@ -155,3 +175,4 @@ FILES:${PN} += "${sysconfdir}/default/otbr-agent"
 CONFFILES:${PN} += "${sysconfdir}/default/otbr-agent"
 FILES:${PN} += "${libexecdir}/otbr/otbr-ipset-init"
 FILES:${PN} += "${libdir}/tmpfiles.d/otbr.conf"
+FILES:${PN} += "${libdir}/modules-load.d/otbr-tun.conf"

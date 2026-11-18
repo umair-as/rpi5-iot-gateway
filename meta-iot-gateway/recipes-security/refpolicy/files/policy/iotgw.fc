@@ -1,0 +1,61 @@
+# RAUC daemon binary (the service entrypoint).
+/usr/bin/rauc				--	gen_context(system_u:object_r:rauc_exec_t,s0)
+
+# Private half of the OTA identity, /etc copy. The /data copy and the RAUC
+# state under /data are typed in file_contexts.local (one precedence domain
+# for every typed /data path; a .local entry beats any module .fc entry).
+/etc/ota/device\.key			--	gen_context(system_u:object_r:iotgw_ota_key_t,s0)
+
+# volatile-binds overlay mounter. The file lives at /usr/sbin/mount-copybind,
+# but refpolicy's file_contexts.subs_dist aliases /sbin AND /usr/sbin onto
+# /usr/bin (sbin merge), so the labeller looks every sbin path up under
+# /usr/bin: a /usr/sbin/... spec never matches (the file would be labelled
+# bin_t). Spell it under /usr/bin like every other binary in refpolicy.
+/usr/bin/mount-copybind			--	gen_context(system_u:object_r:iotgw_overlay_exec_t,s0)
+
+# Pre-init runtime directory: its log, the degraded marker and the bootstage
+# records. refpolicy gives /run/.* no context (<<none>>), so without these the
+# directory keeps the tmpfs_t it was created with before the policy load, which
+# the RAUC pre-install hook (rauc_t, generic runtime files only) cannot search.
+# Plain files only: the overlay uppers below it are aliased in file_contexts.subs.
+/run/iotgw				-d	gen_context(system_u:object_r:var_run_t,s0)
+/run/iotgw/[^/]+			--	gen_context(system_u:object_r:var_run_t,s0)
+# The pre-init's overlay tmpfs root (its uppers are aliased in file_contexts.subs).
+/run/iotgw/overlay			-d	gen_context(system_u:object_r:var_run_t,s0)
+
+# RAUC runtime directory.
+/run/rauc(/.*)?					gen_context(system_u:object_r:rauc_runtime_t,s0)
+
+# Daemons without an upstream module (paths under /usr/bin: see mount-copybind).
+/usr/bin/mosquitto			--	gen_context(system_u:object_r:iotgw_mosquitto_exec_t,s0)
+/etc/mosquitto(/.*)?				gen_context(system_u:object_r:iotgw_mosquitto_etc_t,s0)
+/run/mosquitto(/.*)?				gen_context(system_u:object_r:iotgw_mosquitto_runtime_t,s0)
+/usr/bin/edge-healthd			--	gen_context(system_u:object_r:iotgw_healthd_exec_t,s0)
+/run/health(/.*)?				gen_context(system_u:object_r:iotgw_healthd_runtime_t,s0)
+# node runs only the OTBR web UI on these images.
+/usr/bin/node				--	gen_context(system_u:object_r:iotgw_webui_exec_t,s0)
+/usr/bin/otbr-agent			--	gen_context(system_u:object_r:iotgw_otbr_exec_t,s0)
+/var/lib/thread(/.*)?				gen_context(system_u:object_r:iotgw_otbr_var_lib_t,s0)
+/run/otbr(/.*)?				gen_context(system_u:object_r:iotgw_otbr_runtime_t,s0)
+# Ingress-filter setup (ipset + nft) run by PID1 before the agent: refpolicy's
+# iptables_t domain, which init_t enters on exec.
+/usr/libexec/otbr/otbr-ipset-init	--	gen_context(system_u:object_r:iptables_exec_t,s0)
+# Fail-closed ruleset loader run by PID1 after a failed nftables start: same
+# domain, same reason.
+/usr/libexec/iotgw/iotgw-nftables-fallback	--	gen_context(system_u:object_r:iptables_exec_t,s0)
+
+# DX-M1 desktop stack.
+/usr/bin/dxrtd				--	gen_context(system_u:object_r:iotgw_dxrtd_exec_t,s0)
+/var/lib/dxrt(/.*)?				gen_context(system_u:object_r:iotgw_dxrtd_var_lib_t,s0)
+/dev/dxrt[0-9]+				-c	gen_context(system_u:object_r:iotgw_dxrt_device_t,s0)
+/dev/shm/dxrt_monitor_v2		--	gen_context(system_u:object_r:iotgw_dxrt_monitor_t,s0)
+/dev/shm/dxrt_.*			--	gen_context(system_u:object_r:iotgw_dxrt_tmpfs_t,s0)
+/usr/bin/weston				--	gen_context(system_u:object_r:iotgw_weston_exec_t,s0)
+/run/weston(/.*)?				gen_context(system_u:object_r:iotgw_weston_runtime_t,s0)
+# weston.socket's socket file (created by systemd from this label).
+/run/wayland-0				-s	gen_context(system_u:object_r:iotgw_weston_runtime_t,s0)
+# The vendor sample script the launcher executes (otherwise etc_t, not executable).
+/etc/dx-stream-sample/run\.sh		--	gen_context(system_u:object_r:bin_t,s0)
+/usr/libexec/iotgw-dx-demo		--	gen_context(system_u:object_r:iotgw_dxdemo_exec_t,s0)
+/var/cache/dxdemo(/.*)?				gen_context(system_u:object_r:iotgw_dxdemo_cache_t,s0)
+

@@ -1,7 +1,7 @@
 #!/bin/bash
 # DEEPX DX-M1 accelerator acceptance check for the IoT Gateway distro (iotgw).
 #
-# Runs ON the gateway after flashing a `make dev-deepx` image and produces
+# Runs ON the gateway after flashing a DX-M1 image (`make dev` or `make desktop`) and produces
 # evidence from the board rather than from build metadata: module identity and
 # signature, autoload, PCIe binding, device-node policy, daemon identity,
 # SELinux denials, and a real inference run with a CPU-fallback discriminator.
@@ -18,6 +18,9 @@
 #
 #   # From host over SSH (no copy needed):
 #   ssh <gw> 'sudo bash -s' < scripts/deepx/dxm1-acceptance-target.sh
+#   # Over SSH, root lands in staff_t, which may not read audit.log: section 6
+#   # then SKIPs by design. Run from the serial console (sysadm_t) for a
+#   # section 6 result.
 #
 #   # Via the aggregating runner (not in the default set — name it):
 #   scripts/run-target-checks.sh <gw> deepx-acceptance
@@ -58,10 +61,18 @@
 #                               dmesg, the kernel and modules on the board are a
 #                               matched pair regardless of what this variable
 #                               was set to.
-#   IOTGW_DXM1_MODEL            .dxnn model for the inference run
-#                               (default /etc/dx-stream-sample/YoloV5S_PPU.dxnn)
+#   IOTGW_DXM1_MODEL            .dxnn model for the inference run (default: the
+#                               model pushed with scripts/deepx/dxm1-push-model.sh,
+#                               /var/cache/dxdemo/probe-model.dxnn, else the
+#                               shipped /etc/dx-stream-sample/YoloV5S_PPU.dxnn).
+#                               The confined probe picks the same file; a
+#                               headless image ships the probe but no model.
 #   IOTGW_DXM1_RUN_SECONDS      Inference duration (default 10)
 #   IOTGW_DXM1_SKIP_INFERENCE=1 Skip section 7 (device checks only)
+#   LAUNCH_SECONDS              How long section 7e lets the demo unit run (default 45);
+#                               IOTGW_DXM1_SKIP_INFERENCE=1 skips 7e too
+#   IOTGW_AUDIT_LOG, IOTGW_BOOT_EPOCH  Section 6 inputs (default audit.log and
+#                               /proc/stat btime); for testing the parser only
 #
 # Exit status: 0 if no check FAILed. SELinux denials are reported as FINDINGs
 # and do not change the exit code — on first contact they define the policy
@@ -106,7 +117,11 @@ export TERMINFO="${TERMINFO:-/etc/terminfo}"
 export TERM=linux
 export PATH="$PATH:/usr/bin:/usr/sbin"
 
-MODEL="${IOTGW_DXM1_MODEL:-/etc/dx-stream-sample/YoloV5S_PPU.dxnn}"
+if [ -z "${IOTGW_DXM1_MODEL:-}" ] && [ -r /var/cache/dxdemo/probe-model.dxnn ]; then
+    MODEL=/var/cache/dxdemo/probe-model.dxnn
+else
+    MODEL="${IOTGW_DXM1_MODEL:-/etc/dx-stream-sample/YoloV5S_PPU.dxnn}"
+fi
 RUN_SECONDS="${IOTGW_DXM1_RUN_SECONDS:-10}"
 
 # Set by section 3. Defaults to "unsafe" so that a section-3 failure, or any
@@ -116,9 +131,196 @@ DX_DECODE_OK=0
 summary_and_exit() {
     printf '\nSummary: PASS=%d FAIL=%d SKIP=%d FINDING=%d\n' \
         "$PASS" "$FAIL" "$SKIP" "$FINDING"
-    [ "$FINDING" -gt 0 ] && printf 'FINDINGs are recorded, not failures — see section 6.\n'
+    [ "$FINDING" -gt 0 ] && printf 'FINDINGs are recorded, not failures — see section 6 (printed after 7).\n'
     [ "$FAIL" -eq 0 ]
     exit $?
+}
+
+# ---------------------------------------------------------------------------
+# Section 6 runs LAST, after section 7, so it covers the denials the workloads
+# themselves produce.
+#
+# Evidence is audit.log plus its rotations, not the journal: with auditd
+# running, AVC and USER_AVC records never reach the journal, so an empty
+# journal grep says nothing. Denials raised before auditd started went to the
+# kernel log; those come from journalctl -k for this boot.
+#
+# Coverage is claimed complete only when the files read reach back to the
+# FIRST auditd start of this boot and nothing is missing in between:
+#   - the log and every rotation present are readable, and the rotations are
+#     contiguous (audit.log.1 .. audit.log.N, no gap);
+#   - the journal names every auditd start this boot, and the files hold as
+#     many DAEMON_START records since boot as there were starts (a restart
+#     plus rotation can leave a later DAEMON_START while the earlier stretch
+#     is gone, so "a DAEMON_START since boot" is not enough);
+#   - the earliest record since boot in the files is that first DAEMON_START;
+#   - every AVC/USER_AVC/SELINUX_ERR line has a parseable audit(<epoch>) stamp;
+#   - the kernel reports no lost records, and the kernel journal is readable.
+# Unreadable log = SKIP. Anything else missing = FAIL with the actual evidence
+# interval. Never a clean result on partial evidence.
+#
+# In-scope denials are split three ways:
+#   service   source domain is not the invoking shell's (dxrtd, weston, demo …)
+#   workload  source is the shell's domain: the operator workload this script
+#             runs (dxrt-cli, run_model, run.sh, dxtop). Real findings: an
+#             operator doing the same thing hits the same denial.
+#   harness   source is the shell's domain AND the command is one of this
+#             script's own helpers (DXM1_HARNESS_COMM); listed, not counted.
+DXM1_AVC_SCOPE='iotgw_(dxrtd|dxrt|weston|dxdemo)_|comm="(dxrtd|weston|gst-launch-1\.0|run\.sh|iotgw-dx-demo|dxrt-cli|run_model|dxtop)"|name="dxrt|dx_dma|deepx|dx-stream'
+DXM1_HARNESS_COMM='comm="(script|mktemp|strings|ausearch|auditctl|journalctl|awk|sed|grep|tail|tee|sort)"'
+# MESSAGE_ID of systemd's "unit started" journal entry.
+SD_UNIT_STARTED=39f53479d3a045ac8e11786248231fbf
+selinux_denials() {
+section "6. SELinux denials since boot (findings, not failures; runs after section 7)"
+if [ ! -d /sys/fs/selinux ]; then
+    say_skip "SELinux denials" "SELinux not enabled in this kernel"
+    return
+fi
+say_info "enforce=$(cat /sys/fs/selinux/enforce 2>/dev/null)  $(getenforce 2>/dev/null)  shell=$(id -Z 2>/dev/null)"
+local aud=${IOTGW_AUDIT_LOG:-/var/log/audit/audit.log} boot files f n gap out rc
+boot=${IOTGW_BOOT_EPOCH:-$(awk '/^btime / { print $2 }' /proc/stat 2>/dev/null)}
+if [ ! -r "$aud" ] || ! head -c1 "$aud" >/dev/null 2>&1; then
+    say_skip "SELinux denials" "cannot read $aud from $(id -Z 2>/dev/null) — run from a sysadm_t console shell"
+    return
+fi
+if [ -z "$boot" ]; then
+    say_fail "SELinux denials: no boot time in /proc/stat — cannot bound the evidence to this boot"
+    return
+fi
+if ! systemctl is-active -q auditd 2>/dev/null; then
+    say_fail "SELinux denials: auditd is not active — audit.log is not the evidence for this boot"
+    return
+fi
+local incomplete=""
+# Rotations, oldest first, so records come out in time order. A gap in the
+# numbering means a file is missing from the middle of the evidence.
+files="" gap=""
+for n in 9 8 7 6 5 4 3 2 1; do
+    f="$aud.$n"
+    if [ -e "$f" ]; then
+        if [ ! -r "$f" ]; then
+            say_fail "SELinux denials: rotated log $f exists but is unreadable — evidence incomplete"
+            return
+        fi
+        files="$files $f"
+    elif [ -n "$files" ]; then
+        gap="$gap $f"
+    fi
+done
+files="$files $aud"
+[ -z "$gap" ] || incomplete="$incomplete; rotation gap (missing:$gap)"
+say_info "evidence files:$files"
+# One awk pass. Stats line, then one "|"-prefixed line per in-scope denial since boot.
+# shellcheck disable=SC2086
+out=$(AWK_SCOPE="$DXM1_AVC_SCOPE" awk -v t="$boot" '
+    # Epochs stay strings ("1793367285.123") so they print as stamped;
+    # compare them with e + 0.
+    function ep(line,   m) {
+        if (match(line, /msg=audit\([0-9]+(\.[0-9]+)?:[0-9]+\)/)) {
+            m = substr(line, RSTART + 10, RLENGTH - 11); sub(/:.*/, "", m); return m
+        }
+        return "-1"
+    }
+    BEGIN { scope = ENVIRON["AWK_SCOPE"] }
+    {
+        e = ep($0)
+        if ($0 ~ /type=(AVC|USER_AVC|SELINUX_ERR|USER_SELINUX_ERR) /) {
+            if (e + 0 < 0) { unparsed++; next }
+            if (e + 0 < t + 0) next
+            den++; if ($0 ~ scope) print "|" $0
+        } else if (e + 0 < t + 0) next
+        rec++
+        if (first == "") first = e
+        last = e
+        if ($0 ~ /type=DAEMON_START /) { starts++; if (fstart == "") fstart = e; if (first == e) headstart = 1 }
+    }
+    END { printf "STATS %d %d %d %d %s %s %s %d\n", rec, unparsed, den, starts, (first == "" ? "-" : first), (last == "" ? "-" : last), (fstart == "" ? "-" : fstart), headstart }
+' $files 2>&1)
+rc=$?
+local stats records unparsed total starts first last fstart headstart
+stats=$(printf '%s\n' "$out" | grep -E '^STATS [0-9]+ [0-9]+ [0-9]+ [0-9]+ [-0-9.]+ [-0-9.]+ [-0-9.]+ [01]$' | tail -1)
+if [ "$rc" -ne 0 ] || [ -z "$stats" ]; then
+    say_fail "SELinux denials: audit log parser failed (awk exit $rc)"
+    printf '%s\n' "$out" | grep -v '^|' | tail -5 | sed 's/^/      /'
+    return
+fi
+set -- $stats
+records=$2; unparsed=$3; total=$4; starts=$5; first=$6; last=$7; fstart=$8; headstart=$9
+
+# auditd starts this boot, from the journal (independent of the audit files).
+local jstarts jn jfirst kern krc kden lost
+jstarts=$(journalctl -b --no-pager -o short-unix MESSAGE_ID=$SD_UNIT_STARTED UNIT=auditd.service 2>/dev/null)
+rc=$?
+jn=$(printf '%s\n' "$jstarts" | grep -cE '^[0-9]+(\.[0-9]+)? ')
+jfirst=$(printf '%s\n' "$jstarts" | awk '/^[0-9]/ { print int($1); exit }')
+if [ "$rc" -ne 0 ] || [ "$jn" -eq 0 ]; then
+    incomplete="$incomplete; journal does not show this boot's auditd start(s) (journalctl rc $rc) — cannot prove coverage"
+else
+    [ "$starts" -eq "$jn" ] || incomplete="$incomplete; auditd started $jn time(s) this boot but the files hold $starts DAEMON_START record(s)"
+    if [ "$headstart" != "1" ]; then
+        incomplete="$incomplete; earliest record since boot is not a DAEMON_START (head of the evidence rotated away)"
+    elif [ "${fstart%.*}" -gt "$jfirst" ] 2>/dev/null; then
+        incomplete="$incomplete; earliest DAEMON_START ($fstart) is later than the first journal start ($jfirst)"
+    fi
+fi
+[ "$records" -gt 0 ] || incomplete="$incomplete; zero audit records since boot"
+[ "$unparsed" -eq 0 ] || incomplete="$incomplete; $unparsed denial lines without a parseable audit(<epoch>) stamp"
+# Pre-auditd kernel denials (printk), bounded to this boot. A boot always has
+# kernel messages, so an empty or failed read is a retrieval failure.
+kern=$(journalctl -k -b --no-pager 2>/dev/null)
+krc=$?
+if [ "$krc" -ne 0 ] || [ -z "$kern" ]; then
+    incomplete="$incomplete; kernel journal unreadable (journalctl -k rc $krc) — pre-auditd denials unknown"
+    kden=""
+else
+    kden=$(printf '%s\n' "$kern" | grep 'avc:  denied' | grep -E "$DXM1_AVC_SCOPE")
+fi
+lost=$(auditctl -s 2>/dev/null | awk '$1 == "lost" { print $2 }')
+case "$lost" in
+    0) ;;
+    "") incomplete="$incomplete; lost-record counter unreadable (auditctl -s)" ;;
+    *) incomplete="$incomplete; kernel lost $lost audit records" ;;
+esac
+
+local span="none"
+[ "$first" = "-" ] || span="$(date -u -d "@${first%.*}" +%FT%TZ 2>/dev/null || echo "$first") .. $(date -u -d "@${last%.*}" +%FT%TZ 2>/dev/null || echo "$last")"
+say_info "boot $(date -u -d "@$boot" +%FT%TZ 2>/dev/null || echo "$boot"); evidence interval $span; $records records, $total AVC/USER_AVC/SELINUX_ERR since boot (all domains), $unparsed unparsed; DAEMON_START $starts, journal auditd starts $jn; kernel lost=${lost:-unknown}"
+
+# Classify in-scope denials.
+local inscope self service workload harness all
+inscope=$(printf '%s\n%s\n' "$(printf '%s\n' "$out" | grep '^|' | sed 's/^|//')" "$kden" | grep .)
+self=$(id -Z 2>/dev/null | cut -d: -f3)
+if [ -n "$self" ]; then
+    all=$(printf '%s\n' "$inscope" | grep -E "scontext=[^ ]*:$self:")
+    service=$(printf '%s\n' "$inscope" | grep -vE "scontext=[^ ]*:$self:" | grep .)
+    harness=$(printf '%s\n' "$all" | grep -E "$DXM1_HARNESS_COMM" | grep .)
+    workload=$(printf '%s\n' "$all" | grep -vE "$DXM1_HARNESS_COMM" | grep .)
+else
+    service=$inscope; workload=""; harness=""
+fi
+local ns nw nh
+ns=$(printf '%s\n' "$service" | grep -c .)
+nw=$(printf '%s\n' "$workload" | grep -c .)
+nh=$(printf '%s\n' "$harness" | grep -c .)
+say_info "in-scope denials: service=$ns operator-workload=$nw harness=$nh (shell domain ${self:-unknown}); out of scope, not classified: $((total - ns - nw - nh < 0 ? 0 : total - ns - nw - nh))"
+if [ "$ns" -gt 0 ]; then
+    say_finding "$ns service denials (dxrtd, weston, demo, /dev/dxrt*) — record verbatim, feed into policy work"
+    printf '%s\n' "$service" | sed 's/^/      [service] /'
+fi
+if [ "$nw" -gt 0 ]; then
+    say_finding "$nw operator-workload denials from $self (dxrt-cli, run_model, run.sh, dxtop run by this script) — an operator doing the same hits them"
+    printf '%s\n' "$workload" | sed 's/^/      [workload] /'
+fi
+if [ "$nh" -gt 0 ]; then
+    say_info "[harness] $nh denials from this script's own helpers, not counted:"
+    printf '%s\n' "$harness" | sed 's/^/      [harness] /'
+fi
+if [ -n "$incomplete" ]; then
+    say_fail "SELinux denials: coverage INCOMPLETE for this boot (evidence $span) — no clean result possible:${incomplete#;}"
+elif [ "$ns" -eq 0 ] && [ "$nw" -eq 0 ]; then
+    say_pass "no in-scope service or operator-workload denials since boot (complete coverage $span; $total denials in other domains not assessed here)"
+fi
+evidence "ausearch -m avc,user_avc -ts boot (tail)" sh -c "ausearch -m avc,user_avc,selinux_err -ts boot 2>/dev/null | tail -20 || echo '(ausearch: no matches or unavailable — not evidence of zero)'"
 }
 
 # Everything below runs inside main() for one specific reason: see FIX 1 note
@@ -374,22 +576,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-section "6. SELinux denials (findings, not failures)"
-if [ ! -d /sys/fs/selinux ]; then
-    say_skip "SELinux denials" "SELinux not enabled in this kernel"
-else
-    say_info "enforce=$(cat /sys/fs/selinux/enforce 2>/dev/null)  $(getenforce 2>/dev/null)"
-    DENIALS=$(journalctl -b --no-pager 2>/dev/null | grep -i 'avc:.*denied' | grep -iE 'dxrt|dx_dma|deepx')
-    if [ -z "$DENIALS" ]; then
-        say_pass "no AVC denials involving dxrtd or the device"
-    else
-        say_finding "AVC denials involving the DX-M1 stack — record verbatim, feed into policy work"
-        printf '%s\n' "$DENIALS" | sed 's/^/      /'
-    fi
-    evidence "ausearch -m avc -ts boot (tail)" sh -c "ausearch -m avc -ts boot 2>/dev/null | tail -20 || echo '(ausearch: no matches or unavailable)'"
-fi
-
-# ---------------------------------------------------------------------------
 section "7. Real inference on the NPU"
 if [ "$DX_DECODE_OK" != "1" ]; then
     say_skip "inference" \
@@ -401,163 +587,271 @@ elif ! command -v run_model >/dev/null 2>&1; then
 elif [ ! -r "$MODEL" ]; then
     say_skip "inference" "model not found: $MODEL"
 else
-    # a. The runtime's own view of the device.
-    if command -v dxrt-cli >/dev/null 2>&1; then
-        # timeout is not optional: an unguarded dxrt-cli against a device in a
-        # bad state hangs forever and takes the whole run with it (seen 2026-09-01).
-        DXSTATUS=$(timeout 30 dxrt-cli -s 2>&1)
-        printf '  --- dxrt-cli -s:\n'; printf '%s\n' "$DXSTATUS" | sed 's/^/      /'
-        if printf '%s' "$DXSTATUS" | grep -qiE 'npu|device.*[0-9]|dx[_-]?m1'; then
-            say_pass "dxrt-cli reports a device"
+    # a-c. Where the image ships the confined launcher (desktop), device status
+    # and the timed inference run in the launcher's own domain through
+    # iotgw-dx-probe.service, not from this administrator shell: the console
+    # domain has no access to the accelerator under enforcing, by design.
+    # Without the launcher (headless dev image) the administrator-shell path
+    # below runs instead; it needs the domain permissive.
+    PROBE_UNIT=iotgw-dx-probe.service
+    if systemctl cat "$PROBE_UNIT" >/dev/null 2>&1; then
+        # d. CPU-fallback discriminator without device access: the dx_dma MSI
+        # count in /proc/interrupts during the run, against the same span idle.
+        # A run that never raised a DMA interrupt did not use the accelerator.
+        _irq() { awk '/dx[-_]dma/{s=0; for(i=2;i<=NF;i++){ if($i ~ /^[0-9]+$/) s+=$i; else break } print s; exit}' /proc/interrupts; }
+        _i0=$(_irq); sleep 5; _i1=$(_irq)
+        _t0=$(date +%s)
+        if systemctl start "$PROBE_UNIT"; then _prc=0; else _prc=$?; fi
+        _i2=$(_irq); _t1=$(date +%s)
+        PROBE_LOG=$(journalctl -b -u "$PROBE_UNIT" --since "@$_t0" -o cat --no-pager 2>/dev/null)
+        _ctx=$(journalctl -b -u "$PROBE_UNIT" --since "@$_t0" -o verbose --no-pager 2>/dev/null \
+               | sed -n 's/^ *_SELINUX_CONTEXT=//p' | grep -v init_t | sort -u | head -1)
+        printf '  --- %s (%ss):\n' "$PROBE_UNIT" "$((_t1 - _t0))"
+        printf '%s\n' "$PROBE_LOG" | tail -40 | sed 's/^/      /'
+        case "$_ctx" in *:iotgw_dxdemo_t:*) say_pass "probe ran in iotgw_dxdemo_t" ;;
+            *) say_fail "probe domain is '${_ctx:-unknown}', expected iotgw_dxdemo_t" ;; esac
+        if printf '%s' "$PROBE_LOG" | sed -n '/=== dxrt-cli -s$/,/=== dxrt-cli -s rc=/p' \
+                | grep -qiE 'npu|device.*[0-9]|dx[_-]?m1'; then
+            say_pass "dxrt-cli reports a device (confined)"
         else
-            say_fail "dxrt-cli -s does not report a device"
+            say_fail "dxrt-cli -s does not report a device (confined)"
         fi
-        evidence "dxrt-cli --errorstat" sh -c "timeout 30 dxrt-cli --errorstat 2>&1 || true"
-    else
-        say_skip "dxrt-cli device status" "dxrt-cli not installed"
-    fi
-
-    # c. NPU utilisation sampled DURING the run — the CPU-fallback
-    # discriminator. A demo that silently falls back to CPU still prints
-    # plausible detections and a plausible FPS; non-zero NPU utilisation is
-    # the one signal a fallback path cannot produce. dxtop is a TUI, so it
-    # needs a PTY: `script` provides one.
-    DXTOP_LOG=""
-    DXTOP_PID=""
-    if command -v dxtop >/dev/null 2>&1 && command -v script >/dev/null 2>&1; then
-        DXTOP_LOG=$(mktemp /tmp/dxtop.XXXXXX.log)
-        script -q -c 'stty rows 50 cols 200 2>/dev/null; exec dxtop' "$DXTOP_LOG" \
-            >/dev/null 2>&1 </dev/null &
-        DXTOP_PID=$!
-        sleep 2
-    else
-        say_skip "NPU utilisation sampling" "dxtop or script(1) not installed"
-    fi
-
-    # b. The inference run itself.
-    RUN_LOG=$(mktemp /tmp/run_model.XXXXXX.log)
-    printf '  --- run_model -m %s -t %s\n' "$MODEL" "$RUN_SECONDS"
-    if timeout $((RUN_SECONDS + 180)) run_model -m "$MODEL" -t "$RUN_SECONDS" \
-            >"$RUN_LOG" 2>&1; then
-        say_pass "run_model completed"
-    else
-        say_fail "run_model failed or timed out (exit $?)"
-    fi
-    tail -30 "$RUN_LOG" | sed 's/^/      /'
-
-    FPS=$(grep -oE 'FPS[[:space:]]*:[[:space:]]*[0-9.]+' "$RUN_LOG" | grep -oE '[0-9.]+$' | tail -1)
-    if [ -n "$FPS" ] && [ "${FPS%%.*}" -gt 0 ] 2>/dev/null; then
-        say_pass "inference throughput reported: ${FPS} FPS"
-    else
-        say_fail "no positive FPS in run_model output"
-    fi
-
-    # Stop the sampler by PID. Never `pkill -f dxtop` here: the pattern would
-    # match this script's own command line.
-    if [ -n "$DXTOP_PID" ]; then
-        kill -TERM "$DXTOP_PID" 2>/dev/null
-        sleep 1
-        pgrep -x dxtop >/dev/null 2>&1 && pkill -x dxtop 2>/dev/null
-        wait "$DXTOP_PID" 2>/dev/null
-
-        # dxtop frames look like: "Core : 0 ... Util: 37.5% ... Clock: 1000 MHz"
-        # `strings` strips the PTY's ANSI and control bytes.
-        # dxtop is a TUI: it positions values with ANSI cursor moves, so "Core : 0"
-        # and its "Util: NN%" are NOT on the same line of the capture. Strip the
-        # escapes and collapse the ENTIRE stream to one line before matching —
-        # the same approach the vendor's own parser takes. A per-line regex
-        # silently matches nothing, which reads as "no samples" rather than a bug.
-        DXFLAT=$(strings "$DXTOP_LOG" 2>/dev/null \
-            | sed -e 's/\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tr -s ' ')
-        MAXUTIL=$(printf '%s' "$DXFLAT" \
-            | grep -oE 'Util: [0-9.]+' | grep -oE '[0-9.]+' | sort -g | tail -1)
-        SAMPLES=$(printf '%s' "$DXFLAT" | grep -oE 'Util: [0-9.]+' | wc -l)
-        say_info "dxtop: ${SAMPLES:-0} utilisation samples, peak ${MAXUTIL:-n/a}%"
-        if [ -n "$MAXUTIL" ] && [ "$(printf '%s' "$MAXUTIL" | cut -d. -f1)" -gt 0 ] 2>/dev/null; then
-            say_pass "NPU utilisation was non-zero during inference — it ran on DX-M1, not a CPU fallback"
-        elif [ "${SAMPLES:-0}" = "0" ]; then
-            say_skip "CPU-fallback discriminator" "dxtop produced no parseable samples; run 'dxtop' interactively during a run instead"
+        if [ "$_prc" = 0 ] && printf '%s' "$PROBE_LOG" | grep -q '=== run_model rc=0'; then
+            say_pass "run_model completed (confined)"
         else
-            say_fail "NPU utilisation stayed at 0 during inference — suspect a CPU fallback"
+            say_fail "run_model failed in $PROBE_UNIT (start rc $_prc)"
         fi
-        # Echo the samples into the transcript rather than only pointing at the
-        # files: sshd hardening gives this session a PrivateTmp, so /tmp paths
-        # named here are gone the moment the connection closes.
-        printf '  --- dxtop utilisation samples (parsed):\n'
-        printf '%s' "$DXFLAT" | grep -oE 'Core : [0-9]+ Util: [0-9.]+ *%?' \
-            | tail -12 | sed 's/^/      /'
-        say_info "raw logs this session only: $DXTOP_LOG  $RUN_LOG"
-    fi
+        FPS=$(printf '%s' "$PROBE_LOG" | grep -oE 'FPS[[:space:]]*:[[:space:]]*[0-9.]+' | grep -oE '[0-9.]+$' | tail -1)
+        if [ -n "$FPS" ] && [ "${FPS%%.*}" -gt 0 ] 2>/dev/null; then
+            say_pass "inference throughput reported: ${FPS} FPS (confined)"
+        else
+            say_fail "no positive FPS in the probe's run_model output"
+        fi
+        _idle=$(( ${_i1:-0} - ${_i0:-0} )); _run=$(( ${_i2:-0} - ${_i1:-0} ))
+        say_info "dx-dma interrupts: idle ${_idle}/5s, during the probe ${_run}/$((_t1 - _t0))s"
+        if [ -z "$_i0" ]; then
+            say_skip "CPU-fallback discriminator" "no dx-dma line in /proc/interrupts"
+        elif [ "$_run" -gt 0 ] && [ "$_run" -gt $(( _idle * 10 )) ]; then
+            say_pass "the accelerator raised DMA interrupts during inference — it ran on DX-M1, not a CPU fallback"
+        elif [ "$_run" -eq 0 ]; then
+            say_fail "no dx-dma interrupt during inference — suspect a CPU fallback"
+        else
+            say_skip "CPU-fallback discriminator" "inconclusive: ${_run} during the run vs ${_idle} idle"
+        fi
+    else
+        # a. The runtime's own view of the device.
+        if command -v dxrt-cli >/dev/null 2>&1; then
+            # timeout is not optional: an unguarded dxrt-cli against a device in a
+            # bad state hangs forever and takes the whole run with it (seen 2026-09-01).
+            DXSTATUS=$(timeout 30 dxrt-cli -s 2>&1)
+            printf '  --- dxrt-cli -s:\n'; printf '%s\n' "$DXSTATUS" | sed 's/^/      /'
+            if printf '%s' "$DXSTATUS" | grep -qiE 'npu|device.*[0-9]|dx[_-]?m1'; then
+                say_pass "dxrt-cli reports a device"
+            else
+                say_fail "dxrt-cli -s does not report a device"
+            fi
+            evidence "dxrt-cli --errorstat" sh -c "timeout 30 dxrt-cli --errorstat 2>&1 || true"
+        else
+            say_skip "dxrt-cli device status" "dxrt-cli not installed"
+        fi
 
-    # The vendor sample's run.sh is a GStreamer/dx-stream pipeline
-    # (dxpreprocess ! dxinfer ! dxpostprocess ! dxosd ! waylandsink).
-    #
-    # Whether it can run is a property of the IMAGE, not of this script: the
-    # headless dev image ships none of that stack, the desktop/lab image ships
-    # all of it. This used to be an UNCONDITIONAL say_skip with the reason
-    # hardcoded to "none are in this image" — so on an image that could in fact
-    # run the pipeline it still reported a skip, and the one check that
-    # exercises the full decode -> NPU -> compositor path silently never ran.
-    # Detect, do not assume.
-    #
-    # run_model above proves the NPU works. It does NOT prove the GStreamer
-    # elements, the postprocess library or the display path work; only this does.
-    SAMPLE_RUN="/etc/dx-stream-sample/run.sh"
-    PIPE_SECONDS="${PIPE_SECONDS:-20}"
-    GST_MISSING=""
-    command -v gst-launch-1.0 >/dev/null 2>&1 || GST_MISSING="gst-launch-1.0"
-    if [ -z "$GST_MISSING" ]; then
-        for _el in dxpreprocess dxinfer dxpostprocess dxosd waylandsink; do
-            gst-inspect-1.0 "$_el" >/dev/null 2>&1 </dev/null \
-                || GST_MISSING="$GST_MISSING $_el"
+        # c. NPU utilisation sampled DURING the run — the CPU-fallback
+        # discriminator. A demo that silently falls back to CPU still prints
+        # plausible detections and a plausible FPS; non-zero NPU utilisation is
+        # the one signal a fallback path cannot produce. dxtop is a TUI, so it
+        # needs a PTY: `script` provides one.
+        DXTOP_LOG=""
+        DXTOP_PID=""
+        if command -v dxtop >/dev/null 2>&1 && command -v script >/dev/null 2>&1; then
+            DXTOP_LOG=$(mktemp /tmp/dxtop.XXXXXX.log)
+            script -q -c 'stty rows 50 cols 200 2>/dev/null; exec dxtop' "$DXTOP_LOG" \
+                >/dev/null 2>&1 </dev/null &
+            DXTOP_PID=$!
+            sleep 2
+        else
+            say_skip "NPU utilisation sampling" "dxtop or script(1) not installed"
+        fi
+
+        # b. The inference run itself.
+        RUN_LOG=$(mktemp /tmp/run_model.XXXXXX.log)
+        printf '  --- run_model -m %s -t %s\n' "$MODEL" "$RUN_SECONDS"
+        if timeout $((RUN_SECONDS + 180)) run_model -m "$MODEL" -t "$RUN_SECONDS" \
+                >"$RUN_LOG" 2>&1; then
+            say_pass "run_model completed"
+        else
+            say_fail "run_model failed or timed out (exit $?)"
+        fi
+        tail -30 "$RUN_LOG" | sed 's/^/      /'
+
+        FPS=$(grep -oE 'FPS[[:space:]]*:[[:space:]]*[0-9.]+' "$RUN_LOG" | grep -oE '[0-9.]+$' | tail -1)
+        if [ -n "$FPS" ] && [ "${FPS%%.*}" -gt 0 ] 2>/dev/null; then
+            say_pass "inference throughput reported: ${FPS} FPS"
+        else
+            say_fail "no positive FPS in run_model output"
+        fi
+
+        # Stop the sampler by PID. Never `pkill -f dxtop` here: the pattern would
+        # match this script's own command line.
+        if [ -n "$DXTOP_PID" ]; then
+            kill -TERM "$DXTOP_PID" 2>/dev/null
+            sleep 1
+            pgrep -x dxtop >/dev/null 2>&1 && pkill -x dxtop 2>/dev/null
+            wait "$DXTOP_PID" 2>/dev/null
+
+            # dxtop frames look like: "Core : 0 ... Util: 37.5% ... Clock: 1000 MHz"
+            # `strings` strips the PTY's ANSI and control bytes.
+            # dxtop is a TUI: it positions values with ANSI cursor moves, so "Core : 0"
+            # and its "Util: NN%" are NOT on the same line of the capture. Strip the
+            # escapes and collapse the ENTIRE stream to one line before matching —
+            # the same approach the vendor's own parser takes. A per-line regex
+            # silently matches nothing, which reads as "no samples" rather than a bug.
+            DXFLAT=$(strings "$DXTOP_LOG" 2>/dev/null \
+                | sed -e 's/\[[0-9;?]*[A-Za-z]//g' | tr '\n' ' ' | tr -s ' ')
+            MAXUTIL=$(printf '%s' "$DXFLAT" \
+                | grep -oE 'Util: [0-9.]+' | grep -oE '[0-9.]+' | sort -g | tail -1)
+            SAMPLES=$(printf '%s' "$DXFLAT" | grep -oE 'Util: [0-9.]+' | wc -l)
+            say_info "dxtop: ${SAMPLES:-0} utilisation samples, peak ${MAXUTIL:-n/a}%"
+            if [ -n "$MAXUTIL" ] && [ "$(printf '%s' "$MAXUTIL" | cut -d. -f1)" -gt 0 ] 2>/dev/null; then
+                say_pass "NPU utilisation was non-zero during inference — it ran on DX-M1, not a CPU fallback"
+            elif [ "${SAMPLES:-0}" = "0" ]; then
+                say_skip "CPU-fallback discriminator" "dxtop produced no parseable samples; run 'dxtop' interactively during a run instead"
+            else
+                say_fail "NPU utilisation stayed at 0 during inference — suspect a CPU fallback"
+            fi
+            # Echo the samples into the transcript rather than only pointing at the
+            # files: /tmp is tmpfs, so the logs named here are gone at the next
+            # reboot, and a host running this over ssh may never fetch them.
+            printf '  --- dxtop utilisation samples (parsed):\n'
+            printf '%s' "$DXFLAT" | grep -oE 'Core : [0-9]+ Util: [0-9.]+ *%?' \
+                | tail -12 | sed 's/^/      /'
+            say_info "raw logs (on-target /tmp, until reboot): $DXTOP_LOG  $RUN_LOG"
+        fi
+
+        # The vendor sample's run.sh is a GStreamer/dx-stream pipeline
+        # (dxpreprocess ! dxinfer ! dxpostprocess ! dxosd ! waylandsink).
+        #
+        # Whether it can run is a property of the IMAGE, not of this script: the
+        # headless dev image ships none of that stack, the desktop/lab image ships
+        # all of it. This used to be an UNCONDITIONAL say_skip with the reason
+        # hardcoded to "none are in this image" — so on an image that could in fact
+        # run the pipeline it still reported a skip, and the one check that
+        # exercises the full decode -> NPU -> compositor path silently never ran.
+        # Detect, do not assume.
+        #
+        # run_model above proves the NPU works. It does NOT prove the GStreamer
+        # elements, the postprocess library or the display path work; only this does.
+        SAMPLE_RUN="/etc/dx-stream-sample/run.sh"
+        PIPE_SECONDS="${PIPE_SECONDS:-20}"
+        GST_MISSING=""
+        command -v gst-launch-1.0 >/dev/null 2>&1 || GST_MISSING="gst-launch-1.0"
+        if [ -z "$GST_MISSING" ]; then
+            for _el in dxpreprocess dxinfer dxpostprocess dxosd waylandsink; do
+                gst-inspect-1.0 "$_el" >/dev/null 2>&1 </dev/null \
+                    || GST_MISSING="$GST_MISSING $_el"
+            done
+        fi
+
+        # waylandsink is a CLIENT: a compositor must already be running. Find a live
+        # wayland socket rather than trusting $WAYLAND_DISPLAY, which is unset in a
+        # non-login ssh session like this one.
+        WL_DIR=""; WL_SOCK=""
+        for _d in "${XDG_RUNTIME_DIR:-}" /run/weston /run/user/0 /run/user/1000; do
+            [ -n "$_d" ] && [ -d "$_d" ] || continue
+            for _s in "$_d"/wayland-*; do
+                [ -S "$_s" ] || continue
+                case "$_s" in *.lock) continue ;; esac
+                WL_DIR="$_d"; WL_SOCK="${_s##*/}"; break 2
+            done
         done
+
+        if [ ! -x "$SAMPLE_RUN" ]; then
+            say_skip "$SAMPLE_RUN" "not installed in this image"
+        elif [ -n "$GST_MISSING" ]; then
+            say_skip "$SAMPLE_RUN" "missing:${GST_MISSING} (expected on the headless image; the desktop/lab image ships these)"
+        elif [ -z "$WL_DIR" ]; then
+            say_skip "$SAMPLE_RUN" "no running Wayland compositor — no wayland-* socket in XDG_RUNTIME_DIR, /run/weston or /run/user/*"
+        else
+            PIPE_LOG=$(mktemp /tmp/dxstream_run.XXXXXX.log)
+            printf '  --- %s (%ss, display %s/%s)\n' "$SAMPLE_RUN" "$PIPE_SECONDS" "$WL_DIR" "$WL_SOCK"
+            # cd first: run.sh passes model-path=./YoloV5S_PPU.dxnn, relative to its
+            # own directory. </dev/null on the pipeline is not optional — this whole
+            # script is commonly fed to `ssh <gw> 'sudo bash -s' < script`, and any
+            # child that reads stdin eats the REST OF THE SCRIPT. That has already
+            # caused a run with real failures to print "ALL PASSED".
+            ( cd "$(dirname "$SAMPLE_RUN")" \
+              && XDG_RUNTIME_DIR="$WL_DIR" WAYLAND_DISPLAY="$WL_SOCK" \
+                 timeout "$PIPE_SECONDS" "./$(basename "$SAMPLE_RUN")" ) \
+                >"$PIPE_LOG" 2>&1 </dev/null
+            _rc=$?
+            # A healthy pipeline is still playing when timeout kills it, so exit 124
+            # is the EXPECTED outcome; reaching PLAYING without an ERROR is the real
+            # signal. Exit 0 also passes (short clip that ran to EOS).
+            if grep -q "Setting pipeline to PLAYING" "$PIPE_LOG" \
+               && ! grep -qE "^ERROR|Erroneous pipeline|not-negotiated|no element" "$PIPE_LOG"; then
+                say_pass "run.sh reached PLAYING — H.264 decode -> dx elements -> compositor negotiated end to end"
+            else
+                say_fail "run.sh pipeline did not reach PLAYING (exit $_rc)"
+            fi
+            tail -15 "$PIPE_LOG" | sed 's/^/      /'
+            rm -f "$PIPE_LOG"
+        fi
+
     fi
 
-    # waylandsink is a CLIENT: a compositor must already be running. Find a live
-    # wayland socket rather than trusting $WAYLAND_DISPLAY, which is unset in a
-    # non-login ssh session like this one.
-    WL_DIR=""; WL_SOCK=""
-    for _d in "${XDG_RUNTIME_DIR:-}" /run/weston /run/user/0 /run/user/1000; do
-        [ -n "$_d" ] && [ -d "$_d" ] || continue
-        for _s in "$_d"/wayland-*; do
-            [ -S "$_s" ] || continue
-            case "$_s" in *.lock) continue ;; esac
-            WL_DIR="$_d"; WL_SOCK="${_s##*/}"; break 2
-        done
-    done
-
-    if [ ! -x "$SAMPLE_RUN" ]; then
-        say_skip "$SAMPLE_RUN" "not installed in this image"
-    elif [ -n "$GST_MISSING" ]; then
-        say_skip "$SAMPLE_RUN" "missing:${GST_MISSING} (expected on the headless image; the desktop/lab image ships these)"
-    elif [ -z "$WL_DIR" ]; then
-        say_skip "$SAMPLE_RUN" "no running Wayland compositor — no wayland-* socket in XDG_RUNTIME_DIR, /run/weston or /run/user/*"
+    # e. The shipped launcher: iotgw-dx-demo.service runs run.sh as dxdemo in
+    # iotgw_dxdemo_t and relaunches it at end of stream. The image ships it
+    # DISABLED (no autoplay at boot); this run starts it explicitly, lets the
+    # clip reach EOS at least once, then stops it. Weston must survive both
+    # the EOS window close and the stop: a mapped window closing is the path
+    # that crashed the compositor when it had no output.
+    DEMO_UNIT=iotgw-dx-demo.service
+    LAUNCH_SECONDS="${LAUNCH_SECONDS:-45}"
+    if ! systemctl cat "$DEMO_UNIT" >/dev/null 2>&1; then
+        say_skip "$DEMO_UNIT" "not installed in this image"
     else
-        PIPE_LOG=$(mktemp /tmp/dxstream_run.XXXXXX.log)
-        printf '  --- %s (%ss, display %s/%s)\n' "$SAMPLE_RUN" "$PIPE_SECONDS" "$WL_DIR" "$WL_SOCK"
-        # cd first: run.sh passes model-path=./YoloV5S_PPU.dxnn, relative to its
-        # own directory. </dev/null on the pipeline is not optional — this whole
-        # script is commonly fed to `ssh <gw> 'sudo bash -s' < script`, and any
-        # child that reads stdin eats the REST OF THE SCRIPT. That has already
-        # caused a run with real failures to print "ALL PASSED".
-        ( cd "$(dirname "$SAMPLE_RUN")" \
-          && XDG_RUNTIME_DIR="$WL_DIR" WAYLAND_DISPLAY="$WL_SOCK" \
-             timeout "$PIPE_SECONDS" "./$(basename "$SAMPLE_RUN")" ) \
-            >"$PIPE_LOG" 2>&1 </dev/null
-        _rc=$?
-        # A healthy pipeline is still playing when timeout kills it, so exit 124
-        # is the EXPECTED outcome; reaching PLAYING without an ERROR is the real
-        # signal. Exit 0 also passes (short clip that ran to EOS).
-        if grep -q "Setting pipeline to PLAYING" "$PIPE_LOG" \
-           && ! grep -qE "^ERROR|Erroneous pipeline|not-negotiated|no element" "$PIPE_LOG"; then
-            say_pass "run.sh reached PLAYING — H.264 decode -> dx elements -> compositor negotiated end to end"
+        _en=$(systemctl is-enabled "$DEMO_UNIT" 2>/dev/null)
+        if [ "$_en" = "disabled" ]; then say_pass "$DEMO_UNIT shipped disabled (no boot autoplay)"
+        else say_fail "$DEMO_UNIT is '$_en', expected disabled"; fi
+        _was=$(systemctl is-active "$DEMO_UNIT" 2>/dev/null)
+        _hdmi=$(cat /sys/class/drm/card*-HDMI-A-*/status 2>/dev/null | tr '\n' ' ')
+        _wpid=$(systemctl show -p MainPID --value weston.service 2>/dev/null)
+        _t0=$(date +%s)
+        say_info "connector status: ${_hdmi:-n/a}; weston MainPID=$_wpid; unit was $_was"
+        if ! systemctl start "$DEMO_UNIT"; then
+            say_fail "systemctl start $DEMO_UNIT failed"
         else
-            say_fail "run.sh pipeline did not reach PLAYING (exit $_rc)"
+            sleep "$LAUNCH_SECONDS"
+            _pid=$(systemctl show -p MainPID --value "$DEMO_UNIT")
+            _user=$(ps -o user= -p "$_pid" 2>/dev/null | tr -d ' ')
+            _dom=$(tr -d '\0' < "/proc/$_pid/attr/current" 2>/dev/null | cut -d: -f3)
+            _nr=$(systemctl show -p NRestarts --value "$DEMO_UNIT")
+            _eos=$(journalctl -u "$DEMO_UNIT" --since "@$_t0" --no-pager -o cat 2>/dev/null | grep -c 'Got EOS')
+            _play=$(journalctl -u "$DEMO_UNIT" --since "@$_t0" --no-pager -o cat 2>/dev/null | grep -c 'Setting pipeline to PLAYING')
+            say_info "after ${LAUNCH_SECONDS}s: MainPID=$_pid user=${_user:-?} domain=${_dom:-?} NRestarts=$_nr PLAYING=$_play EOS=$_eos"
+            if [ "$_user" = "dxdemo" ]; then say_pass "launcher runs as dxdemo"
+            else say_fail "launcher process user is '${_user:-none}', expected dxdemo"; fi
+            if [ "$_dom" = "iotgw_dxdemo_t" ]; then say_pass "launcher runs in iotgw_dxdemo_t"
+            else say_fail "launcher domain is '${_dom:-none}', expected iotgw_dxdemo_t"; fi
+            if [ "${_eos:-0}" -ge 1 ] && [ "${_play:-0}" -ge 2 ]; then
+                say_pass "clip reached EOS and the unit relaunched it ($_eos EOS, $_play PLAYING)"
+            else
+                say_fail "no EOS-and-relaunch cycle within ${LAUNCH_SECONDS}s ($_eos EOS, $_play PLAYING) — raise LAUNCH_SECONDS if the clip is longer"
+            fi
+            systemctl stop "$DEMO_UNIT"
+            sleep 3
+            journalctl -u "$DEMO_UNIT" --since "@$_t0" --no-pager -o cat 2>/dev/null | tail -12 | sed 's/^/      /'
         fi
-        tail -15 "$PIPE_LOG" | sed 's/^/      /'
-        rm -f "$PIPE_LOG"
+        _wpid2=$(systemctl show -p MainPID --value weston.service 2>/dev/null)
+        if [ -n "$_wpid" ] && [ "$_wpid" != 0 ] && [ "$_wpid" = "$_wpid2" ] && systemctl is-active -q weston.service; then
+            say_pass "weston survived the launcher's EOS cycles and stop (MainPID $_wpid unchanged)"
+        else
+            say_fail "weston did not survive the launcher run (MainPID $_wpid -> $_wpid2)"
+        fi
+        [ "$_was" = "active" ] && systemctl start "$DEMO_UNIT"
     fi
 fi
+
+selinux_denials
 
 # ---------------------------------------------------------------------------
 section "8. Persistence across reboot"
