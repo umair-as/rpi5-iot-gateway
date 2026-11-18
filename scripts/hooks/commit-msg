@@ -14,6 +14,19 @@ subject="$(grep -vE '^[[:space:]]*(#|$)' "$msg_file" | head -1 || true)"
 # Empty message: git aborts on its own, nothing to add.
 [ -z "$subject" ] && exit 0
 
+# Optional per-clone patterns (see commit-patterns.sh). Git comment lines
+# are skipped: they never reach history.
+. "$(dirname "$0")/commit-patterns.sh"
+pat="$(commit_patterns)"
+if [ -n "$pat" ]; then
+    hits="$(grep -vE '^#' "$msg_file" | grep -nEi -e "$pat" | sed 's/^/  /' || true)"
+    if [ -n "$hits" ]; then
+        printf '\nCOMMIT BLOCKED — message matches a local commit pattern:\n%s\n\n' "$hits" >&2
+        printf 'Override only if certain: git commit --no-verify\n\n' >&2
+        exit 1
+    fi
+fi
+
 # Subjects git itself generates, or that rebase consumes before they ever
 # reach history. Not ours to police.
 case "$subject" in
@@ -46,6 +59,23 @@ case "$subject" in
         exit 1
         ;;
 esac
+
+# Body length cap (AGENTS.md "Commit body length"). Counts non-blank body
+# lines after the subject, excluding trailers and git comments, and stops at
+# the `commit -v` scissors line so the appended diff is never counted.
+body_lines="$(awk '
+    /^# -+ >8 -+$/ { exit }
+    /^#/ || /^[[:space:]]*$/ { next }
+    !seen { seen = 1; next }
+    /^[A-Za-z][A-Za-z-]*: / { next }
+    { n++ }
+    END { print n + 0 }' "$msg_file")"
+if [ "$body_lines" -gt 25 ]; then
+    printf '\nCOMMIT BLOCKED — body is %d lines (max 25, trailers not counted).\n' "$body_lines" >&2
+    printf 'Trim to what changed, why, and what verified it; put long evidence in docs/ or the PR.\n' >&2
+    printf 'See AGENTS.md "Commit body length". Override only if certain: git commit --no-verify\n\n' >&2
+    exit 1
+fi
 
 # Advisory only. A long subject is ugly, not broken, and hard-blocking it
 # would reject valid work at the worst possible moment.

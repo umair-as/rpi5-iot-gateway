@@ -42,9 +42,8 @@ git push origin main vX.Y.Z
 ```
 
 Pushing the tag triggers `.github/workflows/release-notes.yml`, which generates
-the GitHub Release body from `cliff.toml`. The parser is intentionally adapted
-to this repository's existing commit history; it does not impose a new
-commit-message format.
+the GitHub Release body from `cliff.toml`. The parser reads the Conventional
+Commit subjects the `commit-msg` hook enforces (AGENTS.md §Conventions).
 
 Optional local preview before tagging, if `git-cliff` is installed:
 
@@ -64,22 +63,26 @@ scripts/release/release-build.sh \
   --bundle full-fit
 ```
 
-For production profile:
+For production, build the image only, let the operator sign the slot FITs,
+then assemble the bundle (the assembly gate refuses unsigned slot FITs; see
+[FIT Boot Signing](FIT_BOOT_SIGNING.md)):
 
 ```bash
 scripts/release/release-build.sh \
   --version X.Y.Z \
   --build-id YYYYMMDDHHMM \
   --image prod \
-  --bundle full
+  --bundle none
+make sign-slot-fits-yk SLOT_FITS_IMAGE=iot-gw-image-prod   # operator: YubiKey PIN + touch
+make bundle-prod-full-fit
 ```
 
 ## 5. SBOM / CVE Scan
 
-Not automated by the release scripts — a deliberate manual step for now.
+Not automated by the release scripts; run it by hand.
 
 **Refresh the database pin first.** The scanner databases are pinned by SRCREV
-in `kas/cve.yml`, so a scan reports what was known at the pinned cutoff, not
+in `meta-iot-gateway/conf/distro/include/iotgw-cve-db.inc`, so a scan reports what was known at the pinned cutoff, not
 what is known today. Shipping a count measured against a stale pin is the
 failure mode this step exists to prevent — it produces a healthy-looking number
 that is silently blind to everything published since. Procedure, cadence and
@@ -119,8 +122,7 @@ rebuilt after the scan.
 
 **Re-derive the kernel rows against the CVE feed.** The pinned scanner database
 under-reports kernel CVEs whose per-branch fix boundary was published after the
-pin — measured on a real release-candidate scan, three rows moved `Patched →
-Unpatched` this way, including two genuine open findings. A release recorded
+pin, so rows can move `Patched → Unpatched` after re-derivation. A release recorded
 from the raw report alone therefore understates the kernel. Run the CNA
 re-derivation (procedure, commands and the mandatory `not applicable config: 0`
 check: `KERNEL_CVE_APPLICABILITY.md` §"Running the CNA re-derivation") and record its result
@@ -135,7 +137,7 @@ derivation command) that ties the derived numbers back to that validated build.
 Record with the release:
 
 - the **database cutoff** the scan was measured against (read it from
-  `kas/cve.yml`, not from memory);
+  `meta-iot-gateway/conf/distro/include/iotgw-cve-db.inc`, not from memory);
 - the **CVE-feed commit** the re-derivation used, and its kernel totals
   (`vulnerable` / `version-not-in-range` / `from kernel CNA`);
 - the **image profile** scanned, and the dated report filename;
@@ -179,7 +181,7 @@ Output directory:
 - `release/vX.Y.Z/checksums.sha256`
 
 The deploy directory is auto-detected (`build/tmp/deploy` or
-`build/tmp/deploy`). Override for non-standard layouts:
+`build/tmp-glibc/deploy`). Override for non-standard layouts:
 
 ```bash
 IOTGW_DEPLOY_ROOT=/path/to/deploy scripts/release/release-manifest.sh ...

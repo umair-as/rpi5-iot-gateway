@@ -52,6 +52,9 @@ meta-iot-gateway/recipes-ota/bundles/files/dev-key.pem
 # live in scratch/ — never commit. .agents/ holds legacy Codex-format skills
 # (unused, kept local).
 scratch/
+# Serial console captures (tio --log-directory): operator-local bench
+# logs, never commit.
+tio-session-logs/
 .claude/*
 !.claude/rules/
 !.claude/skills/
