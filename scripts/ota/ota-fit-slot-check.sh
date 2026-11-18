@@ -16,25 +16,24 @@
 #       active slot's per-slot FIT is absent from /boot.
 #
 # Usage:
-#   # On target directly:
+#   # On target directly (with lib/target-check.sh copied to ../lib):
 #   sudo ./ota-fit-slot-check.sh
 #
 #   # From host over SSH (no copy needed):
-#   ssh <gw> 'sudo bash -s' < scripts/ota/ota-fit-slot-check.sh
+#   cat scripts/lib/target-check.sh scripts/ota/ota-fit-slot-check.sh | ssh <gw> 'sudo bash -s'
 #
 # Pairs with:
 #   scripts/ota/ota-smoke-target.sh — general post-OTA / BSP smoke suite
 
 set -u
-PASS=0
-FAIL=0
-SKIP=0
 
-say_pass() { printf '  \e[32mPASS\e[0m %s\n' "$1"; PASS=$((PASS+1)); }
-say_fail() { printf '  \e[31mFAIL\e[0m %s\n' "$1"; FAIL=$((FAIL+1)); }
-say_skip() { printf '  \e[33mSKIP\e[0m %s — %s\n' "$1" "${2:-}"; SKIP=$((SKIP+1)); }
+# Reporting helpers: streamed ahead of this script by run-target-checks.sh,
+# otherwise sourced from the repo layout.
+if ! command -v say_pass >/dev/null 2>&1; then
+    # shellcheck source=../lib/target-check.sh
+    . "$(dirname -- "${BASH_SOURCE[0]:-$0}")/../lib/target-check.sh" || exit 2
+fi
 say_warn() { printf '  \e[33mWARN\e[0m %s\n' "$1"; }
-section()  { printf '\n== %s ==\n' "$1"; }
 
 BOOT_DIR="${IOTGW_BOOT_DIR:-/boot}"
 
@@ -73,7 +72,7 @@ fi
 
 if [ -z "$active_slot" ]; then
     say_fail "could not determine active RAUC slot from /proc/cmdline or 'rauc status' — this is a target-side check; run it ON the gateway, or from the host via: scripts/run-target-checks.sh <device-ip> ota-fit-slot"
-    printf '\n== summary ==\n  PASS: %d\n  FAIL: %d\n  SKIP: %d\n' "$PASS" "$FAIL" "$SKIP"
+    summary
     exit 1
 fi
 
@@ -93,8 +92,7 @@ section "Per-slot FIT presence"
 if [ ! -e "$fit_path" ]; then
     say_warn "$fit_path absent — device has not completed an OTA to this slot yet (fresh-flash fallback window; U-Boot loads plain ${BOOT_DIR}/fitImage instead)"
     say_skip "kernel/FIT version comparison" "no per-slot FIT to inspect at $fit_path"
-    printf '\n== summary ==\n  PASS: %d\n  FAIL: %d\n  SKIP: %d\n' "$PASS" "$FAIL" "$SKIP"
-    [ "$FAIL" -eq 0 ]
+    summary
     exit $?
 fi
 say_pass "$fit_path present"
@@ -174,9 +172,4 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-printf '\n== summary ==\n'
-printf '  PASS: %d\n' "$PASS"
-printf '  FAIL: %d\n' "$FAIL"
-printf '  SKIP: %d\n' "$SKIP"
-
-[ "$FAIL" -eq 0 ]
+summary

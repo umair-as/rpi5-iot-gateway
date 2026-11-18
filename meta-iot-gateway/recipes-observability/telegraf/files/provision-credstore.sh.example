@@ -7,11 +7,9 @@
 #
 # Source of secrets: /data/iotgw/iotgw-observability.env (operator-supplied,
 # mode 0600 root:root). Keys read:
-#   MQTT_USERNAME, MQTT_PASSWORD, INFLUXDB_USERNAME, INFLUXDB_PASSWORD
+#   INFLUXDB_USERNAME, INFLUXDB_PASSWORD
 #
 # Destinations (created and owned by this recipe's do_install as 0600 root:root):
-#   /etc/credstore/telegraf.service.mqtt_username
-#   /etc/credstore/telegraf.service.mqtt_password
 #   /etc/credstore/telegraf.service.influxdb_username
 #   /etc/credstore/telegraf.service.influxdb_password
 #
@@ -50,13 +48,9 @@ set_credential_value() {
 
 install -d -m 0700 "$OBS_CRED_DIR"
 
-mqtt_user="$(get_env_value "$OBS_SRC" "MQTT_USERNAME")"
-mqtt_pass="$(get_env_value "$OBS_SRC" "MQTT_PASSWORD")"
 influx_user="$(get_env_value "$OBS_SRC" "INFLUXDB_USERNAME")"
 influx_pass="$(get_env_value "$OBS_SRC" "INFLUXDB_PASSWORD")"
 
-[ -n "$mqtt_user" ]   && set_credential_value "$OBS_CRED_DIR/telegraf.service.mqtt_username"   "$mqtt_user"
-[ -n "$mqtt_pass" ]   && set_credential_value "$OBS_CRED_DIR/telegraf.service.mqtt_password"   "$mqtt_pass"
 [ -n "$influx_user" ] && set_credential_value "$OBS_CRED_DIR/telegraf.service.influxdb_username" "$influx_user"
 [ -n "$influx_pass" ] && set_credential_value "$OBS_CRED_DIR/telegraf.service.influxdb_password" "$influx_pass"
 

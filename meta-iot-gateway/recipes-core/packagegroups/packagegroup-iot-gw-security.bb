@@ -1,6 +1,6 @@
 SUMMARY = "IoT GW Security Hardening package group"
 DESCRIPTION = "Security hardening packages based on Lynis audit recommendations. \
-Include this packagegroup in hardened/production images."
+Installed by every image tier (iot-gw-image-base.inc), not per tier."
 LICENSE = "MIT"
 
 inherit packagegroup

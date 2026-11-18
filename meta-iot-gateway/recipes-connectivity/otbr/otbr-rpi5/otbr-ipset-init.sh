@@ -4,7 +4,7 @@
 set -e
 
 THREAD_IF="${THREAD_IF:-wpan0}"
-INFRA_IF="${INFRA_IF:-wlan0}"
+INFRA_IF="${INFRA_IF:-@OTBR_INFRA_IFACE@}"
 
 # Create ipset sets expected by otbr-agent firewall logic (IPv6 sets)
 # Using -exist so repeated runs are harmless
@@ -43,7 +43,9 @@ if ! nft -f - <<EOF
 table ip otbr_nat {
     chain nat_postrouting {
         type nat hook postrouting priority srcnat; policy accept;
-        meta mark 0x1001 oifname "$INFRA_IF" masquerade
+        # Egress follows the routing table, so translate on whichever
+        # interface carries the default route, not only the infra interface.
+        meta mark 0x1001 oifname != "wpan0" masquerade
     }
 }
 EOF

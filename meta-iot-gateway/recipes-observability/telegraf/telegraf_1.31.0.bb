@@ -18,10 +18,10 @@ SRC_URI = " \
     file://provision-credstore.sh.example \
 "
 
-# Local-first ordering (After=network.target) is the default since telegraf,
-# mosquitto and influxdb all listen on 127.0.0.1 in the standard topology.
+# Local-first ordering (After=network.target) is the default since telegraf
+# and influxdb listen on 127.0.0.1 in the standard topology.
 # Flip to "1" in a bbappend or kas/local.yml to install the network-online
-# drop-in for remote broker/DB endpoints.
+# drop-in for remote DB endpoints.
 TELEGRAF_REQUIRE_NETWORK_ONLINE ?= "0"
 
 S = "${UNPACKDIR}/${BPN}-${PV}"
@@ -39,7 +39,7 @@ GO_INSTALL = "${GO_IMPORT}/cmd/telegraf"
 # Tag list validated by custom_builder --dry-run against files/telegraf.conf.
 # To add a plugin: append its tag here (e.g. inputs.opcua) and add the
 # [[inputs.xxx]] stanza to telegraf.conf.
-TELEGRAF_PLUGIN_TAGS = "custom,inputs.cpu,inputs.disk,inputs.internal,inputs.mem,inputs.modbus,inputs.mqtt_consumer,inputs.net,inputs.processes,inputs.system,inputs.temp,outputs.influxdb,parsers.json,secretstores.systemd"
+TELEGRAF_PLUGIN_TAGS = "custom,inputs.cpu,inputs.disk,inputs.internal,inputs.mem,inputs.modbus,inputs.net,inputs.processes,inputs.system,inputs.temp,outputs.influxdb,parsers.json,secretstores.systemd"
 
 # go.bbclass appends GOBUILDFLAGS directly into the go install invocation.
 GOBUILDFLAGS:append = " -tags ${TELEGRAF_PLUGIN_TAGS}"

@@ -188,10 +188,20 @@ load_config() {
     DEVICE_KEY_URI=${DEVICE_KEY_URI:-}
     DEVICE_KEY_ENGINE=${DEVICE_KEY_ENGINE:-tpm2tss}
     OPENSSL_CONF_PATH=${OPENSSL_CONF_PATH:-}
+    # Unset means the default private CA; an explicit empty value is kept.
+    CA_CERT=${CA_CERT-/etc/ota/ca.crt}
 
     # Validate required settings
     if [[ -z "${SERVER_URL:-}" ]]; then
         die "SERVER_URL not configured"
+    fi
+    # The update server is authenticated against the private OTA CA. A
+    # configured CA that is missing must stop the check: falling back to the
+    # system trust store would let any publicly trusted certificate stand in
+    # for the update server. An explicitly empty ca_cert opts in to the system
+    # trust store.
+    if [[ -n "$CA_CERT" && ! -r "$CA_CERT" ]]; then
+        die "OTA CA certificate not readable: $CA_CERT (set ca_cert to \"\" to use the system trust store deliberately)"
     fi
 }
 
@@ -297,8 +307,10 @@ fetch_manifest_once() {
         fi
     fi
 
-    if [[ -f "${CA_CERT:-}" ]]; then
+    if [[ -n "$CA_CERT" ]]; then
         curl_opts+=(--cacert "$CA_CERT")
+    else
+        log_warn "ca_cert is empty: authenticating the update server against the system trust store"
     fi
 
     log_info "Fetching manifest from: $manifest_url"

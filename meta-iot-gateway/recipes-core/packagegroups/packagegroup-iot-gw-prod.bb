@@ -8,4 +8,5 @@ inherit packagegroup
 # Keep ota-updater excluded unless periodic polling is explicitly required.
 RDEPENDS:${PN} = " \
     ota-certs \
+    iotgw-sshd-hardening-prod \
 "
