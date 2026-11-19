@@ -77,6 +77,11 @@ make sign-slot-fits-yk SLOT_FITS_IMAGE=iot-gw-image-prod   # operator: YubiKey P
 make bundle-prod-full-fit
 ```
 
+Do not start a build in another composition (dev, desktop, even `bitbake -n`)
+between the prod image build and `make bundle-prod-full-fit`. Starting one
+makes sstate remove the prod deploy outputs, including the slot FITs you just
+signed, and the image has to be rebuilt and signed again.
+
 ## 5. SBOM / CVE Scan
 
 Not automated by the release scripts; run it by hand.
@@ -88,18 +93,33 @@ failure mode this step exists to prevent — it produces a healthy-looking numbe
 that is silently blind to everything published since. Procedure, cadence and
 the traps: `SBOM_CVE.md` §"Refreshing the pin".
 
-**Scan the image you are actually releasing.** `make sbom-cve` defaults to
-`SBOM_CVE_IMAGE = iot-gw-image-dev` (`Makefile`), so a production release that
-runs the bare target scans the *dev* image and files the result as prod's
-evidence. Pass the profile explicitly, matching the `--image` used in §4:
+**Scan dev; it covers prod when prod is a subset.** Prod installs a subset of
+dev's packages. A CVE row's verdict depends only on the package and its
+version, so when every prod package is also in dev at the same version, the
+dev report contains every row the prod report would, and its counts are an
+upper bound for prod. Scan dev:
 
 ```bash
-# dev release
-SBOM_CVE_IMAGE=iot-gw-image-dev  make sbom-cve
-
-# production release
-SBOM_CVE_IMAGE=iot-gw-image-prod make sbom-cve
+SBOM_CVE_IMAGE=iot-gw-image-dev make sbom-cve
 ```
+
+Then prove the subset from buildhistory of the two builds being released:
+
+```bash
+B=build/buildhistory/images/raspberrypi5/glibc
+comm -13 <(sort $B/iot-gw-image-dev/installed-package-names.txt) \
+         <(sort $B/iot-gw-image-prod/installed-package-names.txt)   # prod-only packages
+join <(awk 'NF>=4{print $1,$4}' $B/iot-gw-image-dev/installed-package-info.txt | sort) \
+     <(awk 'NF>=4{print $1,$4}' $B/iot-gw-image-prod/installed-package-info.txt | sort) \
+  | awk '$2 != $3'                                                     # shared packages whose version differs
+```
+
+Every prod-only package needs its own CVE check (for v0.7.0: our SSH hardening
+config package, the prod packagegroup and `psplash`, none with CVE records). A
+shared package at a different version, or a prod-only package with CVE
+records, means the subset argument does not hold: scan prod itself with
+`SBOM_CVE_IMAGE=iot-gw-image-prod make sbom-cve`, which builds it in its own
+composition. Record the release's CVE numbers as "dev, upper bound for prod".
 
 **Then read back the exact report you just produced, not "the newest one".**
 `make cve-report` resolves the most recent report in the deploy directory; if a
@@ -206,7 +226,9 @@ Confirm:
 ## 8. Publish Release
 
 The tag workflow creates or updates the GitHub Release notes automatically.
-Attach release evidence to the GitHub Release:
+When no images are distributed, the release is the tag and its notes: §4 and
+§6 are optional, and the board pass of the tested images stands in for §7.
+Otherwise, attach release evidence to the GitHub Release:
 
 - `release/vX.Y.Z/manifest.txt`
 - `release/vX.Y.Z/checksums.sha256`

@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-19
+
+Authenticates the root filesystem with dm-verity under the signed FIT, boots
+every image SELinux enforcing, and takes the shared `/boot` files out of OTA.
+No binaries are published; the board-tested images were built from `6b62378`.
+
+**Read this before deploying anything from this release.**
+
+- **Upgrading from 0.6.0 is a reflash.** The root slots changed from ext4 to raw
+  dm-verity slots, and a 0.6.0 device has none of the install guards below. OTA
+  from 0.6.x to 0.7.0 is not supported. State that is not carried over is listed
+  in `docs/PERSISTENT_STATE.md`.
+- **Prod is built, not hardware-validated.** Dev and desktop were installed by
+  OTA and tested on the bench board; the prod image was only checked at build
+  time (YubiKey-only trust anchor, no permissive SELinux domain).
+- **The device reads FIT signer names, not signatures.** Its install and
+  boot-file guards cannot verify a FIT signature. A bundle whose FIT U-Boot then
+  rejects falls back to the other slot. A boot-file update that narrows FIT
+  trust needs `--allow-trust-reduction` after verifying both slot FITs with
+  `fit_check_sign` on the build host.
+- **CVE scan, not triaged for this release.** The dev image was scanned against
+  CVE data of 2026-11-19 (cvelistV5 `58f0e00a`, NVD `ee25c1c0`), with kernel rows
+  re-derived from the kernel CNA feed of the same day (`vulns` `9d9a6432`, no
+  config-based suppression): **348 Unpatched (kernel 97, userland 251)**. These
+  counts are an upper bound for prod, whose packages are a subset of dev's at the
+  same versions. Two open rows are in the CISA KEV catalogue: OpenSSH
+  CVE-2026-123158 does not apply (it needs musl libc without PAM; sshd is built
+  against glibc with PAM), and Node.js CVE-2026-111497 is in the dev image only
+  (pulled in by `otbr-webui`).
+
+### Added
+- Runtime root dm-verity: each root slot is a raw verity slot whose root hash is
+  carried in that slot's signed FIT. Image builds fail unless the FIT trust
+  anchor and module signing match the profile.
+- A pre-init that assembles `/data`, `/etc` and `/home` before PID 1, with a
+  degraded mode when `/data` is unusable.
+- An `iotgw` SELinux policy module confining the gateway daemons; PAM on every
+  tier, admins mapped to `staff_u`, reaching `sysadm_t` only through sudo.
+- A RAUC system pre-install handler that refuses, before any slot is written, a
+  bundle without the current bundle ABI, its hooks, the bootfiles archive and
+  one FIT per slot that the current anchor accepts. `bundle-formats` refuses
+  plain bundles.
+- `iotgw-rpi-bootfiles-update`, the operator tool for the shared U-Boot, board
+  DTB and `config.txt`: complete snapshots to `/data`, a write order that keeps
+  U-Boot selected through any interruption, read-back of every write and
+  `--restore`.
+- Rootless Podman in every image, the store on `/data`; feature switches for
+  networking; the agent build launcher, preflight checks and review agents.
+
+### Changed
+- Every image boots enforcing; prod locks the mode in the kernel and refuses to
+  build with a permissive domain.
+- An OTA install writes only the target slot and its FIT; it no longer copies
+  U-Boot, the DTB or `config.txt` to the shared `/boot`.
+- Kernel 6.18.59 with a trimmed surface; encrypted (`crypt`) bundles are the
+  default; dev-only surfaces are kept out of prod; layer pins moved.
+- The desktop image is a DX-M1 demo station.
+
+### Fixed
+- The nftables ruleset is replaced in one transaction on start and reload.
+- The prod SBOM/CVE scan now builds the prod image in its own composition.
+- CVE database pinned; userspace findings closed; CVE-2026-31688 marked
+  disputed (rejected by the kernel CNA).
+
 ## [0.6.0] - 2026-09-04
 
 Adds a DEEPX DX-M1 NPU accelerator stack and a desktop lab image that runs
@@ -294,7 +358,8 @@ OTA — the RAUC compatible string does not guard the release-track jump.
 - Added adaptive OTA benchmark and troubleshooting guidance for field validation.
 - Added HTTPS streaming OTA notes and refreshed operational docs for build/partition/security flows.
 
-[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.1...v0.4.0
