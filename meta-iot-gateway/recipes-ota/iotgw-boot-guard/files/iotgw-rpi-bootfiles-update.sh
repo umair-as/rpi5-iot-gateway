@@ -10,12 +10,26 @@
 #                        it must still trust both installed slot FITs
 #   config.txt           read by the firmware first; it must not name a kernel
 #                        other than U-Boot
-# Every check runs before the first write, and the current files are backed
-# up to /data first. Each file is copied to a temporary name, synced, read
-# back from the medium, renamed over the target and read back again. FAT has
-# no journal: a power cut during the rename leaves the target old or new,
-# possibly with lost clusters that fsck.vfat repairs at the next boot.
-# --restore <run-id> writes a backup back through the same guards.
+# Every check runs before the first write. Then all three current files, and
+# a reference hash of /boot/u-boot.bin, are copied to a snapshot under /data,
+# which is marked COMPLETE only once every copy is synced. Each file is
+# copied to a temporary name, synced, read back from the medium, renamed over
+# the target and read back again. FAT has no journal: a power cut during the
+# rename leaves the target old or new, possibly with lost clusters that
+# fsck.vfat repairs at the next boot.
+# --restore <run-id> writes a COMPLETE snapshot back through the same guards,
+# after snapshotting the current files in turn.
+#
+# Two layouts are supported, told apart by the kernel config.txt selects:
+#   current  kernel_2712.img is U-Boot (no kernel= line, or kernel_2712.img)
+#   legacy   kernel=u-boot.bin; kernel_2712.img holds Linux (older OTA hooks)
+# The write order keeps U-Boot selected through every interrupted state:
+#   target current: kernel_2712.img, DTB, config.txt. kernel_2712.img becomes
+#                   U-Boot before config.txt stops selecting u-boot.bin.
+#   target legacy:  config.txt, kernel_2712.img, DTB. config.txt selects
+#                   u-boot.bin before kernel_2712.img stops being U-Boot.
+# These guards check FIT trust and boot selection. They do not show that a
+# given U-Boot and firmware DTB work together, nor FAT durability on power loss.
 set -euo pipefail
 IFS=$'\n\t'
 
@@ -29,11 +43,8 @@ ANCHOR=bcm2712-rpi-5-b.dtb
 # Tests point this at a scratch file; on the device it is the kernel's.
 DROP_CACHES=${IOTGW_DROP_CACHES:-/proc/sys/vm/drop_caches}
 
-# Written U-Boot first and config.txt last. A device whose config.txt still
-# says kernel=u-boot.bin (set by older OTA hooks) keeps booting that file until
-# the new config.txt, without that line, lands; by then kernel_2712.img is
-# U-Boot. Every interrupted state therefore still boots U-Boot.
 ARTIFACTS=(kernel_2712.img bcm2712-rpi-5-b.dtb config.txt)
+SNAPSHOT_FORMAT=1
 
 RESTORE=""
 ASSUME_YES=0
@@ -62,7 +73,7 @@ Reboot after a successful run.
 
 Options:
   --yes               Non-interactive confirmation
-  --restore <run-id>  Write back the backup of an earlier run (ls BACKUP_DIR)
+  --restore <run-id>  Write back the snapshot of an earlier run (ls BACKUP_DIR)
   --allow-trust-reduction
                       Accept a DTB that drops a required FIT key or changes
                       required-mode to "all". First verify both slot FITs
@@ -118,14 +129,41 @@ check_anchor_compat() {
     done
 }
 
-# check_config_kernel <config.txt>: the firmware must run U-Boot. A kernel=
-# line may name only kernel_2712.img (written by this tool) or u-boot.bin.
-check_config_kernel() {
+# config_kernel <config.txt|-absent->: print the file the firmware runs, after
+# refusing config.txt syntax this tool does not model: include, os_prefix, and
+# kernel= under a conditional section other than [all] or [pi5]. The last
+# applicable kernel= wins; none (or no config.txt) means kernel_2712.img.
+config_kernel() {
     local k
-    k="$(sed -n 's/^[[:space:]]*kernel[[:space:]]*=[[:space:]]*\([^[:space:]#]*\).*/\1/p' "$1" | tail -n1)"
+    if [ "$1" = -absent- ]; then echo kernel_2712.img; return 0; fi
+    k="$(awk '
+        { line = $0; sub(/\r$/, "", line); sub(/#.*/, "", line); gsub(/^[ \t]+|[ \t]+$/, "", line) }
+        line == "" { next }
+        line ~ /^\[/ { sec = (line == "[all]" || line == "[pi5]") ? "" : line; next }
+        line ~ /^include[ \t]/ { err = "!include"; exit }
+        line ~ /^os_prefix[ \t]*=/ { err = "!os_prefix"; exit }
+        line ~ /^kernel[ \t]*=/ {
+            v = line; sub(/^kernel[ \t]*=[ \t]*/, "", v)
+            if (sec != "") { err = "!section " sec; exit }
+            k = v
+        }
+        END { if (err != "") print err; else if (k != "") print k }
+    ' "$1")"
     case "$k" in
-        ""|kernel_2712.img|u-boot.bin) ;;
+        "") echo kernel_2712.img ;;
+        kernel_2712.img|u-boot.bin) echo "$k" ;;
+        "!include") die "config.txt uses include; unsupported, refusing" ;;
+        "!os_prefix") die "config.txt sets os_prefix; unsupported, refusing" ;;
+        "!section "*) die "config.txt sets kernel= under ${k#!section }; unsupported, refusing" ;;
         *) die "config.txt names kernel=${k}; only U-Boot (kernel_2712.img or u-boot.bin) is supported; refusing" ;;
+    esac
+}
+
+# write_order <kernel the target config.txt selects>: see the header.
+write_order() {
+    case "$1" in
+        u-boot.bin) printf '%s\n' config.txt kernel_2712.img bcm2712-rpi-5-b.dtb ;;
+        *)          printf '%s\n' kernel_2712.img bcm2712-rpi-5-b.dtb config.txt ;;
     esac
 }
 
@@ -136,24 +174,42 @@ check_boot() {
     case ",${line#* }," in *,rw,*) ;; *) die "$BOOT_MP is not mounted read-write: $line" ;; esac
 }
 
-# Save the current /boot/<target> (or record its absence) for --restore.
-backup_file() {
-    local target="$1" dst="${BOOT_MP}/$1"
-    [ "$DRY_RUN" -eq 1 ] && { log "DRY-RUN back up ${dst} -> ${RUN_DIR}/${target}"; return 0; }
-    install -d -m 0700 "$RUN_DIR"
-    if [ -f "$dst" ]; then
-        cp -a "$dst" "${RUN_DIR}/${target}"; sync
+# record_file <name> <src> <dir>: copy <src> to <dir>/<name> (or record its
+# absence) with a .meta of size and hash.
+record_file() {
+    local name="$1" src="$2" dir="$3" h
+    if [ -f "$src" ]; then
+        h="$(sha_of "$src")"
+        cp -a "$src" "${dir}/${name}"
+        sync; echo 3 > "$DROP_CACHES"
+        [ "$(sha_of "${dir}/${name}")" = "$h" ] || die "snapshot copy of ${name} does not match ${src}; nothing written to ${BOOT_MP}"
         printf 'target\t%s\nsize\t%s\nsha256\t%s\npresent\t1\n' \
-            "$target" "$(stat -c%s "${RUN_DIR}/${target}")" "$(sha_of "${RUN_DIR}/${target}")" \
-            > "${RUN_DIR}/${target}.meta"
+            "$name" "$(stat -c%s "${dir}/${name}")" "$h" > "${dir}/${name}.meta"
     else
-        printf 'target\t%s\npresent\t0\n' "$target" > "${RUN_DIR}/${target}.meta"
+        printf 'target\t%s\npresent\t0\n' "$name" > "${dir}/${name}.meta"
     fi
-    sync
-    log "backed up ${target} -> ${RUN_DIR}/"
 }
 
-# Skip if current, check space, back up, atomic write, read back.
+# snapshot: save every current boot file, and a reference hash of u-boot.bin
+# (not restored; a legacy restore needs it unchanged), then mark the run
+# COMPLETE. Only a COMPLETE run can be restored.
+snapshot() {
+    local a ub="${BOOT_MP}/u-boot.bin"
+    [ "$DRY_RUN" -eq 1 ] && { log "DRY-RUN snapshot ${BOOT_MP} -> ${RUN_DIR}"; return 0; }
+    install -d -m 0700 "$RUN_DIR"
+    for a in "${ARTIFACTS[@]}"; do record_file "$a" "${BOOT_MP}/${a}" "$RUN_DIR"; done
+    if [ -f "$ub" ]; then
+        printf 'present\t1\nsha256\t%s\n' "$(sha_of "$ub")" > "${RUN_DIR}/u-boot.bin.ref"
+    else
+        printf 'present\t0\n' > "${RUN_DIR}/u-boot.bin.ref"
+    fi
+    sync
+    printf 'format\t%s\n' "$SNAPSHOT_FORMAT" > "${RUN_DIR}/COMPLETE"
+    sync
+    log "snapshot of ${BOOT_MP} -> ${RUN_DIR}/"
+}
+
+# Skip if current, check space, atomic write, read back.
 write_verify() {
     local src="$1" target="$2" expected="$3" dst="${BOOT_MP}/$2" size cur avail tmp read_hash
     size="$(stat -c%s "$src")"
@@ -167,7 +223,6 @@ write_verify() {
     avail="$(free_bytes)"
     [ -n "$avail" ] || die "cannot read free space on $BOOT_MP"
     [ "$size" -le "$avail" ] || die "${target} (${size} B) exceeds free space on $BOOT_MP (${avail} B)"
-    backup_file "$target"
     tmp="${BOOT_MP}/.${target}.new"
     rm -f "$tmp"
     cp "$src" "$tmp"; sync
@@ -188,7 +243,7 @@ write_verify() {
 do_update() {
     [ -f "$MANIFEST" ] || die "manifest not found: $MANIFEST"
     check_boot
-    local a src exp ans
+    local a src exp ans changed kern
     for a in "${ARTIFACTS[@]}"; do          # verify every artifact BEFORE any write
         src="${ROOT_DIR}/${a}"
         [ -f "$src" ] || die "staged artifact missing: $src"
@@ -197,51 +252,82 @@ do_update() {
         [ "$(sha_of "$src")" = "$exp" ] || die "$a artifact hash != manifest"
     done
     check_anchor_compat "${ROOT_DIR}/${ANCHOR}"
-    check_config_kernel "${ROOT_DIR}/config.txt"
+    kern="$(config_kernel "${ROOT_DIR}/config.txt")"
+    [ "$kern" = kernel_2712.img ] \
+        || die "staged config.txt selects u-boot.bin; an update must boot the staged U-Boot (kernel_2712.img); refusing"
     log "boot-file update for ${BOOT_MP}$([ "$DRY_RUN" -eq 1 ] && echo ' (dry-run)')"
     for a in "${ARTIFACTS[@]}"; do log "  $a ($(manifest_col "$a" 2))"; done
     if [ "$ASSUME_YES" -ne 1 ] && [ "$DRY_RUN" -ne 1 ]; then
         printf 'Proceed with the %s file update? [y/N]: ' "$BOOT_MP"; read -r ans
         case "$ans" in y|Y) : ;; *) die "aborted by operator" ;; esac
     fi
+    changed=0
     for a in "${ARTIFACTS[@]}"; do
+        [ -f "${BOOT_MP}/${a}" ] && [ "$(sha_of "${BOOT_MP}/${a}")" = "$(manifest_col "$a" 2)" ] || changed=1
+    done
+    [ "$changed" -eq 0 ] || snapshot
+    for a in $(write_order kernel_2712.img); do
         write_verify "${ROOT_DIR}/${a}" "$a" "$(manifest_col "$a" 2)"
     done
     finish update
 }
 
 do_restore() {
-    local dir="${BACKUP_DIR}/${RESTORE}" a meta ans
+    local dir="${BACKUP_DIR}/${RESTORE}" a meta ans cfg kern ub changed=0
+    case "$RESTORE" in */*|.|..) die "run id '${RESTORE}' is not a plain name (ls ${BACKUP_DIR})" ;; esac
     [ -d "$dir" ] || die "no backup run '${RESTORE}' in ${BACKUP_DIR}"
     check_boot
-    for a in "${ARTIFACTS[@]}"; do          # pre-verify the backup
-        meta="${dir}/${a}.meta"; [ -f "$meta" ] || continue
-        if [ "$(meta_get "$meta" present)" = "1" ]; then
-            [ -f "${dir}/${a}" ] || die "backup ${RESTORE} lacks ${a}"
-            [ "$(sha_of "${dir}/${a}")" = "$(meta_get "$meta" sha256)" ] || die "${a} backup hash != meta: corrupt"
-        fi
+    [ "$(meta_get "${dir}/COMPLETE" format 2>/dev/null)" = "$SNAPSHOT_FORMAT" ] \
+        || die "run ${RESTORE} is not a COMPLETE snapshot (interrupted, or from an older version of this tool); refusing"
+    for a in "${ARTIFACTS[@]}"; do          # pre-verify the snapshot
+        meta="${dir}/${a}.meta"
+        [ -f "$meta" ] || die "snapshot ${RESTORE} has no record of ${a}; refusing"
+        case "$(meta_get "$meta" present)" in
+            1) [ -f "${dir}/${a}" ] || die "snapshot ${RESTORE} lacks ${a}"
+               [ "$(sha_of "${dir}/${a}")" = "$(meta_get "$meta" sha256)" ] || die "${a} snapshot hash != meta: corrupt" ;;
+            0) ;;
+            *) die "snapshot ${RESTORE}: malformed record of ${a}" ;;
+        esac
     done
-    meta="${dir}/${ANCHOR}.meta"
-    if [ -f "$meta" ]; then
-        [ "$(meta_get "$meta" present)" = "1" ] \
-            || die "anchor guard: run ${RESTORE} would remove ${ANCHOR}, the FIT trust anchor; refusing"
-        check_anchor_compat "${dir}/${ANCHOR}"
-    fi
-    if [ -f "${dir}/config.txt" ]; then
-        check_config_kernel "${dir}/config.txt"
-    fi
-    if [ "$ASSUME_YES" -ne 1 ] && [ "$DRY_RUN" -ne 1 ]; then
-        printf 'Restore %s files from backup run %s? [y/N]: ' "$BOOT_MP" "$RESTORE"; read -r ans
-        case "$ans" in y|Y) : ;; *) die "aborted by operator" ;; esac
+    case "$(meta_get "${dir}/u-boot.bin.ref" present 2>/dev/null || true)" in
+        0|1) ;;
+        *) die "snapshot ${RESTORE} has no record of u-boot.bin; refusing" ;;
+    esac
+    [ "$(meta_get "${dir}/${ANCHOR}.meta" present)" = "1" ] \
+        || die "anchor guard: run ${RESTORE} would remove ${ANCHOR}, the FIT trust anchor; refusing"
+    check_anchor_compat "${dir}/${ANCHOR}"
+    cfg=-absent-; [ "$(meta_get "${dir}/config.txt.meta" present)" = "1" ] && cfg="${dir}/config.txt"
+    kern="$(config_kernel "$cfg")"
+    [ "$(meta_get "${dir}/kernel_2712.img.meta" present)" = "1" ] || [ "$kern" = u-boot.bin ] \
+        || die "snapshot ${RESTORE} would boot kernel_2712.img but has none; refusing"
+    if [ "$kern" = u-boot.bin ]; then
+        ub="$(meta_get "${dir}/u-boot.bin.ref" sha256 2>/dev/null || true)"
+        [ -n "$ub" ] || die "snapshot ${RESTORE} boots u-boot.bin but recorded none; refusing"
+        [ -f "${BOOT_MP}/u-boot.bin" ] && [ "$(sha_of "${BOOT_MP}/u-boot.bin")" = "$ub" ] \
+            || die "snapshot ${RESTORE} boots u-boot.bin, which is missing or changed since; refusing"
     fi
     for a in "${ARTIFACTS[@]}"; do
-        meta="${dir}/${a}.meta"; [ -f "$meta" ] || continue
-        if [ "$(meta_get "$meta" present)" = "1" ]; then
-            write_verify "${dir}/${a}" "$a" "$(meta_get "$meta" sha256)"
-        elif [ "$DRY_RUN" -eq 0 ] && [ -f "${BOOT_MP}/${a}" ]; then
-            log "restore: ${a} was absent in the backup; removing current"
-            backup_file "$a"
-            rm -f "${BOOT_MP:?}/${a}"; sync; WRITES=$((WRITES+1))
+        if [ "$(meta_get "${dir}/${a}.meta" present)" = "1" ]; then
+            [ -f "${BOOT_MP}/${a}" ] && [ "$(sha_of "${BOOT_MP}/${a}")" = "$(meta_get "${dir}/${a}.meta" sha256)" ] || changed=1
+        else
+            [ ! -f "${BOOT_MP}/${a}" ] || changed=1
+        fi
+    done
+    if [ "$ASSUME_YES" -ne 1 ] && [ "$DRY_RUN" -ne 1 ]; then
+        printf 'Restore %s files from snapshot %s? [y/N]: ' "$BOOT_MP" "$RESTORE"; read -r ans
+        case "$ans" in y|Y) : ;; *) die "aborted by operator" ;; esac
+    fi
+    [ "$changed" -eq 0 ] || snapshot
+    for a in $(write_order "$kern"); do
+        if [ "$(meta_get "${dir}/${a}.meta" present)" = "1" ]; then
+            write_verify "${dir}/${a}" "$a" "$(meta_get "${dir}/${a}.meta" sha256)"
+        elif [ -f "${BOOT_MP}/${a}" ]; then
+            if [ "$DRY_RUN" -eq 1 ]; then
+                log "DRY-RUN would remove ${BOOT_MP}/${a} (absent in the snapshot)"; PLANNED=$((PLANNED+1))
+            else
+                log "restore: ${a} was absent in the snapshot; removing current"
+                rm -f "${BOOT_MP:?}/${a}"; sync; WRITES=$((WRITES+1))
+            fi
         fi
     done
     finish restore
