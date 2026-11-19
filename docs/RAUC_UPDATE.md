@@ -112,9 +112,12 @@ take both slots down.
 - its rootfs image runs the bundle's pre-install and post-install hooks, and
   the bundle carries the hook, `bootfiles-fit.tar.gz` and exactly one
   `*.fitImage-a` and one `*.fitImage-b`;
-- the current anchor on `/boot` accepts both slot FITs: by
-  `required-mode` and the RSA key (modulus and exponent) behind each FIT
-  signer, not by key name.
+- the current anchor on `/boot` accepts both slot FITs, judged by
+  `required-mode` and the keys behind each FIT signer. A key is compared by
+  every property U-Boot verifies with, not by name, but the signer itself is
+  known only by its unsigned `key-name-hint`: no signature is verified on the
+  device. A FIT that U-Boot then rejects fails its boot attempts and the slot
+  falls back.
 
 `bundle-formats` in `system.conf` refuses `plain` bundles before that. A
 refusal is logged by RAUC (`journalctl -u rauc`) with the reason, and every
@@ -125,20 +128,39 @@ the new ones:
 
 ```bash
 sudo iotgw-rpi-bootfiles-update --dry-run    # plan; writes nothing
-sudo iotgw-rpi-bootfiles-update              # back up, write, read back (asks first)
+sudo iotgw-rpi-bootfiles-update              # snapshot, write, read back (asks first)
 sudo reboot
 sudo iotgw-rpi-bootfiles-update --restore <run-id>   # roll back a run (ls /data/rpi-boot/backup)
 ```
 
 It refuses before the first write if a staged file does not match its
 manifest, `/boot` is not a mounted read-write FAT, the new DTB would not
-accept an installed slot FIT, or the new `config.txt` names a kernel other
-than U-Boot. It writes U-Boot first and `config.txt` last, so a device that
-still boots `u-boot.bin` through `kernel=` keeps booting U-Boot at every
-step. Each file is written to a temporary name, read
-back from the medium, renamed and read back again. A `--restore` goes through
-the same checks. Moving a device from dual trust to YubiKey-only trust is
-staged: [FIT Boot Signing](FIT_BOOT_SIGNING.md).
+accept an installed slot FIT, or `config.txt` does not select U-Boot as
+`kernel_2712.img` (`include`, `os_prefix` and a `kernel=` under a conditional
+section other than `[all]`/`[pi5]` are refused as unsupported).
+
+A new DTB that **narrows trust** (drops a required key, or switches
+`required-mode` to `all`) is refused unless `--allow-trust-reduction` is
+given. The device cannot verify signatures, so first copy both
+`/boot/fitImage-a` and `-b` to the build host and verify each against the new
+DTB with U-Boot's verifier:
+`scripts/fit-signing/sign_fit.py verify --fit <fitImage-x> --dtb <new dtb>`.
+Restoring an older, narrower DTB is a trust reduction too.
+
+Before the first write it snapshots all three files (and a reference hash of
+`u-boot.bin`) to `/data/rpi-boot/backup/<run-id>`, marked `COMPLETE` once
+synced; `--restore` accepts only complete snapshots, and snapshots the
+current files before writing. The write order keeps U-Boot selected through
+every interrupted state: towards the current layout U-Boot first and
+`config.txt` last; back to the older `kernel=u-boot.bin` layout `config.txt`
+first, and only while `u-boot.bin` is unchanged since the snapshot. Each file
+is written to a temporary name, read back from the medium, renamed and read
+back again. These checks cover FIT trust and which file the firmware runs,
+not whether a given U-Boot and DTB work together. The tool reads signer
+names through the DTB now on `/boot`; if that file is damaged, the device does
+not boot either, and the recovery is copying a snapshot's three files back
+onto the FAT partition from another machine. Moving a device from dual
+trust to YubiKey-only trust is staged: [FIT Boot Signing](FIT_BOOT_SIGNING.md).
 
 ## 📐 Adaptive Updates (block-hash-index)
 

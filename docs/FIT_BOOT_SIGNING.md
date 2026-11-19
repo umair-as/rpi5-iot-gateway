@@ -653,18 +653,24 @@ for field rollout — install it on a device that was previously
 provisioned (initial flash via a dev or dual-trust SD image, then moved
 to release trust in stages). Signed production initial-flash SD images are
 not currently part of the supported flow. An OTA never replaces the trust
-anchor, and nothing accepts an anchor that would strand a slot, so the move
-is staged:
+anchor, and the device refuses an anchor change that narrows trust unless
+the operator has verified it, so the move is staged:
 
 1. OTA the release bundle. The device's pre-install handler accepts it only
    when the current (dual-trust) anchor already trusts the YubiKey key that
    signed its slot FITs.
 2. OTA it again, so the other slot also carries a YubiKey-signed FIT.
-3. Run `iotgw-rpi-bootfiles-update` from the release image to install its
-   YubiKey-only DTB. It refuses while either installed slot FIT is still
-   signed only with the file key, because that slot would no longer boot.
+3. Copy both installed slot FITs (`/boot/fitImage-a`, `-b`) and the release
+   DTB to the build host and verify each FIT against that DTB with U-Boot's
+   verifier: `scripts/fit-signing/sign_fit.py verify --fit <fitImage-x>
+   --dtb <release dtb>`. Both must pass.
+4. Run `iotgw-rpi-bootfiles-update --allow-trust-reduction` from the release
+   image to install its YubiKey-only DTB. Dropping the file key narrows
+   trust, which the device refuses without the flag: its own check reads
+   signer names, not signatures, so step 3 is the real proof.
 
-Any other order is refused before anything is written.
+A FIT whose signer the device can already tell is untrusted (signed only with
+the file key) is refused even with the flag.
 
 The `iotgw-rauc-image.bbclass` carries a parse-time anonymous Python
 guard that emits a `bb.warn` whenever a WIC-producing image recipe is
