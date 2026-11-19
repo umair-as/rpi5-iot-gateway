@@ -317,12 +317,14 @@ bundle-desktop-full-fit: | $(KAS_WORK_DIR)
 	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-bundle-full-fit,$(BASE):$(DESKTOP_KAS),iot-gw-image-desktop)
 
 # SBOM + CVE reporting. Builds SBOM_CVE_IMAGE with the kas/cve.yml overlay
-# composed onto IMAGE_KAS (the dev composition, DX-M1 included), emitting
-# wrynose SPDX SBOM + cve-check reports into the deploy dir. Split out from the
-# image/bundle targets because CVE/SBOM report generation is slow and should be
-# opt-in, not on every build.
+# composed onto the composition that image ships in: PROD_KAS_OVERLAYS for
+# iot-gw-image-prod (as `make prod`), IMAGE_KAS (DX-M1 included) otherwise, so
+# a prod scan reports the prod image's contents. Emits wrynose SPDX SBOM +
+# cve-check reports into the deploy dir. Split out from the image/bundle
+# targets because CVE/SBOM report generation is slow and should be opt-in.
+SBOM_CVE_KAS = $(if $(filter iot-gw-image-prod,$(SBOM_CVE_IMAGE)),$(PROD_KAS_OVERLAYS),$(IMAGE_KAS))
 sbom-cve: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake $(SBOM_CVE_IMAGE),$(IMAGE_KAS):$(CVE_KAS))
+	$(call iotgw_bitbake,bitbake $(SBOM_CVE_IMAGE),$(SBOM_CVE_KAS):$(CVE_KAS))
 
 # Host-side report readers over the sbom-cve-check deploy artifacts. Stdlib-only
 # Python (no venv), read-only — run after `make sbom-cve` produced the reports.
