@@ -37,6 +37,7 @@ ARTIFACTS=(kernel_2712.img bcm2712-rpi-5-b.dtb config.txt)
 
 RESTORE=""
 ASSUME_YES=0
+ALLOW_TRUST_REDUCTION=0
 DRY_RUN=0
 WRITES=0
 PLANNED=0
@@ -51,8 +52,8 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 usage() {
     cat <<'EOF'
 Usage:
-  iotgw-rpi-bootfiles-update [--yes] [--dry-run]
-  iotgw-rpi-bootfiles-update --restore <run-id> [--yes] [--dry-run]
+  iotgw-rpi-bootfiles-update [--yes] [--dry-run] [--allow-trust-reduction]
+  iotgw-rpi-bootfiles-update --restore <run-id> [--yes] [--dry-run] [--allow-trust-reduction]
 
 Writes the staged U-Boot (kernel_2712.img), board DTB and config.txt to the FAT /boot after
 verifying them against the manifest and checking that the new DTB still trusts
@@ -62,6 +63,11 @@ Reboot after a successful run.
 Options:
   --yes               Non-interactive confirmation
   --restore <run-id>  Write back the backup of an earlier run (ls BACKUP_DIR)
+  --allow-trust-reduction
+                      Accept a DTB that drops a required FIT key or changes
+                      required-mode to "all". First verify both slot FITs
+                      against the new DTB on the build host:
+                        sign_fit.py verify --fit <fitImage-x> --dtb <new dtb>
   --dry-run           Print planned actions only; write nothing
   --help              Show this help
 
@@ -92,9 +98,14 @@ free_bytes() { df -Pk "$BOOT_MP" 2>/dev/null | awk 'NR==2{print $4*1024}'; }
 # check_anchor_compat <candidate-dtb>: refuse a DTB under which an installed
 # slot FIT would not verify (iotgw-fit-anchor.sh).
 check_anchor_compat() {
-    local cand="$1" cur="${BOOT_MP}/${ANCHOR}" slot fit why
+    local cand="$1" cur="${BOOT_MP}/${ANCHOR}" slot fit why=""
     [ -f "$cur" ] && [ "$(sha_of "$cand")" = "$(sha_of "$cur")" ] && return 0
     [ -f "$cur" ] || die "anchor guard: no current ${cur}; slot FIT signers cannot be identified"
+    if ! why="$(fit_anchor_preserves "$cur" "$cand")"; then
+        [ "$ALLOW_TRUST_REDUCTION" -eq 1 ] \
+            || die "anchor guard: the candidate ${ANCHOR} narrows FIT trust (${why}). The on-device check cannot verify signatures; verify both slot FITs against it with sign_fit.py verify on the build host, then rerun with --allow-trust-reduction; refusing"
+        log "anchor guard: candidate narrows FIT trust (${why}); accepted by --allow-trust-reduction"
+    fi
     for slot in a b; do
         fit="${BOOT_MP}/fitImage-${slot}"
         if [ ! -f "$fit" ]; then
@@ -241,6 +252,7 @@ main() {
         case "$1" in
             --restore) RESTORE="${2:-}"; [ -n "$RESTORE" ] || die "--restore needs a run id"; shift 2 ;;
             --yes)     ASSUME_YES=1; shift ;;
+            --allow-trust-reduction) ALLOW_TRUST_REDUCTION=1; shift ;;
             --dry-run) DRY_RUN=1; shift ;;
             --help|-h) usage; exit 0 ;;
             *) die "unknown argument: $1 (see --help)" ;;
