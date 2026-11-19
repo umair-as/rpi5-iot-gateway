@@ -3,7 +3,7 @@ header:
 
 # DEEPX DX-M1 PCIe AI accelerator (M.2, Geekworm-style carrier on the RPi5
 # FFC connector). Part of the platform: the Makefile composes this overlay for
-# base, dev and their bundles (IMAGE_KAS), and kas/desktop.yml includes it.
+# base, dev and their bundles (STACK_base/STACK_dev), and kas/desktop.yml includes it.
 # Prod does not compose it until the module-signing key is protected
 # (docs/DEEPX_DXM1.md).
 #

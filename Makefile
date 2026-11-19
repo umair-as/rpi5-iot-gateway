@@ -1,24 +1,17 @@
-.PHONY: help base dev prod \
-        bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm sign-slot-fits-yk sign-slot-fits-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
-        tools-venv test-sign-fit test-sign-fit-softhsm test-sbom-cve test-kernel-fragment-gate test-boot-scripts \
-        test-selinux-policy test-preflight preflight bitbake-task \
-        desktop bundle-desktop-full-fit \
-        sbom-cve cve-report sbom-report layers parse clean-lock hooks kernel-hardening-report
+.DEFAULT_GOAL := help
 
 KAS ?= kas
+UV  ?= uv
 
 # === Shared-layer build mechanism (git-alternates; see kas/local.yml.example) ===
 # KAS_REPO_REF_DIR points at a shared bare-repo cache scoped per Yocto release
 # (layers-wrynose). kas clones each layer into .kas/ (gitignored) using those
-# repos as git alternates — near-instant setup, zero extra disk, and the SHA
-# pins in rpi5.yml/kas/*.yml are still enforced. A mirror missing from the
-# ref-dir is auto-created on first use; an absent ref-dir falls back to full
-# clones (no error). KAS_WORK_DIR keeps upstream layer clones out of the repo
-# root; KAS_BUILD_DIR keeps the bitbake build dir at the conventional ./build.
-# KAS_REPO_REF_DIR is an optional shared layer cache (git alternates) — it is
-# host-specific, so it is NOT committed. Set it in the gitignored
-# scripts/env.local.sh (direnv/.envrc exports it into this make invocation),
-# or export it yourself. Unset => kas does full clones (correct, just slower).
+# repos as git alternates, and the SHA pins in rpi5.yml/kas/*.yml are still
+# enforced. An absent ref-dir falls back to full clones. It is host-specific:
+# set it in the gitignored scripts/env.local.sh or export it yourself.
+# KAS_WORK_DIR keeps layer clones out of the repo root; KAS_BUILD_DIR keeps the
+# bitbake build dir at ./build. Both may be overridden (isolated worktrees and
+# the agent-build launcher rely on that).
 KAS_REPO_REF_DIR ?=
 KAS_WORK_DIR     ?= $(CURDIR)/.kas
 KAS_BUILD_DIR    ?= $(CURDIR)/build
@@ -27,94 +20,94 @@ ifneq ($(strip $(KAS_REPO_REF_DIR)),)
 export KAS_REPO_REF_DIR
 endif
 
-RAUC ?= kas/rauc.yml
+# === Composition: one table, used by every target that runs kas ===
+# BASE is the operator's kas/local.yml when present (it carries the signing
+# keys, caches and host settings), else the tracked RAUC stack.
+RAUC  ?= kas/rauc.yml
 LOCAL ?= kas/local.yml
+BASE  ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
+
+DEEPX_KAS                ?= kas/deepx.yml
+DESKTOP_KAS              ?= kas/desktop.yml
 UBOOT_PROD_HARDENING_KAS ?= kas/uboot-prod-hardening.yml
-FIT_RELEASE_TRUST_KAS ?= kas/fit-release-trust.yml
-# SBOM/CVE reporting overlay + the image it scans (see the `sbom-cve` target)
-CVE_KAS ?= kas/cve.yml
-SBOM_CVE_IMAGE ?= iot-gw-image-dev
-# Default to RAUC builds always; prefer local RAUC config if present
-BASE ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
+FIT_RELEASE_TRUST_KAS    ?= kas/fit-release-trust.yml
+CVE_KAS                  ?= kas/cve.yml
 
-# The DX-M1 card is part of the platform: base, dev and desktop always build
-# with the DeepX layer and IOTGW_ENABLE_DEEPX_DXM1 = 1 (set by kas/deepx.yml).
-# Prod uses $(BASE) without it until the module-signing key is protected
-# (docs/DEEPX_DXM1.md). IMAGE_KAS is the chain for every non-prod target.
-DEEPX_KAS ?= kas/deepx.yml
-IMAGE_KAS = $(BASE):$(DEEPX_KAS)
+# The DX-M1 card is part of the platform: base and dev compose kas/deepx.yml,
+# and kas/desktop.yml includes it (the desktop is the AI demo station). Prod
+# stays without it until the module-signing key is protected
+# (docs/DEEPX_DXM1.md). Prod composes the U-Boot hardening and the release FIT
+# trust profile; both are required, never silently dropped.
+#
+# The desktop composition is pinned here because kas/desktop.yml never
+# includes kas/local.yml (no signing key: u-boot do_configure fails) and both
+# files may assign IOTGW_KERNEL_FEATURES with `=`, where the last file kas
+# emits wins.
+STACK_base    = $(BASE):$(DEEPX_KAS)
+STACK_dev     = $(BASE):$(DEEPX_KAS)
+STACK_desktop = $(BASE):$(DESKTOP_KAS)
+STACK_prod    = $(BASE):$(UBOOT_PROD_HARDENING_KAS):$(FIT_RELEASE_TRUST_KAS)
+empty :=
+space := $(empty) $(empty)
+IMAGES  := base dev desktop prod
+BUNDLES := dev desktop prod
 
-# dev/desktop/prod kernels differ, but share work-shared kernel-build-artifacts.
+# IMAGE selects the composition for bundle, sbom-cve, parse, layers, info and
+# bitbake-task. A makefile assignment beats the environment, so an IMAGE the
+# calling shell exports is ignored (unless make -e); `make <target> IMAGE=...`
+# sets it. unexport keeps both selectors out of the commands' environment.
+IMAGE := dev
+SUITE := all
+unexport IMAGE SUITE
+
+# Every target shares one build directory, and compositions differ per target:
+# never run two of them at once.
+.NOTPARALLEL:
+
+stack = $(STACK_$(1))
+# Literal comparisons: findstring has no wildcard, so `%` in a selector
+# matches nothing. one_of: $(1) is exactly one word, without surrounding
+# whitespace, equal to an element of $(2).
+eq     = $(and $(findstring $(1),$(2)),$(findstring $(2),$(1)))
+one_of = $(if $(and $(filter 1,$(words $(1))),$(call eq,$(1),$(strip $(1)))),$(strip $(foreach x,$(2),$(if $(call eq,$(x),$(1)),$(x)))))
+
+# Selector checks run in the recipes, so `help` works whatever was passed.
+# $(1) = the image the target builds (fixed image targets only).
+define check_selectors
+	$(if $(SBOM_CVE_IMAGE),$(error SBOM_CVE_IMAGE is replaced by IMAGE=<$(subst $(space),|,$(IMAGES))>, e.g. make sbom-cve IMAGE=prod))
+	$(if $(IMAGE_KAS),$(error IMAGE_KAS is replaced by IMAGE=<$(subst $(space),|,$(IMAGES))>, e.g. make bitbake-task IMAGE=desktop BB_TASK=...))
+	$(if $(call one_of,$(IMAGE),$(IMAGES)),,$(error IMAGE='$(IMAGE)' is not one of: $(IMAGES)))
+	$(if $(1),$(if $(and $(filter command line,$(origin IMAGE)),$(filter-out $(1),$(IMAGE))),$(error $@ builds IMAGE=$(1); drop IMAGE=$(IMAGE) or use a target that takes IMAGE=)))
+endef
+
+# Every file of a composition (plus $(2), e.g. the reporting overlay) must
+# exist before kas starts.
+define check_stack
+	@for f in $(subst :, ,$(call stack,$(1))) $(2); do \
+	    test -f "$$f" || { echo "$@: missing kas file '$$f' in the $(1) composition"; exit 1; }; \
+	done
+endef
+
+# dev/desktop/prod kernels differ but share work-shared kernel-build-artifacts.
 # After a build in another composition, make-mod-scripts keeps a current stamp
 # for an artifacts tree the other kernel has since recreated, and dx-driver
 # then fails with "No rule to make target 'modules'". Cleaning it first costs a
-# kernel `make prepare` and does not change any task signature.
-MOD_SCRIPTS_RESET = bitbake make-mod-scripts -c clean &&
+# kernel `make prepare` and changes no task signature. Prod has no out-of-tree
+# module, so it skips the reset.
+mod_scripts_reset = $(if $(filter prod,$(1)),,bitbake make-mod-scripts -c clean && )
 
-# Export optional toggles so users can do:
-#   IOTGW_ENABLE_OTBR=1 make dev|prod|bundle-*
+# Optional feature toggles, e.g. IOTGW_ENABLE_OTBR=1 make dev
 export IOTGW_ENABLE_OTBR
 export IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS
 export IOTGW_ENABLE_BTF_CORE_DEV
 export IOTGW_ENABLE_DEEPX_DXM1
 
-# kas refuses to run if KAS_WORK_DIR is absent (it does not mkdir it). Order-only
-# prereq so every kas-invoking target creates .kas/ on demand, while
-# help / tools-venv / test / clean-lock touch nothing on a fresh tree.
-$(KAS_WORK_DIR):
-	@mkdir -p $@
-
-help:
-	@echo "Targets (RAUC-enabled by default; base/dev/desktop carry the DX-M1 stack, prod does not yet):"
-	@echo "  -- Images --"
-	@echo "  make dev                          # Developer image"
-	@echo "  make prod                         # Production image (WIC intermediate under release-trust)"
-	@echo "  make base                         # Base image"
-	@echo "  -- Bundles (rootfs + signed FIT boot assets) --"
-	@echo "  make bundle-dev-full-fit          # FIT bundle from dev image"
-	@echo "  make bundle-dev-full-fit-resign   # Re-assemble dev bundle around HSM-signed FIT (unattended)"
-	@echo "  make bundle-prod-full-fit         # Release bundle from prod image (run after sign-slot-fits-yk) [RELEASE ARTIFACT]"
-	@echo "  make bundle-prod-full-fit-resign  # Re-assemble prod bundle around a YK-signed bootfiles FIT (not the slot-FIT release flow)"
-	@echo "  -- Desktop LAB variant (NOT hardened) --"
-	@echo "  make desktop                      # Weston/HDMI lab image + DX-M1 demo stack (on-screen inference)"
-	@echo "  make bundle-desktop-full-fit      # FIT bundle from the lab image (OTA-installable)"
-	@echo "  -- HSM detached signing (operator; PIN/touch) --"
-	@echo "  make sign-bootfiles-fit-yk        # Re-sign FIT in deploy tarball on YubiKey (interactive)"
-	@echo "  make sign-bootfiles-fit-softhsm   # Re-sign FIT in deploy tarball via SoftHSM (dev only)"
-	@echo "  make sign-slot-fits-yk            # Re-sign an image's dm-verity slot FITs (a+b) with the YubiKey (SLOT_FITS_IMAGE=)"
-	@echo "  make sign-slot-fits-softhsm       # Same via SoftHSM (dev only)"
-	@echo "  -- Host-side signing env (uv-based) --"
-	@echo "  make tools-venv                   # Sync .venv via uv (run once or after dep bumps)"
-	@echo "  make test-sign-fit                # Run signing-tool tests (no SoftHSM required)"
-	@echo "  make test-sign-fit-softhsm        # Run full suite incl. SoftHSM integration tests"
-	@echo "  -- SBOM/CVE --"
-	@echo "  make sbom-cve                     # Build dev image with wrynose SBOM+CVE reports"
-	@echo "  make cve-report                   # Summarise the CVE report (buckets, kernel split, CVE_STATUS scaffold)"
-	@echo "  make sbom-report                  # Summarise the SBOM (license inventory + HIGH-risk review)"
-	@echo "  make test-sbom-cve                # Run sbom-cve report/cohort tests (fixtures, no build)"
-	@echo "  make test-kernel-fragment-gate    # Run kernel fragment-gate tests (no build)"
-	@echo "  make test-boot-scripts            # Run RAUC hook + pre-init shell tests (no device)"
-	@echo "  make test-selinux-policy          # Run policy source-check tests (no build)"
-	@echo "  make test-preflight               # Run preflight path-mapping tests (no build)"
-	@echo "  make preflight                    # Cheapest checks for what changed (host tier; no BitBake)"
-	@echo "  make preflight PREFLIGHT_ARGS=--bitbake  # ...plus targeted BitBake tasks (refuses while a build runs)"
-	@echo "  -- Utilities --"
-	@echo "  make hooks                        # Enable the repo git hooks (run once per clone)"
-	@echo "  make layers                       # Show layers for RAUC stack"
-	@echo "  make parse                        # Parse-only for RAUC stack"
-	@echo "  make kernel-hardening-report      # kernel-hardening-checker report on the prod kernel .config (report-only)"
-	@echo "  make clean-lock                   # Remove stale bitbake.lock"
-
-# One kas + bitbake invocation for every image / bundle / report target.
-# Exports the IOTGW_ENABLE_* feature toggles into the kas shell env (and
-# whitelists them — plus BUNDLE_IMAGE_NAME for bundle targets — for bitbake
-# passthrough), then composes the kas overlay chain.
-#   $(1) = bitbake invocation(s)    (e.g. "bitbake iot-gw-image-dev",
-#                                     "bitbake -C do_configure iot-gw-bundle-full-fit";
-#                                     the env is exported, so an `a && b` chain
-#                                     gives both commands the same toggles)
-#   $(2) = kas overlay chain        (e.g. $(BASE), $(PROD_KAS_OVERLAYS), $(BASE):$(CVE_KAS))
-#   $(3) = BUNDLE_IMAGE_NAME value  (optional; empty for plain image / report builds)
+# One kas + bitbake invocation for every kas target. Exports the IOTGW_ENABLE_*
+# toggles into the kas shell env and whitelists them (plus BUNDLE_IMAGE_NAME
+# for bundles) for bitbake passthrough.
+#   $(1) = command(s) run in the kas shell (an `a && b` chain shares the env)
+#   $(2) = kas composition
+#   $(3) = BUNDLE_IMAGE_NAME (bundles only)
 define iotgw_bitbake
   $(KAS) shell -c 'export BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS$(if $(3), BUNDLE_IMAGE_NAME) IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_DEEPX_DXM1" \
                    $(if $(3),BUNDLE_IMAGE_NAME=$(3)) IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
@@ -123,242 +116,162 @@ define iotgw_bitbake
                    $(1)' $(2)
 endef
 
-PROD_KAS_OVERLAYS = $(BASE)$(if $(wildcard $(UBOOT_PROD_HARDENING_KAS)),:$(UBOOT_PROD_HARDENING_KAS))$(if $(wildcard $(FIT_RELEASE_TRUST_KAS)),:$(FIT_RELEASE_TRUST_KAS))
+# kas refuses to run if KAS_WORK_DIR is absent; order-only prerequisite of
+# every kas target, so help/test/info touch nothing on a fresh tree.
+$(KAS_WORK_DIR):
+	@mkdir -p $@
 
-base: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-image-base,$(IMAGE_KAS))
+.PHONY: help info $(IMAGES) bundle sign-slot-fits-yk sign-slot-fits-softhsm \
+        sbom-cve cve-report sbom-report kernel-hardening-report \
+        test preflight tools-venv bitbake-task parse layers clean-lock hooks
 
-dev: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-image-dev,$(IMAGE_KAS))
+## Images
+base: ## base image (DX-M1 stack)
+dev: ## development image (DX-M1 stack)
+desktop: ## desktop lab image, NOT hardened: Weston + DX-M1 on-screen demo
+prod: ## production image (U-Boot hardening + release FIT trust; no DX-M1 yet)
+$(IMAGES): | $(KAS_WORK_DIR)
+	$(call check_selectors,$@)
+	$(call check_stack,$@)
+	$(call iotgw_bitbake,$(call mod_scripts_reset,$@)bitbake iot-gw-image-$@,$(call stack,$@))
 
-prod: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-image-prod,$(PROD_KAS_OVERLAYS))
+## Bundles
+# Full-FIT only: the bundle carries the rootfs and both signed slot FITs. A
+# rootfs-only bundle is unsafe with DX-M1: the module-signing key is per kernel
+# build unless IOTGW_MODULE_SIG_KEY_FILE is set, and bundle-hooks-fit.sh's
+# kernel/module pairing guard is fail-open without a bootfiles archive.
+# BUNDLE_IMAGE_NAME names the bundle after its image in DEPLOY_DIR_IMAGE.
+# IMAGE=prod is the release artifact: run it after `make sign-slot-fits-yk`;
+# its assembly gate refuses file-signed slot FITs.
+bundle: | $(KAS_WORK_DIR) ## RAUC bundle (rootfs + slot FITs) for IMAGE=dev|desktop|prod
+	$(call check_selectors)
+	$(if $(filter $(IMAGE),$(BUNDLES)),,$(error bundle: IMAGE=$(IMAGE) has no bundle; one of: $(BUNDLES)))
+	$(call check_stack,$(IMAGE))
+	$(call iotgw_bitbake,$(call mod_scripts_reset,$(IMAGE))bitbake iot-gw-bundle-full-fit,$(call stack,$(IMAGE)),iot-gw-image-$(IMAGE))
 
-bundle-dev-full-fit: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-bundle-full-fit,$(IMAGE_KAS),iot-gw-image-dev)
-
-# Detached HSM signing flow. The build and the HSM-signing step run in
-# separate processes — possibly on separate machines — so CI runners
-# can drive the unattended steps without ever needing a PIN/touch.
-#
-# Three stages, each runnable independently:
-#
-#   Stage 1 — file-key signed build (UNATTENDED, CI-friendly):
-#       make bundle-dev-full-fit
-#     Produces the deploy tarball and a file-key-signed .raucb. No HSM,
-#     no PIN, no touch. Suitable for GitHub Actions, GitLab runners, or
-#     any unattended pipeline.
-#
-#   Stage 2 — re-sign FIT in the deploy tarball (OPERATOR-ONLY):
-#       make sign-bootfiles-fit-yk [SIGN_FIT_ARGS='...']
-#     Takes the deploy tarball produced by Stage 1 and re-signs the
-#     embedded FIT against the PKCS#11 token. Requires PIN entry and a
-#     touch on the YubiKey. Only runs on a machine with the HSM
-#     physically attached (operator workstation or a hardened signing
-#     server). Never runs in CI.
-#
-#   Stage 3 — re-assemble bundle from signed tarball (UNATTENDED):
-#       make bundle-dev-full-fit-resign
-#     Re-runs the bundle recipe from do_configure so the assembled
-#     .raucb carries the HSM-signed FIT. No HSM interaction. Can run
-#     in CI on a runner that has the signed tarball deployed to
-#     DEPLOY_DIR_IMAGE (or be invoked locally by the operator after
-#     Stage 2).
-#
-# Typical release pipeline:
-#   - CI:        make bundle-dev-full-fit             → publish unsigned artifacts
-#   - Operator:  fetch artifacts → make sign-bootfiles-fit-yk → publish signed tarball
-#   - CI/Op:     make bundle-dev-full-fit-resign      → publish final signed .raucb
-#
-# SIGN_BOOTFILES_ARGS  → bootfiles-archive specific flags
-#                       (e.g. --force, --archive PATH).
-# SIGN_FIT_ARGS        → signing flags (e.g. --verify, --verbose,
-#                       --key-name-hint NAME, --uri URI). Defaults to '--verify'.
-#                       Both are passed to `sign_fit.py sign-bootfiles`
-#                       which now accepts them inline (no '--' separator).
-SIGN_BOOTFILES_ARGS ?=
-SIGN_FIT_ARGS ?= --verify
-UV ?= uv
-sign-bootfiles-fit-yk:
-	$(UV) run python scripts/fit-signing/sign_fit.py sign-bootfiles --profile yubikey-9a $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
-
-# Dev signing variant for engineers without a YubiKey. Requires a
-# provisioned SoftHSM token holding the iotgw-fit-softhsm-dev keypair;
-# see docs/FIT_BOOT_SIGNING.md for the provisioning runbook. Only
-# usable against an image that enables IOTGW_FIT_TRUST_SOFTHSM_KEY in
-# kas/local.yml — never against a production Image C build.
-#
-# libsofthsm2 locates its token store via SOFTHSM2_CONF. Default it to the
-# in-repo dev token so the target works without a sourced shell env; an
-# operator SOFTHSM2_CONF already in the environment still wins.
-sign-bootfiles-fit-softhsm: export SOFTHSM2_CONF ?= $(CURDIR)/keys/dev/softhsm/softhsm2.conf
-sign-bootfiles-fit-softhsm:
-	$(UV) run python scripts/fit-signing/sign_fit.py sign-bootfiles --profile softhsm-dev $(SIGN_BOOTFILES_ARGS) $(SIGN_FIT_ARGS)
-
-# Runtime dm-verity: re-sign an image's two slot FITs (<image>.fitImage-a/-b)
-# as a pair with the operator's key. Stage 2 of the release flow in
-# docs/FIT_BOOT_SIGNING.md: after `make prod` (or bundle-prod-full-fit, whose
-# assembly gate refuses file-signed FITs), before re-running the bundle target.
-# Operator-run only (PIN/touch); never a prerequisite of another target.
-#   make sign-slot-fits-yk [SLOT_FITS_IMAGE=iot-gw-image-dev] [SIGN_SLOT_FITS_ARGS='--force']
-SLOT_FITS_IMAGE ?= iot-gw-image-prod
-SLOT_FITS_MACHINE ?= raspberrypi5
-SLOT_FITS_DEPLOY = $(KAS_BUILD_DIR)/tmp/deploy/images/$(SLOT_FITS_MACHINE)
+## Signing (operator: PIN + touch; never a prerequisite of another target)
+# Re-sign an image's two dm-verity slot FITs (<image>.fitImage-a/-b) as a pair:
+# stage 2 of the release flow in docs/FIT_BOOT_SIGNING.md, between `make prod`
+# and `make bundle IMAGE=prod`.
+SLOT_FITS_IMAGE     ?= iot-gw-image-prod
+SLOT_FITS_MACHINE   ?= raspberrypi5
+SLOT_FITS_DEPLOY     = $(KAS_BUILD_DIR)/tmp/deploy/images/$(SLOT_FITS_MACHINE)
 SIGN_SLOT_FITS_ARGS ?=
 SIGN_SLOT_FITS = $(UV) run python scripts/fit-signing/sign_fit.py sign-slot-fits \
 	--image $(SLOT_FITS_IMAGE)-$(SLOT_FITS_MACHINE).rootfs --deploy-dir $(SLOT_FITS_DEPLOY) \
 	--archive $(SLOT_FITS_DEPLOY)/bootfiles-fit.tar.gz $(SIGN_SLOT_FITS_ARGS)
-sign-slot-fits-yk:
+sign-slot-fits-yk: ## re-sign the slot FITs on the YubiKey (SLOT_FITS_IMAGE=, default prod)
 	$(SIGN_SLOT_FITS) --profile yubikey-9a
+# libsofthsm2 finds its token store via SOFTHSM2_CONF; default to the in-repo
+# dev token, an operator value in the environment still wins.
 sign-slot-fits-softhsm: export SOFTHSM2_CONF ?= $(CURDIR)/keys/dev/softhsm/softhsm2.conf
-sign-slot-fits-softhsm:
+sign-slot-fits-softhsm: ## same via SoftHSM (dev only)
 	$(SIGN_SLOT_FITS) --profile softhsm-dev
 
-# Host-side Python environment (uv-based). Used by the operator signing
-# tools and tests; Yocto/BitBake builds do not depend on this venv.
-tools-venv:
-	$(UV) sync
+## SBOM / CVE
+# Builds IMAGE with kas/cve.yml composed onto the composition that image ships
+# in, so a prod scan reports the prod image's contents. Opt-in: report
+# generation is slow.
+sbom-cve: | $(KAS_WORK_DIR) ## image + SPDX SBOM + CVE report for IMAGE=base|dev|desktop|prod
+	$(call check_selectors)
+	$(call check_stack,$(IMAGE),$(CVE_KAS))
+	$(call iotgw_bitbake,$(call mod_scripts_reset,$(IMAGE))bitbake iot-gw-image-$(IMAGE),$(call stack,$(IMAGE)):$(CVE_KAS))
 
-test-sign-fit:
-	$(UV) run pytest scripts/fit-signing/tests/
-
-test-sign-fit-softhsm:
-	SOFTHSM_AVAILABLE=1 $(UV) run pytest scripts/fit-signing/tests/
-
-# sbom-cve report/cohort readers: fixture-based tests, no Yocto build required.
-# The readers are stdlib-only; only this test suite uses the uv venv.
-test-sbom-cve:
-	$(UV) run pytest scripts/sbom-cve/tests/
-
-test-kernel-fragment-gate:
-	$(UV) run pytest scripts/kernel/tests/
-
-test-boot-scripts:
-	$(UV) run pytest scripts/ota/tests/ scripts/preinit/tests/ scripts/sshd/tests/
-
-test-selinux-policy:
-	$(UV) run pytest scripts/selinux/tests/
-
-test-preflight:
-	$(UV) run pytest scripts/preflight/tests/
-
-# Map the changed paths to the cheapest checks that exercise them, before an
-# image build. The bitbake tier (PREFLIGHT_ARGS=--bitbake) refuses to start
-# while another build holds the build directory.
-PREFLIGHT_ARGS ?=
-preflight:
-	python3 scripts/preflight/preflight.py $(PREFLIGHT_ARGS)
-
-# One BitBake task with the same environment wiring as the image targets.
-# Used by preflight's bitbake tier, e.g. BB_TASK="refpolicy-mcs -c compile".
-bitbake-task: | $(KAS_WORK_DIR)
-	$(if $(BB_TASK),,$(error BB_TASK is required, e.g. BB_TASK="refpolicy-mcs -c compile"))
-	$(call iotgw_bitbake,bitbake $(BB_TASK),$(IMAGE_KAS))
-
-bundle-dev-full-fit-resign: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(IMAGE_KAS),iot-gw-image-dev)
-
-# Release bundles. PROD_KAS_OVERLAYS composes kas/fit-release-trust.yml,
-# so iot-gw-image-prod builds with the release FIT trust profile
-# (YubiKey-only DTB). bundle-prod-full-fit is the release FIT artifact —
-# the prod-image equivalent of bundle-dev-full-fit, and the bundle to
-# flash for issue #73 on-target validation.
-bundle-prod-full-fit: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake iot-gw-bundle-full-fit,$(PROD_KAS_OVERLAYS),iot-gw-image-prod)
-
-# Reassemble the release FIT bundle around an already YubiKey-signed
-# bootfiles-fit.tar.gz. Run after `make sign-bootfiles-fit-yk`; re-runs the
-# bundle recipe from do_configure so the .raucb picks up the HSM-signed FIT.
-# Prod equivalent of bundle-dev-full-fit-resign; keeps PROD_KAS_OVERLAYS so
-# kas/fit-release-trust.yml stays active.
-bundle-prod-full-fit-resign: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(PROD_KAS_OVERLAYS),iot-gw-image-prod)
-
-# Desktop LAB variant. NOT a hardened/shipping image — see the recipe SUMMARY.
-#
-# These targets exist because `kas build kas/desktop.yml`, which AGENTS.md
-# documents, has two silent traps:
-#
-#  1. kas/desktop.yml includes kas/rauc.yml and kas/deepx.yml, never kas/local.yml, so the
-#     operator FIT signing key is absent and the build hard-fails at u-boot
-#     do_configure (iotgw-fit-signing-guard.bbclass). Composing $(BASE) fixes it.
-#  2. kas/desktop.yml and kas/local.yml can BOTH assign IOTGW_KERNEL_FEATURES
-#     with `=`. Whichever kas emits last wins, so a local assignment replaces
-#     the desktop list (desktop adds igw_desktop via :append, which survives
-#     only if local.yml does not reassign). Pinning the composition order here
-#     makes the outcome deterministic and reviewable in one place.
-#
-# The desktop is the on-screen AI demo station, so kas/desktop.yml includes
-# kas/deepx.yml: there is no desktop build without the DX-M1 stack.
-DESKTOP_KAS ?= kas/desktop.yml
-desktop: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-image-desktop,$(BASE):$(DESKTOP_KAS))
-
-# RAUC bundle built FROM the desktop lab image, so an iteration on that
-# image can be delivered to the other slot instead of re-flashing the card.
-#
-# Two rules, shared with bundle-dev-full-fit:
-#  * the kas composition must carry $(DESKTOP_KAS), or the bundle is silently
-#    built without the desktop stack or the accelerator;
-#  * full-fit, not rootfs-only. With IOTGW_MODULE_SIG_KEY_FILE unset the
-#    module-signing key is autogenerated per kernel build, so a rootfs-only
-#    bundle would ship DX-M1 modules signed by a key the running kernel does
-#    not trust — they fail with EKEYREJECTED under sig_enforce=Y and the
-#    accelerator goes quietly dead. Setting that variable (docs/KERNEL.md,
-#    "Persistent module-signing key") removes THAT cause, but rootfs-only is
-#    still not safe here: bundle-hooks-fit.sh's kernel/module pairing guard is
-#    fail-open when no bootfiles archive is present, so a genuine mismatch is
-#    not caught either. Keep full-fit until that guard is fail-closed.
-#
-# BUNDLE_IMAGE_NAME (3rd macro arg) overrides the recipe's iot-gw-image-dev
-# default and lands in BUNDLE_BASENAME, so the artifact is distinguishable in
-# DEPLOY_DIR_IMAGE rather than overwriting the dev bundle.
-bundle-desktop-full-fit: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,$(MOD_SCRIPTS_RESET) bitbake iot-gw-bundle-full-fit,$(BASE):$(DESKTOP_KAS),iot-gw-image-desktop)
-
-# SBOM + CVE reporting. Builds SBOM_CVE_IMAGE with the kas/cve.yml overlay
-# composed onto the composition that image ships in: PROD_KAS_OVERLAYS for
-# iot-gw-image-prod (as `make prod`), IMAGE_KAS (DX-M1 included) otherwise, so
-# a prod scan reports the prod image's contents. Emits wrynose SPDX SBOM +
-# cve-check reports into the deploy dir. Split out from the image/bundle
-# targets because CVE/SBOM report generation is slow and should be opt-in.
-SBOM_CVE_KAS = $(if $(filter iot-gw-image-prod,$(SBOM_CVE_IMAGE)),$(PROD_KAS_OVERLAYS),$(IMAGE_KAS))
-sbom-cve: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake $(SBOM_CVE_IMAGE),$(SBOM_CVE_KAS):$(CVE_KAS))
-
-# Host-side report readers over the sbom-cve-check deploy artifacts. Stdlib-only
-# Python (no venv), read-only — run after `make sbom-cve` produced the reports.
-# Convention: a scan and its image outputs (manifest/testdata/SPDX/CVE JSON)
-# share one IMAGE_NAME stem (e.g. iot-gw-image-dev-raspberrypi5.rootfs-<BUILDNAME>)
-# and belong together — archive/reference them by that stem. The readers resolve
-# the dated file (not the un-dated symlink) and warn when the selected scan is a
-# mismatched/incomplete cohort or not the newest build. Pass --strict (fail on a
-# broken cohort) and/or --require-latest (fail if a newer image exists), e.g.
-# CVE_REPORT_ARGS='--strict --require-latest'.
+# Host-side, read-only readers over the sbom-cve-check deploy artifacts. They
+# resolve the dated report (not the undated symlink) and warn on a broken
+# cohort or a newer image; CVE_REPORT_ARGS='--strict --require-latest' fails.
 CVE_REPORT_ARGS  ?=
 SBOM_REPORT_ARGS ?=
-cve-report:
+cve-report: ## summarise the CVE report (CVE_REPORT_ARGS=)
 	python3 scripts/sbom-cve/cve-report.py $(CVE_REPORT_ARGS)
-sbom-report:
+sbom-report: ## summarise the SBOM: license inventory + HIGH-risk review (SBOM_REPORT_ARGS=)
 	python3 scripts/sbom-cve/sbom-report.py $(SBOM_REPORT_ARGS)
 
-layers: | $(KAS_WORK_DIR)
-	$(KAS) shell -c 'bitbake-layers show-layers' $(IMAGE_KAS)
+kernel-hardening-report: | $(KAS_WORK_DIR) ## kernel-hardening-checker on the prod kernel .config (report only)
+	$(call check_stack,prod)
+	$(call iotgw_bitbake,bitbake virtual/kernel -c iotgw_khc_report,$(call stack,prod))
 
-parse: | $(KAS_WORK_DIR)
-	$(KAS) shell -c 'bitbake -p' $(IMAGE_KAS)
+## Checks
+# Host test suites (no build). SUITE=all runs every suite; SOFTHSM=1 adds the
+# SoftHSM integration tests of the signing tool.
+TEST_sign-fit  := scripts/fit-signing/tests/
+TEST_sbom-cve  := scripts/sbom-cve/tests/
+TEST_kernel    := scripts/kernel/tests/
+TEST_boot      := scripts/ota/tests/ scripts/preinit/tests/ scripts/sshd/tests/
+TEST_selinux   := scripts/selinux/tests/
+TEST_preflight := scripts/preflight/tests/
+TEST_SUITES    := sign-fit sbom-cve kernel boot selinux preflight
+test: ## host test suites (SUITE=all|sign-fit|sbom-cve|kernel|boot|selinux|preflight, SOFTHSM=1)
+	$(if $(call one_of,$(SUITE),all $(TEST_SUITES)),,$(error SUITE='$(SUITE)' is not one of: all $(TEST_SUITES)))
+	$(if $(filter 1,$(SOFTHSM)),SOFTHSM_AVAILABLE=1 )$(UV) run pytest $(foreach s,$(if $(filter all,$(SUITE)),$(TEST_SUITES),$(SUITE)),$(TEST_$(s)))
 
-kernel-hardening-report: | $(KAS_WORK_DIR)
-	$(call iotgw_bitbake,bitbake virtual/kernel -c iotgw_khc_report,$(PROD_KAS_OVERLAYS))
+# Map the changed paths to the cheapest checks that exercise them, before an
+# image build. The bitbake tier refuses to start while a build runs.
+PREFLIGHT_ARGS ?=
+preflight: ## cheapest checks for what changed (PREFLIGHT_ARGS=--bitbake adds BitBake tasks)
+	python3 scripts/preflight/preflight.py $(PREFLIGHT_ARGS)
 
-clean-lock:
-	rm -f build/bitbake.lock
+# Host-side Python env (uv) for the signing tools and tests; builds don't use it.
+tools-venv: ## sync .venv via uv (once, or after dependency bumps)
+	$(UV) sync
 
-# The hooks live in scripts/hooks (tracked), but core.hooksPath is per-clone
-# local config — a fresh clone has the private-key guard and the commit-msg
-# check silently disabled until this runs. Idempotent.
-hooks:
+## Inspection
+bitbake-task: | $(KAS_WORK_DIR) ## one BitBake task in IMAGE's composition, e.g. BB_TASK="refpolicy-mcs -c compile"
+	$(if $(BB_TASK),,$(error BB_TASK is required, e.g. BB_TASK="refpolicy-mcs -c compile"))
+	$(call check_selectors)
+	$(call check_stack,$(IMAGE))
+	$(call iotgw_bitbake,bitbake $(BB_TASK),$(call stack,$(IMAGE)))
+
+parse: | $(KAS_WORK_DIR) ## parse-only check in IMAGE's composition (cheapest validation)
+	$(call check_selectors)
+	$(call check_stack,$(IMAGE))
+	$(call iotgw_bitbake,bitbake -p,$(call stack,$(IMAGE)))
+
+layers: | $(KAS_WORK_DIR) ## bitbake-layers show-layers in IMAGE's composition
+	$(call check_selectors)
+	$(call check_stack,$(IMAGE))
+	$(call iotgw_bitbake,bitbake-layers show-layers,$(call stack,$(IMAGE)))
+
+info: ## effective IMAGE, composition, directories and toggles (no build)
+	$(call check_selectors)
+	@echo "image:        $(IMAGE) (iot-gw-image-$(IMAGE))"
+	@echo "composition:  $(call stack,$(IMAGE))"
+	@echo "build dir:    $(KAS_BUILD_DIR)"
+	@echo "work dir:     $(KAS_WORK_DIR)"
+	@echo "ref dir:      $(or $(KAS_REPO_REF_DIR),(none: full clones))"
+	@echo "toggles:      OTBR=$(IOTGW_ENABLE_OTBR) CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) DEEPX_DXM1=$(IOTGW_ENABLE_DEEPX_DXM1)"
+
+## Housekeeping
+# A held bitbake.lock means a live server; removing it lets a second server
+# start on the same TMPDIR. BitBake takes the lock with flock(2) and then
+# checks that the locked inode is still the one at the path
+# (bb.utils.lockfile). Do the same: lock fd 9, unlink only if the path still
+# names that inode. While fd 9 holds the lock, no server can lock or unlink it.
+clean-lock: ## remove KAS_BUILD_DIR's bitbake.lock if no BitBake server holds it
+	@L="$(KAS_BUILD_DIR)/bitbake.lock"; \
+	if [ ! -e "$$L" ]; then echo "no $$L: nothing to clean"; exit 0; fi; \
+	exec 9<"$$L" || exit 1; \
+	if ! flock -n 9; then \
+	    echo "$$L is held by a live BitBake server ($$(tr -d '\n' < "$$L")); stop it with bitbake -m"; exit 1; fi; \
+	if [ "$$(stat -L -c %d:%i /dev/fd/9)" != "$$(stat -c %d:%i "$$L" 2>/dev/null)" ]; then \
+	    echo "$$L was replaced while locking it; run clean-lock again"; exit 1; fi; \
+	rm -f "$$L" && echo "removed stale $$L"
+
+# core.hooksPath is per-clone local config: a fresh clone has the private-key
+# guard and the commit-msg check off until this runs. Idempotent.
+hooks: ## enable the repo git hooks (once per clone)
 	@git config core.hooksPath scripts/hooks
 	@echo "core.hooksPath -> scripts/hooks"
 	@echo "  pre-commit  : refuse staged private-key / keys/ material"
 	@echo "  commit-msg  : enforce the Conventional Commit subject and body cap (AGENTS.md)"
+
+help: ## this list
+	@awk 'BEGIN { FS = ":.*## " } \
+	    /^## / { sub(/^## /, ""); printf "\n%s\n", $$0; next } \
+	    /^[a-z][a-zA-Z0-9_-]*:.*## / { printf "  make %-26s %s\n", $$1, $$2 }' $(firstword $(MAKEFILE_LIST))
+	@echo ""
+	@echo "Settings:"
+	@echo "  IMAGE=base|dev|desktop|prod     composition for bundle, sbom-cve, parse, layers, info, bitbake-task (default dev)"
+	@echo "  IOTGW_ENABLE_OTBR=1, IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=1, IOTGW_ENABLE_BTF_CORE_DEV=1   optional features"
+	@echo "  KAS_BUILD_DIR=, KAS_WORK_DIR=   alternate build / layer directories"
+	@echo "Long builds: scripts/agent-build/agent-build.py (docs/AGENT_BUILDS.md)."

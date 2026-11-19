@@ -78,19 +78,15 @@ echo "[release-build] building image target: make ${make_target}"
 make "${make_target}"
 
 if [[ "$bundle" != "none" ]]; then
-    bundle_target=""
     case "$bundle:$image" in
-        full:dev) bundle_target="bundle-dev-full-fit" ;;
-        full:prod) bundle_target="bundle-prod-full-fit" ;;
-        full-fit:dev) bundle_target="bundle-dev-full-fit" ;;
-        full-fit:prod) bundle_target="bundle-prod-full-fit" ;;
+        full:dev|full:prod|full-fit:dev|full-fit:prod) ;;
         *)
             echo "error: unsupported image/bundle combination: image=${image}, bundle=${bundle}" >&2
             exit 1
             ;;
     esac
-    echo "[release-build] building bundle target: make ${bundle_target}"
-    make "${bundle_target}"
+    echo "[release-build] building bundle target: make bundle IMAGE=${image}"
+    make bundle IMAGE="${image}"
 fi
 
 echo "[release-build] completed"

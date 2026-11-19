@@ -65,7 +65,7 @@ host-side readers select and present one build unambiguously.
 make sbom-cve        # build iot-gw-image-dev with the CVE/SBOM overlay + scan
 make cve-report      # summarise the CVE report (buckets, kernel split, scaffold)
 make sbom-report     # summarise the SBOM (license inventory + HIGH-risk review)
-make test-sbom-cve   # fixture tests for the readers (no build)
+make test SUITE=sbom-cve   # fixture tests for the readers (no build)
 ```
 
 `make sbom-cve` is opt-in and slow (SPDX generation over the whole image); it is

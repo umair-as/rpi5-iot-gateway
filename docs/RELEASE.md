@@ -74,11 +74,11 @@ scripts/release/release-build.sh \
   --image prod \
   --bundle none
 make sign-slot-fits-yk SLOT_FITS_IMAGE=iot-gw-image-prod   # operator: YubiKey PIN + touch
-make bundle-prod-full-fit
+make bundle IMAGE=prod
 ```
 
 Do not start a build in another composition (dev, desktop, even `bitbake -n`)
-between the prod image build and `make bundle-prod-full-fit`. Starting one
+between the prod image build and `make bundle IMAGE=prod`. Starting one
 makes sstate remove the prod deploy outputs, including the slot FITs you just
 signed, and the image has to be rebuilt and signed again.
 
@@ -100,7 +100,7 @@ dev report contains every row the prod report would, and its counts are an
 upper bound for prod. Scan dev:
 
 ```bash
-SBOM_CVE_IMAGE=iot-gw-image-dev make sbom-cve
+make sbom-cve IMAGE=dev
 ```
 
 Then prove the subset from buildhistory of the two builds being released:
@@ -118,7 +118,7 @@ Every prod-only package needs its own CVE check (for v0.7.0: our SSH hardening
 config package, the prod packagegroup and `psplash`, none with CVE records). A
 shared package at a different version, or a prod-only package with CVE
 records, means the subset argument does not hold: scan prod itself with
-`SBOM_CVE_IMAGE=iot-gw-image-prod make sbom-cve`, which builds it in its own
+`make sbom-cve IMAGE=prod`, which builds it in its own
 composition. Record the release's CVE numbers as "dev, upper bound for prod".
 
 **Then read back the exact report you just produced, not "the newest one".**

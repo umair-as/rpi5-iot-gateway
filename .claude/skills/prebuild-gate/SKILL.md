@@ -36,7 +36,7 @@ to read the result.
 
    A targeted task replaces `parse` (BitBake parses everything first anyway).
    The kernel configure runs with the default (dev) kas composition only.
-   Prod tier fragments need a separate configure with `PROD_KAS_OVERLAYS`.
+   Prod tier fragments need a separate configure: `make bitbake-task IMAGE=prod BB_TASK="virtual/kernel -c configure"`.
 
 ## Read the result
 

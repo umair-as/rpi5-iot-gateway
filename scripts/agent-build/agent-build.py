@@ -28,9 +28,7 @@ import uuid
 SELF = Path(__file__).resolve()
 SOCKET = "iotgw-builds"
 # Makefile targets that end up running bitbake; keep in step with the Makefile.
-BUILD_TARGETS = {"base", "dev", "prod", "desktop", "parse", "layers", "bitbake-task",
-                 "bundle-dev-full-fit", "bundle-dev-full-fit-resign", "bundle-desktop-full-fit",
-                 "bundle-prod-full-fit", "bundle-prod-full-fit-resign",
+BUILD_TARGETS = {"base", "dev", "prod", "desktop", "bundle", "parse", "layers", "bitbake-task",
                  "sbom-cve", "cve-report", "sbom-report", "kernel-hardening-report"}
 RUNNING = r"bin/(bitbake|bitbake-server|kas|kas-container)( |$)"
 # One BitBake build per host, across worktrees and build directories. The
@@ -133,7 +131,7 @@ def start(args):
     for arg in command:
         if arg.startswith("-") or arg.startswith("KAS_BUILD_DIR="):
             raise ValueError("Use targets and VAR=value arguments only; set KAS_BUILD_DIR in the environment")
-        if arg.startswith(("sign-bootfiles-fit", "sign-slot-fits")):
+        if arg.startswith("sign-"):
             raise ValueError("HSM signing is operator-driven; run this target interactively")
     if BUILD_TARGETS & set(command):
         busy = running_builds()

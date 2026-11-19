@@ -225,7 +225,7 @@ SRC_URI:append = "${@' file://fragments/vcio-rpi.cfg' if d.getVar('IOTGW_ENABLE_
 . scripts/env.sh && kas shell kas/local.yml -c "bitbake virtual/kernel -c compile -f"
 
 # Full bundle when kernel build passes
-make bundle-dev-full-fit
+make bundle IMAGE=dev
 ```
 
 On target after OTA:

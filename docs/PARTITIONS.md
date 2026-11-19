@@ -191,7 +191,7 @@ the only point in the boot where nothing has mounted it yet.
 A boot with nothing to grow does nothing; one interrupted half way finishes on
 the next boot. A growth failure is logged in `/run/iotgw/preinit.log` and the
 boot continues on the smaller `/data`; it never marks the boot degraded.
-Host tests: `scripts/preinit/tests/test_data_grow.py` (`make test-boot-scripts`).
+Host tests: `scripts/preinit/tests/test_data_grow.py` (`make test SUITE=boot`).
 
 ---
 

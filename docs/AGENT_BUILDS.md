@@ -8,7 +8,7 @@ From the selected checkout or worktree:
 
 ```bash
 . scripts/env.sh
-IOTGW_ENABLE_OTBR=1 python3 scripts/agent-build/agent-build.py start otbr -- bundle-dev-full-fit
+IOTGW_ENABLE_OTBR=1 python3 scripts/agent-build/agent-build.py start otbr -- bundle IMAGE=dev
 ```
 
 Source the environment first to load operator-local cache settings. The helper
@@ -64,7 +64,7 @@ remove BitBake's lock automatically. Keep the build directory fixed in local
 configuration; overriding it indirectly through custom make logic bypasses the
 helper's coordination.
 
-HSM signing remains operator-driven; direct `sign-bootfiles-fit*` and
+HSM signing remains operator-driven; direct `sign-*` and
 `sign-slot-fits*` targets are rejected. Do not wrap interactive signing in another target to bypass this rule.
 To deliberately interrupt an ordinary build, attach without `-r` and press
 Ctrl-C. After completion, remove its retained session with:

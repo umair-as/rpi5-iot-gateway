@@ -175,7 +175,7 @@ local_conf_header:
     # the recipe injects only the YK pubkey and leaves required-mode
     # unset (single trust root — U-Boot's default verify semantics).
     # Use the kas/fit-release-trust.yml overlay (composed automatically
-    # by make prod / bundle-prod-full / bundle-prod-full-fit) rather than
+    # by make prod / make bundle IMAGE=prod) rather than
     # setting this gate in local.yml; that overlay also force-disables the
     # SoftHSM gate so a dev local.yml cannot leak it into a release.
     # Operator pre-flight: export slot 9a public cert with

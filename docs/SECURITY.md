@@ -477,7 +477,7 @@ Before deploying to production:
 - [ ] Disable unused network services
 - [ ] Configure audit log forwarding (if applicable)
 - [ ] Prod has no administrator: its only login is the OTA operator `iotgw-ops` (key from `IOTGW_PROD_OPS_AUTH_KEYS_FILE`, `staff_t`, bundle staging and `rauc` only). Confirm the OTA channel is provisioned on the card (`/boot/iotgw/ota/` device certificate, `updater.conf`); OTA (automatic or by the operator) and reflash are the only administration paths (`docs/OPERATIONS.md` §5)
-- [ ] Build prod through `make prod` / `make bundle-prod-full-fit` so `kas/uboot-prod-hardening.yml` is composed; the prod hygiene gate fails any other composition (dev kernel fragments, missing `appliance_lockdown`)
+- [ ] Build prod through `make prod` / `make bundle IMAGE=prod` so `kas/uboot-prod-hardening.yml` is composed; the prod hygiene gate fails any other composition (dev kernel fragments, missing `appliance_lockdown`)
 - [ ] Review sysctl settings for your use case
 - [ ] Test OTA update rollback mechanism
 

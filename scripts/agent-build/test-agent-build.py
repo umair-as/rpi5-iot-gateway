@@ -56,7 +56,7 @@ class LauncherTest(unittest.TestCase):
 
             fake = None
             try:
-                for target in ("sign-bootfiles-fit-yk", "sign-slot-fits-yk"):
+                for target in ("sign-slot-fits-yk", "sign-slot-fits-softhsm"):
                     refused = start("signing", target)
                     self.assertNotEqual(refused.returncode, 0)
                     self.assertIn("operator-driven", refused.stderr)

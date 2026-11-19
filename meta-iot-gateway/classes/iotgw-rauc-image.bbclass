@@ -174,8 +174,9 @@ addtask iotgw_validate_wic_alignment after do_image_wic before do_image_complete
 # /boot/fitImage via IMAGE_BOOT_FILES. Flashing the produced .wic.zst fails
 # U-Boot FIT verification on first boot.
 #
-# Detached signing model: the final release artifact is the resigned RAUC
-# bundle from `make bundle-prod-full-fit-resign`, NOT the WIC. Signed
+# Detached signing model: the final release artifact is the RAUC bundle
+# assembled from YubiKey-signed slot FITs (`make sign-slot-fits-yk`, then
+# `make bundle IMAGE=prod`), NOT the WIC. Signed
 # production initial-flash SD images are not part of the supported flow.
 # This guard surfaces the misconfiguration; it does not attempt a second
 # WIC signing pipeline. bbwarn (not bbfatal) is used so the bundle workflow
@@ -200,10 +201,10 @@ python () {
             "(U-Boot FIT verify will reject the file-key signature).\n"
             "\n"
             "The release artifact under the detached signing model is the "
-            "resigned RAUC bundle. Use:\n"
-            "    make bundle-prod-full-fit\n"
-            "    make sign-bootfiles-fit-yk\n"
-            "    make bundle-prod-full-fit-resign\n"
+            "RAUC bundle built from YubiKey-signed slot FITs. Use:\n"
+            "    make prod\n"
+            "    make sign-slot-fits-yk\n"
+            "    make bundle IMAGE=prod\n"
             "\n"
             "If you need a flashable SD for development, drop "
             "kas/fit-release-trust.yml from the kas composition -- the dev "

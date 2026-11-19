@@ -18,12 +18,12 @@ Production-key, firmware-delivery and model-lifecycle work remain open; see
 
 ```bash
 make dev                      # or: make base, make desktop
-make bundle-dev-full-fit      # or: make bundle-desktop-full-fit
+make bundle IMAGE=dev        # or: make bundle IMAGE=desktop
 ```
 
 The card is part of the platform, so every non-prod target carries the stack.
 `base`, `dev` and their bundles compose `kas/deepx.yml` (the Makefile's
-`IMAGE_KAS`), and `kas/desktop.yml` includes it. The overlay makes
+`STACK_base`/`STACK_dev`), and `kas/desktop.yml` includes it. The overlay makes
 `meta-deepx-m1` available and sets `IOTGW_ENABLE_DEEPX_DXM1=1`. Base and dev get
 the driver and runtime; the desktop adds the demo stack. Prod composes neither
 until the module-signing key is protected (§7).
@@ -224,8 +224,8 @@ before calling it production-complete:
 - **Signed model delivery/model OTA.** The demo model is a build-time vendor
   asset, not a production model lifecycle.
 
-The OTA paths are `make bundle-dev-full-fit` and, for the desktop image,
-`make bundle-desktop-full-fit`. Each carries the rootfs and slot-specific FIT
+The OTA paths are `make bundle IMAGE=dev` and, for the desktop image,
+`make bundle IMAGE=desktop`. Each carries the rootfs and slot-specific FIT
 boot assets together. The acceptance gate compares the complete module
 signing-key fingerprint because vermagic stays identical across builds with
 different generated keys.

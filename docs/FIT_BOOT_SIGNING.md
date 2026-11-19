@@ -99,7 +99,7 @@ Force rebuild of U-Boot and kernel artifacts after signing changes:
 
 ```bash
 . scripts/env.sh && kas shell kas/local.yml -c 'bitbake -c cleansstate u-boot virtual/kernel'
-make bundle-dev-full-fit
+make bundle IMAGE=dev
 ```
 
 ## Verify Signed FIT on Host
@@ -284,11 +284,11 @@ make sign-slot-fits-softhsm
 
 # Run the test suite. SoftHSM tests skip cleanly when no SoftHSM
 # token is on the host.
-make test-sign-fit
+make test SUITE=sign-fit
 
 # Run the full suite including SoftHSM integration tests. Requires
 # `softhsm2` + `libengine-pkcs11-openssl` on the host.
-make test-sign-fit-softhsm
+make test SUITE=sign-fit SOFTHSM=1
 ```
 
 ### Make targets
@@ -297,10 +297,8 @@ make test-sign-fit-softhsm
 |--------|---------|-------------|
 | `make sign-slot-fits-yk` | `yubikey-9a` | Release flow: re-signs an image's dm-verity slot FITs (`SLOT_FITS_IMAGE=`, default `iot-gw-image-prod`). Requires a YubiKey with slot 9a provisioned. Prompts for PIN, requires touch. |
 | `make sign-slot-fits-softhsm` | `softhsm-dev` | Dev flow for engineers without a YubiKey. Requires the SoftHSM dev key provisioned (see below). |
-| `make sign-bootfiles-fit-yk` / `-softhsm` | as above | Re-sign the generic `fitImage` inside `bootfiles-fit.tar.gz`. No install hook boots that FIT, so this does not make a bundle bootable under a different trust root. |
 
-The slot-FIT targets accept `SIGN_SLOT_FITS_ARGS`; the bootfiles targets accept
-`SIGN_BOOTFILES_ARGS` and `SIGN_FIT_ARGS`. Example:
+The slot-FIT targets accept `SIGN_SLOT_FITS_ARGS`. Example:
 
 ```bash
 make sign-slot-fits-yk SLOT_FITS_IMAGE=iot-gw-image-dev SIGN_SLOT_FITS_ARGS=--force
@@ -459,7 +457,7 @@ Force rebuild of the kernel so the deploy step re-mutates the DTBs:
 
 ```bash
 . scripts/env.sh && kas shell kas/local.yml -c 'bitbake -c cleansstate virtual/kernel'
-make bundle-dev-full-fit
+make bundle IMAGE=dev
 ```
 
 The kernel recipe's (`linux-iotgw-mainline_6.18.bb`) `do_deploy:append` block:
@@ -532,7 +530,7 @@ Test both signing paths sequentially:
 2. **YK-signed FIT path** — run
    `make sign-slot-fits-yk SLOT_FITS_IMAGE=iot-gw-image-dev` against the
    same build to re-sign both slot FITs with slot 9a, reassemble the bundle
-   (`make bundle-dev-full-fit`), install on the device that booted step 1,
+   (`make bundle IMAGE=dev`), install on the device that booted step 1,
    reboot. U-Boot must accept the FIT against
    `key-iotgw-fit-yk-2027`.
 
@@ -579,10 +577,10 @@ dev-only SoftHSM key are both dropped, leaving the YubiKey pubkey as the
 sole trust root. Forcing SoftHSM off matters because a developer's
 `kas/local.yml` may enable all three roots; without it a release build
 composed on that config would carry the SoftHSM dev key in the DTB. The
-overlay uses bare assignments. It is composed automatically with `prod` and
-`bundle-prod-full-fit` by the `Makefile` whenever
-the file exists (the same pattern as `kas/uboot-prod-hardening.yml`), and
-after `kas/local.yml` so it wins by parse order. A release
+overlay uses bare assignments. The `Makefile` composes it with `prod` and
+`bundle IMAGE=prod`, together with `kas/uboot-prod-hardening.yml`; both are
+required, and the target fails before kas starts if either is missing. It
+comes after `kas/local.yml` so it wins by parse order. A release
 build therefore picks up the release trust profile without any manual
 `kas/local.yml` change.
 
@@ -629,7 +627,7 @@ With runtime dm-verity, what U-Boot boots is a per-slot FIT,
 dm-verity table, and the bundle's OTA install hook (`bundle-hooks-fit.sh`)
 writes the one matching the slot it installs as `/boot/fitImage-a` or
 `-b`. The generic `fitImage` inside `bootfiles-fit.tar.gz` is not installed
-by that hook, so re-signing it (`make sign-bootfiles-fit-yk`) does **not**
+by that hook, so re-signing it (`sign_fit.py sign-bootfiles`) does **not**
 make a release bundle bootable. The slot FITs have to be re-signed:
 `make sign-slot-fits-yk` (see
 [Runtime dm-verity: signing the slot FITs](#runtime-dm-verity-signing-the-slot-fits)).
@@ -641,10 +639,10 @@ from YubiKey-signed slot FITs**:
 ```bash
 make prod                            # stage 1: image; slot FITs are file-key signed intermediates
 make sign-slot-fits-yk               # stage 2: YK + PIN + touch per FIT; re-signs both slot FITs
-make bundle-prod-full-fit            # stage 3: assembly gate verifies the staged FITs, then packs
+make bundle IMAGE=prod               # stage 3: assembly gate verifies the staged FITs, then packs
 ```
 
-Running `make bundle-prod-full-fit` before stage 2 fails at the assembly
+Running `make bundle IMAGE=prod` before stage 2 fails at the assembly
 gate by design: it refuses to pack slot FITs that do not verify against the
 release anchor the bundle ships.
 
@@ -858,7 +856,7 @@ U-Boot boots, and what the stages sign:
 ```mermaid
 flowchart LR
     A["make prod<br/>(unattended)<br/>slot FITs signed by file key"] --> B["make sign-slot-fits-yk<br/>(operator: PIN + touch)<br/>slot FITs HSM-signed"]
-    B --> C["make bundle-prod-full-fit<br/>(unattended)<br/>assembly gate verifies, then packs"]
+    B --> C["make bundle IMAGE=prod<br/>(unattended)<br/>assembly gate verifies, then packs"]
 ```
 
 1. **Build** (`make prod`, unattended). The slot FITs are signed with the
@@ -882,7 +880,7 @@ flowchart LR
    both. A FIT is skipped only if it already carries the profile's key
    **and** verifies against that key alone. A manifest
    `<image>.slot-fits.signed` records the result.
-3. **Assemble** (`make bundle-prod-full-fit`, unattended). The bundle
+3. **Assemble** (`make bundle IMAGE=prod`, unattended). The bundle
    recipe tracks both slot FITs, the verity parameters and the bootfiles
    archive by content, so re-signed FITs re-run assembly. The assembly gate
    (`iotgw-bundle-slot-gate.bbclass`) then runs on the files staged into

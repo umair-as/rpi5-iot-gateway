@@ -2,7 +2,7 @@ header:
   version: 18
 
 # Production composition overlay. Composed automatically by the Makefile's
-# prod targets (PROD_KAS_OVERLAYS); the prod hygiene gate in
+# prod targets (the Makefile's STACK_prod); the prod hygiene gate in
 # iotgw-rootfs.bbclass fails the image build when its effect is missing, so a
 # prod image built from any other composition does not pass silently.
 #

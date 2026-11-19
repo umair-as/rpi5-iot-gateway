@@ -26,7 +26,7 @@ local_conf_header:
     #
     # These are bare assignments (FIT is now the only, unconditional boot flow —
     # there is no ':fitflow' override anymore). The Makefile composes this
-    # overlay AFTER kas/local.yml (PROD_KAS_OVERLAYS), so it wins by parse order.
+    # overlay AFTER kas/local.yml (the Makefile's STACK_prod), so it wins by parse order.
     #
     # SAFETY: this overlay disables the file-key and SoftHSM trust roots. If
     # IOTGW_FIT_TRUST_YK_KEY is also not "1" in kas/local.yml (or another

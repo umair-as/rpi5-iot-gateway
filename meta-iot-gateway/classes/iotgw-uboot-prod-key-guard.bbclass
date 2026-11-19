@@ -50,7 +50,7 @@ python do_iotgw_uboot_key_guard() {
             'iot-gw-image-prod must be built with the release FIT trust profile —\n'
             'the deployed U-Boot control FDT must trust ONLY the YubiKey root:\n\n'
             '  - ' + '\n  - '.join(bad) + '\n\n'
-            'Fix: build via a prod target (make prod / make bundle-prod-full-fit)\n'
+            'Fix: build via a prod target (make prod / make bundle IMAGE=prod)\n'
             'so the Makefile composes kas/fit-release-trust.yml,\n'
             'and ensure kas/local.yml enables the YubiKey trust root\n'
             '(IOTGW_FIT_TRUST_YK_KEY = "1" plus IOTGW_FIT_YK_KEYDIR / KEYNAME).\n'

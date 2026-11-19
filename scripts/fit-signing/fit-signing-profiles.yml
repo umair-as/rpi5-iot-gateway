@@ -5,7 +5,7 @@
 # engine config paths and keydirs may be customized by copying this
 # file to a vault location and pointing the env var at it; the committed
 # defaults are repo-relative under the gitignored keys/dev/ tree, resolved
-# from the repo root where the `make sign-bootfiles-fit-*` targets run.
+# from the repo root where the `make sign-slot-fits-*` targets run.
 #
 # Each profile drives `mkimage -F -N pkcs11 -k <uri>`. The URI MUST
 # contain `object=<label>` because mkimage 2025.04 only takes a -k URI

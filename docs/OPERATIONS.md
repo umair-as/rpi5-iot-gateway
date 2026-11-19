@@ -15,9 +15,9 @@ Audience: operators, integrators, and maintainers.
 | `make prod` | `iot-gw-image-prod` |
 | `make base` | `iot-gw-image-base` |
 | `make desktop` | `iot-gw-image-desktop` (lab image, always with the DX-M1 stack) |
-| `make bundle-desktop-full-fit` | desktop full bundle |
-| `make bundle-dev-full-fit` | dev full bundle (rootfs + signed FIT boot assets) |
-| `make bundle-prod-full-fit` | prod full bundle (rootfs + signed FIT boot assets) |
+| `make bundle IMAGE=desktop` | desktop full bundle |
+| `make bundle IMAGE=dev` | dev full bundle (rootfs + signed FIT boot assets) |
+| `make bundle IMAGE=prod` | prod full bundle (rootfs + signed FIT boot assets) |
 
 Initial setup:
 
@@ -53,7 +53,7 @@ IOTGW_VERSION_MAJOR=0 \
 IOTGW_VERSION_MINOR=4 \
 IOTGW_VERSION_PATCH=0 \
 IOTGW_BUILD_ID=20260509 \
-make bundle-prod-full-fit
+make bundle IMAGE=prod
 ```
 
 When Makefile abstraction is not enough:

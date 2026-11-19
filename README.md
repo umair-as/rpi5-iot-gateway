@@ -19,12 +19,52 @@
 A **hardened, embedded Linux distribution** for IoT gateway deployments on Raspberry Pi 5. Built on Yocto Project with KAS tooling.
 
 **Key Features:**
+- 🛡️ **SELinux enforcing on every image** — refpolicy-mcs plus a project policy module that confines the gateway daemons (OTBR, DX-M1 runtime and demo, Weston, OTA key access); no permissive domains, and prod builds refuse one
+- 📦 **Containers, first-class** — rootless Podman in every image: dedicated service account, Quadlet units, `pasta` networking, seccomp, store under `/data`, workloads confined as `container_t`; Buildah/Skopeo opt-in (`IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=1`)
+- 🔐 **Verified boot chain** — mandatory signed FIT, dm-verity root authenticated by the FIT
 - 🔄 **A/B OTA Updates** — Rootfs A/B updates with RAUC slot rollback semantics (enabled by default)
-- 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags, runtime hardening
 - ⚡ **Hardware-validated AI acceleration** — Optional DEEPX DX-M1 PCIe NPU stack with signed drivers and on-target inference checks
-- 🔐 **Verified boot chain** — mandatory signed FIT, dm-verity root authenticated by the FIT, SELinux enforcing on every image
-- 📦 **Container Runtime** — rootless Podman in every image (dedicated service account, `pasta` networking, store under `/data`); Buildah/Skopeo opt-in (`IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=1`)
+- 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags, runtime hardening, SBOM and CVE triage
 - 🛠️ **Developer-Friendly** — Tooling for debugging and development
+
+---
+
+## 🛡️ SELinux Enforcing
+
+SELinux is the distro's mandatory access control, and every image boots
+**enforcing**. The policy is refpolicy-mcs plus the project module
+`iotgw.te`, which gives each long-running gateway service its own domain:
+OTBR (`iotgw_otbr_t`), the DX-M1 runtime and demo (`iotgw_dxrtd_t`,
+`iotgw_dxdemo_t`), Weston and the health daemon. RAUC runs in `rauc_t`; of
+the confined domains only it may read the OTA device key (unconfined boot
+domains such as `init_t` still can). Admins work in `sysadm_t` from the
+console; SSH logins land in `staff_t` (dev and desktop root, the prod OTA
+operator).
+
+The shipped policy declares no permissive domain. The build checks that, and
+a prod image fails to build if one appears. Dev and desktop release
+candidates are validated on the board under enforcing (services, OTA install,
+DX-M1 inference); prod has not yet been booted enforcing on hardware. Known
+gaps are listed in [SELinux enforcing](docs/SELINUX_ENFORCING.md). AppArmor is
+not used.
+
+See [SELinux](docs/SELINUX.md) (concepts and the local wiring) and
+[SELinux enforcing](docs/SELINUX_ENFORCING.md) (runtime trials, diagnosing
+denials).
+
+---
+
+## 📦 Containers
+
+Every image ships the Podman stack; there is no toggle. Workloads run
+**rootless** as one dedicated principal (`iotgw-ctr`) from Quadlet units in
+its systemd user manager. Containers get `pasta` networking, podman's default
+seccomp profile, and a store on `/data` that survives A/B updates, and SELinux
+confines each one as `container_t` with its own MCS category pair. The rootful
+engine is installed for one-off administration only; no unit starts it.
+
+See [Containers](docs/CONTAINERS.md) for the principal, engine configuration,
+adding a workload, and the acceptance check.
 
 ---
 
@@ -38,9 +78,9 @@ zero failures after a full-FIT RAUC install, with no target-side edits.
 
 ```bash
 make dev                          # Flashable development image (DX-M1 stack included)
-make bundle-dev-full-fit          # OTA bundle with matching rootfs + FIT boot assets
+make bundle IMAGE=dev             # OTA bundle with matching rootfs + FIT boot assets
 make desktop                      # Desktop lab image, always with DX-M1 + on-screen demo
-make bundle-desktop-full-fit      # OTA bundle for the desktop lab image
+make bundle IMAGE=desktop         # OTA bundle for the desktop lab image
 ```
 
 The accelerator is opt-in and carries proprietary vendor software; images
@@ -72,7 +112,7 @@ cp kas/local.yml.example kas/local.yml
 # Build images (using Makefile - recommended)
 make dev         # Development image
 make prod        # Production image
-make bundle-dev-full-fit   # OTA bundle with signed FIT boot assets
+make bundle IMAGE=dev      # OTA bundle with signed FIT boot assets
 ```
 
 ### Flash to SD Card
@@ -97,9 +137,11 @@ See [Operations](docs/OPERATIONS.md).
 
 ### Default Accounts
 
-Default users: `root` on every image; `devel` (sudo) on the dev and desktop
-images only.
-Override at build time with hashed passwords in `kas/local.yml` or `build/conf/local.conf`:
+Dev and desktop images: `root` and `devel` (sudo). Prod: no account has a
+password, root cannot log in over the network, and the only login is the
+key-only OTA operator `iotgw-ops` (key file set by
+`IOTGW_PROD_OPS_AUTH_KEYS_FILE`; the prod build fails without it).
+Dev and desktop passwords are set at build time with hashes in `kas/local.yml`:
 
 ```bash
 IOTGW_ROOT_PASSWORD_HASH = "$6$<hash>"
@@ -117,17 +159,22 @@ RAUC is **enabled by default** in this distribution.
 
 ### Deploy an Update
 
-```bash
-# 1. Copy bundle to device
-scp build/tmp/deploy/images/raspberrypi5/iot-gw-image-dev-bundle-full-fit.raucb root@<device-ip>:/tmp/
+Dev and desktop images, from an administrator shell (the serial console, or
+`sudo` as `devel`; an SSH root login is `staff_t` and cannot run the wrapper):
 
-# 2. Install via project wrapper (handles preflight/cert checks)
-iotgw-rauc-install /tmp/iot-gw-image-dev-bundle-full-fit.raucb
+```bash
+# Install via the project wrapper (preflight, certificate and /boot checks)
+iotgw-rauc-install <path-or-https-url>/iot-gw-image-dev-bundle-full-fit.raucb
 reboot
 
-# 3. Verify after reboot
+# Verify after reboot
 rauc status
 ```
+
+Prod images have no administrator shell. The OTA operator account
+(`iotgw-ops`, key-only) copies the bundle to `/data/ota-tmp/` and runs
+`rauc install` there. See [Operations](docs/OPERATIONS.md) §5 and the
+[RAUC Update Runbook](docs/RAUC_UPDATE.md).
 
 ### Generate RAUC Signing Keys
 
@@ -190,9 +237,17 @@ For practical runbooks and command workflows:
 Detailed documentation is available in the `docs/` directory:
 
 - **[Operations](docs/OPERATIONS.md)** — Host build, networking, dev SSH keys, OTA runtime workflows
-- **[Security Hardening](docs/SECURITY.md)** — Kernel hardening, compiler flags, audit framework, validation
 - **[SELinux](docs/SELINUX.md)** — Active MAC: concept primer, local wiring, refpolicy-mcs
 - **[SELinux enforcing](docs/SELINUX_ENFORCING.md)** — Enforcing on every image: runtime trials, findings
+- **[Containers](docs/CONTAINERS.md)** — Rootless Podman: the service account, engine configuration, adding a workload, confinement
+- **[Security Hardening](docs/SECURITY.md)** — Kernel hardening, compiler flags, audit framework, validation
+- **[Threat Model](docs/THREAT_MODEL.md)** — Gateway-wide STRIDE threat model: threats and controls
+- **[U-Boot Hardening](docs/UBOOT_HARDENING.md)** — U-Boot hardening architecture and design decisions
+- **[TPM Requirements](docs/TPM_REQUIREMENTS.md)** — Requirements and measured-boot design for Linux-side TPM use (SLB9672)
+- **[SBOM and CVE scanning](docs/SBOM_CVE.md)** — Producing and reading the image SBOM and CVE report
+- **[CVE applicability](docs/CVE_APPLICABILITY.md)** — Deciding whether a CVE applies, and what may suppress a finding
+- **[Kernel CVE applicability](docs/KERNEL_CVE_APPLICABILITY.md)**, **[Kernel CVE patches](docs/KERNEL_CVE_PATCH.md)**, **[Kernel driver backports](docs/KERNEL_DRIVER_BACKPORT.md)** — Kernel-side triage and backport field guides
+- **[Release process](docs/RELEASE.md)** — Tagging, deterministic release build, release notes and evidence
 - **[Kernel Configuration](docs/KERNEL.md)** — Feature sets, fragments, build-time command line
 - **[Partition Layouts](docs/PARTITIONS.md)** — RAUC A/B partitions, WKS variants, sizing
 - **[Persistent State Architecture](docs/PERSISTENT_STATE.md)** — volatile `/var`, `/data`-backed persistent state, and what survives A/B updates
