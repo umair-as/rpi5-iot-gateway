@@ -72,7 +72,7 @@ shells, CI steps, and scripts — do **not** trigger direnv and must source
 anyway: the stray root clones are untracked; confirm
 `build/conf/bblayers.conf` points at `.kas/` before deleting them.
 
-Build artifacts land in `build/tmp/deploy/images/raspberrypi5/`. Flash the `.wic.zst` with `zstdcat … | dd` — or `bmaptool copy` plus deleting `uboot.env` from the `ubootenv` partition (p2); plain `bmaptool` can leave a stale U-Boot env file on reused cards. Never zero p2 itself — the vfat and its label must survive or the `/uboot-env` mount fails at boot. Full flashing/provisioning runbook: `docs/OPERATIONS.md`.
+Build artifacts land in `build/tmp/deploy/images/raspberrypi5/`, which keeps only what the last composition reaches: starting a build in another composition (even `bitbake -n`) removes the previous one's bundle, kernel and U-Boot. Set `IOTGW_ARTIFACT_ARCHIVE_DIR` (`kas/local.yml`) and each image and bundle copies itself and its boot chain there once built (`iotgw-artifact-archive.bbclass`). Flash the `.wic.zst` with `zstdcat … | dd` — or `bmaptool copy` plus deleting `uboot.env` from the `ubootenv` partition (p2); plain `bmaptool` can leave a stale U-Boot env file on reused cards. Never zero p2 itself — the vfat and its label must survive or the `/uboot-env` mount fails at boot. Full flashing/provisioning runbook: `docs/OPERATIONS.md`.
 
 ### Image variants
 

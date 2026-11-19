@@ -5,6 +5,12 @@ LIC_FILES_CHKSUM = "file://${COMMON_LICENSE_DIR}/MIT;md5=0835ade698e0bcf8506ecda
 
 inherit bundle iotgw-rauc-adaptive-guard iotgw-bundle-slot-gate
 
+# Copy the bundle and its boot chain out of deploy/ once built
+# (iotgw-artifact-archive.bbclass; off unless IOTGW_ARTIFACT_ARCHIVE_DIR is set).
+inherit iotgw-artifact-archive
+IOTGW_ARTIFACT_ARCHIVE_NAME = "${BUNDLE_BASENAME}"
+addtask iotgw_archive after do_deploy before do_build
+
 # Bundle identity (matches device system.conf via rauc-conf)
 RAUC_BUNDLE_COMPATIBLE ?= "iot-gateway-${MACHINE}"
 

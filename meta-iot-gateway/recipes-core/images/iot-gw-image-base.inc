@@ -7,6 +7,13 @@ inherit iotgw-rauc-image iotgw-fit-gate iotgw-module-sig-gate
 # Runtime root dm-verity: the only root flow (see iotgw-verity-image.bbclass).
 inherit iotgw-verity-image
 
+# Copy the image and its boot chain out of deploy/ once built
+# (iotgw-artifact-archive.bbclass; off unless IOTGW_ARTIFACT_ARCHIVE_DIR is set).
+inherit iotgw-artifact-archive
+IOTGW_ARTIFACT_ARCHIVE_TASK = "image_complete"
+IOTGW_ARTIFACT_ARCHIVE_GLOBS = "*.wic.zst *.wic.bmap *.manifest *.fitImage-* *.verity-params *.verity-info *.wks"
+addtask iotgw_archive after do_image_complete before do_build
+
 require iotgw-preinit-boot.inc
 
 # Label the rootfs with SELinux file contexts at do_rootfs (runs setfiles

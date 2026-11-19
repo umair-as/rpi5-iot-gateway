@@ -373,6 +373,14 @@ local_conf_header:
     # Match your build host; rpi5.yml carries the defaults.
     # BB_NUMBER_THREADS = "10"
     # PARALLEL_MAKE = "-j12"
+  artifact_archive: |
+    # deploy/ keeps only what the last composition reaches: starting a desktop
+    # or prod build (even `bitbake -n`) removes the dev bundle, kernel and
+    # U-Boot. Set a directory outside build/ and each image and bundle copies
+    # itself and its boot chain there once built (hardlinks on the same
+    # filesystem). Keeps the newest KEEP folders per recipe.
+    # IOTGW_ARTIFACT_ARCHIVE_DIR = "/home/you/yocto-cache/artifacts"
+    # IOTGW_ARTIFACT_ARCHIVE_KEEP = "5"
   rm_work_exclude: |
     # Keep kernel/U-Boot workdirs for debugging. rm_work itself comes from
     # rpi5.yml; do not remove it (build/tmp grows into the hundreds of GB).
