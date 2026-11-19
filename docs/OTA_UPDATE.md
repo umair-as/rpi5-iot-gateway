@@ -340,7 +340,8 @@ variables from the profiles above; crypt needs nothing added.
 single-copy. An OTA never writes them, and the device's pre-install handler
 refuses a bundle whose slot FITs the current anchor would not accept. They
 change only through `iotgw-rpi-bootfiles-update`, which refuses a DTB that
-does not trust both installed slot FITs
+does not trust both installed slot FITs, and one that narrows trust unless
+the operator verified the FITs on the build host first
 ([RAUC Update](RAUC_UPDATE.md#shared-boot-files)).
 
 **No persistent `/etc`** — `/etc` and `/root` are the slot's content with a
