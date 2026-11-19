@@ -99,12 +99,47 @@ def fx(tmp_path_factory):
             sh("fdtput", "-t", "s", str(out), "/signature", "required-mode", mode)
         return out
 
+    fit_both = fit("fit_both", ["kdev", "kyk"])
+    fit_other = fit("fit_other", ["kother"])
+    a_dev = anchor("a_dev", ["kdev"])
+    # Known limitations of the hint-based check (no signature is verified):
+    # a corrupt second signature, and a new key carrying an old key's hint.
+    bad_sig = d / "fit_both_bad_yk_sig.itb"
+    shutil.copy(fit_both, bad_sig)
+    sh("fdtput", "-t", "bx", str(bad_sig), "/configurations/conf-1/signature-2", "value", *(["0"] * 256))
+    hint_spoof = d / "fit_other_hint_kdev.itb"
+    shutil.copy(fit_other, hint_spoof)
+    sh("fdtput", "-t", "s", str(hint_spoof), "/configurations/conf-1/signature-1", "key-name-hint", "kdev")
+    # Same modulus and exponent as a_dev's key, different encoding: U-Boot rejects.
+    a_dev_bits = d / "a_dev_bits.dtb"
+    shutil.copy(a_dev, a_dev_bits)
+    sh("fdtput", "-t", "x", str(a_dev_bits), "/signature/key-kdev", "rsa,num-bits", "400")
+
+    a_dev_noexp = d / "a_dev_noexp.dtb"
+    shutil.copy(a_dev, a_dev_noexp)
+    sh("fdtput", "-d", str(a_dev_noexp), "/signature/key-kdev", "rsa,exponent")
+    # The same key under a second node name, both required, mode all.
+    a_dev_twice = d / "a_dev_twice.dtb"
+    shutil.copy(a_dev, a_dev_twice)
+    sh("dtc", "-I", "dtb", "-O", "dts", "-o", str(d / "twice.dts"), str(a_dev))
+    dts = (d / "twice.dts").read_text()
+    start = dts.index("key-kdev {")
+    end = dts.index("};", start) + 2
+    dts = dts[:end] + "\n" + dts[start:end].replace("key-kdev {", "key-kdev2 {", 1) + dts[end:]
+    (d / "twice.dts").write_text(dts)
+    sh("dtc", "-I", "dts", "-O", "dtb", "-o", str(a_dev_twice), str(d / "twice.dts"))
+
     return {
         "dir": d,
+        "a_dev_noexp": a_dev_noexp,
+        "a_dev_twice": a_dev_twice,
+        "fit_both_bad_yk_sig": bad_sig,
+        "fit_other_hint_kdev": hint_spoof,
+        "a_dev_bits": a_dev_bits,
         "fit_dev": fit("fit_dev", ["kdev"]),
-        "fit_both": fit("fit_both", ["kdev", "kyk"]),
-        "fit_other": fit("fit_other", ["kother"]),
-        "a_dev": anchor("a_dev", ["kdev"]),
+        "fit_both": fit_both,
+        "fit_other": fit_other,
+        "a_dev": a_dev,
         "a_dual_any": anchor("a_dual_any", ["kdev", "kyk"], mode="any"),
         "a_dual_all": anchor("a_dual_all", ["kdev", "kyk"]),
         "a_yk": anchor("a_yk", ["kyk"]),
@@ -136,6 +171,8 @@ def check(fit, cur, cand):
     ("fit_dev", "a_dev", "a_none", False),
     # Signer unknown to the current anchor: its key cannot be identified.
     ("fit_other", "a_dev", "a_dual_any", False),
+    # Same modulus and exponent, different rsa,num-bits: another key to U-Boot.
+    ("fit_dev", "a_dev", "a_dev_bits", False),
 ])
 def test_anchor_check(fx, fit, cur, cand, ok):
     rc, out = check(fx[fit], fx[cur], fx[cand])
@@ -152,6 +189,75 @@ def test_anchor_check_matches_u_boot(fx):
                            capture_output=True, text=True)
         assert (r.returncode == 0) == ok, (fit, anchor, r.stdout + r.stderr)
         assert (check(fx[fit], fx[anchor], fx[anchor])[0] == 0) == ok, (fit, anchor)
+
+
+# Where the hint-based check and U-Boot disagree. Pinned so that a change in
+# either direction is noticed; fit_anchor_preserves and the updater's
+# --allow-trust-reduction gate cover the anchor-change case.
+@pytest.mark.parametrize("fit,anchor,guard_ok,uboot_ok", [
+    ("fit_both_bad_yk_sig", "a_yk", True, False),
+    ("fit_other_hint_kdev", "a_dev", True, False),
+])
+def test_anchor_check_known_limitations(fx, fit, anchor, guard_ok, uboot_ok):
+    cur = "a_dual_any" if anchor == "a_yk" else anchor
+    assert (check(fx[fit], fx[cur], fx[anchor])[0] == 0) == guard_ok
+    if shutil.which("fit_check_sign") is None:
+        pytest.skip("fit_check_sign not installed")
+    r = subprocess.run(["fit_check_sign", "-f", str(fx[fit]), "-k", str(fx[anchor])],
+                       capture_output=True, text=True)
+    assert (r.returncode == 0) == uboot_ok, r.stdout + r.stderr
+
+
+def preserves(cur, cand):
+    r = subprocess.run(["bash", "-c", f'. "{LIB}"; fit_anchor_preserves "$1" "$2"', "_",
+                        str(cur), str(cand)], capture_output=True, text=True)
+    return r.returncode, r.stdout.strip()
+
+
+@pytest.mark.parametrize("cur,cand,ok", [
+    ("a_dev", "a_dev", True),
+    ("a_dev", "a_dual_any", True),          # add a key, any: everything still boots
+    ("a_dual_any", "a_dual_any", True),
+    ("a_dual_all", "a_dual_any", True),     # all -> any loosens
+    ("a_dual_all", "a_dev", True),          # all -> one of its keys loosens
+    ("a_dev", "a_dual_all", False),         # add a key, all: old FITs lack it
+    ("a_dual_any", "a_dual_all", False),    # any -> all
+    ("a_dual_any", "a_yk", False),          # retire the file key
+    ("a_dual_any", "a_dev", False),         # roll back a rotation
+    ("a_dev", "a_dev_bits", False),         # re-encoded key is another key
+    ("a_dev", "a_none", False),
+    ("a_dev", "a_dev_noexp", False),        # unparseable required key: fail closed
+    ("a_dev", "a_dev_twice", True),         # same key under two names is one key
+    ("a_dev_twice", "a_dev", True),
+])
+def test_anchor_preserves(fx, cur, cand, ok):
+    rc, out = preserves(fx[cur], fx[cand])
+    assert (rc == 0) == ok, out
+
+
+def test_anchor_preserves_never_contradicts_u_boot(fx):
+    """Differential: wherever fit_anchor_preserves says yes, no fixture FIT that
+    U-Boot accepts under the current anchor is refused under the candidate."""
+    if shutil.which("fit_check_sign") is None:
+        pytest.skip("fit_check_sign not installed")
+    anchors = ["a_dev", "a_dual_any", "a_dual_all", "a_yk", "a_yk_knows_dev", "a_dev_bits"]
+    fits = ["fit_dev", "fit_both", "fit_other", "fit_both_bad_yk_sig", "fit_other_hint_kdev"]
+
+    def boots(f, a):
+        return subprocess.run(["fit_check_sign", "-f", str(fx[f]), "-k", str(fx[a])],
+                              capture_output=True).returncode == 0
+
+    verdict = {(f, a): boots(f, a) for f in fits for a in anchors}
+    checked = 0
+    for cur in anchors:
+        for cand in anchors:
+            if preserves(fx[cur], fx[cand])[0] != 0:
+                continue
+            for f in fits:
+                if verdict[(f, cur)]:
+                    checked += 1
+                    assert verdict[(f, cand)], (f, cur, cand)
+    assert checked > 0
 
 
 def bundle(tmp, fx, *, abi="2", hooks="pre-install;post-install", hook_file=True,
@@ -248,17 +354,18 @@ def sha(p):
     return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
 
-def updater_env(tmp, fx, *, cand_anchor, fits=("a", "b"), rw=True, config="arm_64bit=1\n# new\n"):
+def updater_env(tmp, fx, *, cand_anchor, fits=("a", "b"), rw=True, config="arm_64bit=1\n# new\n",
+                cur_anchor="a_dev", fit="fit_dev"):
     boot, stage, shim = tmp / "boot", tmp / "stage", tmp / "shim"
     for d in (boot, stage, shim):
         d.mkdir()
-    shutil.copy(fx["a_dev"], boot / "bcm2712-rpi-5-b.dtb")
+    shutil.copy(fx[cur_anchor], boot / "bcm2712-rpi-5-b.dtb")
     # A device updated by older bundles: Linux in kernel_2712.img, U-Boot via kernel=.
     (boot / "config.txt").write_text("kernel=u-boot.bin\n")
     (boot / "u-boot.bin").write_bytes(b"old-u-boot")
     (boot / "kernel_2712.img").write_bytes(b"linux-image")
     for s in fits:
-        shutil.copy(fx["fit_dev"], boot / f"fitImage-{s}")
+        shutil.copy(fx[fit], boot / f"fitImage-{s}")
     shutil.copy(fx[cand_anchor], stage / "bcm2712-rpi-5-b.dtb")
     (stage / "config.txt").write_text(config)
     (stage / "kernel_2712.img").write_bytes(b"new-u-boot")
@@ -293,6 +400,7 @@ def test_updater_apply_and_restore(fx, tmp_path):
     rc, out = updater(env, "--dry-run")
     assert rc == 0 and "3 file(s) would be written" in out, out
     assert boot_state(boot) == before
+    assert not (tmp_path / "backup").exists(), "dry-run wrote a snapshot"
     rc, out = updater(env, "--yes")
     assert rc == 0, out
     for a in ARTIFACTS:
@@ -302,22 +410,28 @@ def test_updater_apply_and_restore(fx, tmp_path):
     assert rc == 0 and "already current" in out, out
     runs = sorted((tmp_path / "backup").iterdir())
     assert len(runs) == 1
-    # Restoring brings back the old anchor; both slot FITs are still trusted by it.
+    # Restoring brings back the old, narrower anchor: an explicit trust reduction.
     rc, out = updater(env, "--restore", runs[0].name, "--yes")
+    assert rc != 0 and "narrows FIT trust" in out, out
+    rc, out = updater(env, "--restore", runs[0].name, "--yes", "--allow-trust-reduction")
     assert rc == 0, out
     assert boot_state(boot) == before
 
 
 @needs_userns
-@pytest.mark.parametrize("cand,expect", [
-    ("a_yk", "slot a would not boot"),
-    ("a_dual_all", "slot a would not boot"),
-    ("a_none", "no required"),
+@pytest.mark.parametrize("cand,flag,expect", [
+    ("a_yk", False, "narrows FIT trust"),
+    ("a_dual_all", False, "narrows FIT trust"),
+    # The flag waives only the trust-reduction gate, never the slot check.
+    ("a_yk", True, "slot a would not boot"),
+    ("a_dual_all", True, "slot a would not boot"),
+    ("a_none", False, "no required"),
+    ("a_dev_bits", False, "narrows FIT trust"),
 ])
-def test_updater_refuses_anchor_before_any_write(fx, tmp_path, cand, expect):
+def test_updater_refuses_anchor_before_any_write(fx, tmp_path, cand, flag, expect):
     boot, _, env = updater_env(tmp_path, fx, cand_anchor=cand)
     before = boot_state(boot)
-    rc, out = updater(env, "--yes")
+    rc, out = updater(env, "--yes", *(["--allow-trust-reduction"] if flag else []))
     assert rc != 0 and expect in out, out
     assert boot_state(boot) == before
     assert not (tmp_path / "backup").exists(), "backed up although nothing may be written"
@@ -344,9 +458,24 @@ def test_updater_refuses_restore_of_incompatible_anchor(fx, tmp_path):
     meta.write_text(meta.read_text().replace(
         meta.read_text().split("sha256\t")[1].split("\n")[0], sha(run / "bcm2712-rpi-5-b.dtb")))
     before = boot_state(boot)
-    rc, out = updater(env, "--restore", run.name, "--yes")
+    rc, out = updater(env, "--restore", run.name, "--yes", "--allow-trust-reduction")
     assert rc != 0 and "would not boot" in out, out
     assert boot_state(boot) == before
+
+
+@needs_userns
+def test_updater_retirement_needs_flag_even_when_hints_pass(fx, tmp_path):
+    """The review's stranding case: both slots carry a valid file-key signature
+    and a corrupt YubiKey signature. The hint check passes the file-key
+    retirement; U-Boot would refuse both slots. Only the explicit flag, after
+    a build-host fit_check_sign, lets it through."""
+    boot, _, env = updater_env(tmp_path, fx, cand_anchor="a_yk", cur_anchor="a_dual_any",
+                               fit="fit_both_bad_yk_sig")
+    before = boot_state(boot)
+    rc, out = updater(env, "--yes")
+    assert rc != 0 and "narrows FIT trust" in out and "sign_fit.py verify" in out, out
+    assert boot_state(boot) == before
+    assert not (tmp_path / "backup").exists()
 
 
 @needs_userns
@@ -374,3 +503,4 @@ def test_updater_writes_u_boot_first_config_last(fx, tmp_path):
     assert rc == 0, out
     order = [l.split()[1] for l in out.splitlines() if l.endswith("written and verified")]
     assert order == ["kernel_2712.img", "bcm2712-rpi-5-b.dtb", "config.txt"], order
+
