@@ -482,9 +482,18 @@ def test_updater_retirement_needs_flag_even_when_hints_pass(fx, tmp_path):
 @pytest.mark.parametrize("config,ok", [
     ("arm_64bit=1\n", True),
     ("kernel=kernel_2712.img\n", True),
-    ("kernel=u-boot.bin\n", True),
+    ("[all]\nkernel=kernel_2712.img\n[pi5]\narm_64bit=1\n", True),
+    ("[pi4]\narm_boost=1\n[all]\n", True),
+    ("kernel = kernel_2712.img # comment\n", True),
+    # An update writes the staged U-Boot as kernel_2712.img; it must boot it.
+    ("kernel=u-boot.bin\n", False),
     ("kernel=Image\n", False),
     ("kernel=kernel_2712.img\nkernel=Image  # later line wins\n", False),
+    ("include extra.txt\n", False),
+    ("os_prefix=foo/\n", False),
+    ("[pi4]\nkernel=kernel_2712.img\n", False),
+    ("[tryboot]\nkernel=kernel_2712.img\n", False),
+    ("[all]\r\nkernel=kernel_2712.img\r\n", True),   # CRLF
 ])
 def test_updater_config_must_boot_u_boot(fx, tmp_path, config, ok):
     boot, _, env = updater_env(tmp_path, fx, cand_anchor="a_dev", config=config)
@@ -492,7 +501,7 @@ def test_updater_config_must_boot_u_boot(fx, tmp_path, config, ok):
     rc, out = updater(env, "--yes")
     assert (rc == 0) == ok, out
     if not ok:
-        assert "only U-Boot" in out, out
+        assert "refusing" in out, out
         assert boot_state(boot) == before
 
 
@@ -503,4 +512,142 @@ def test_updater_writes_u_boot_first_config_last(fx, tmp_path):
     assert rc == 0, out
     order = [l.split()[1] for l in out.splitlines() if l.endswith("written and verified")]
     assert order == ["kernel_2712.img", "bcm2712-rpi-5-b.dtb", "config.txt"], order
+
+
+def selected_kernel(boot):
+    """The file the firmware runs under the fixture's simple config.txt."""
+    cfg = boot / "config.txt"
+    k = "kernel_2712.img"
+    if cfg.exists():
+        for line in cfg.read_text().splitlines():
+            line = line.split("#")[0].strip()
+            if line.replace(" ", "").startswith("kernel="):
+                k = line.split("=", 1)[1].strip()
+    return k
+
+
+def assert_boots_u_boot(boot, when):
+    k = boot / selected_kernel(boot)
+    assert k.exists(), f"{when}: firmware would run missing {k.name}"
+    assert k.read_bytes() in (b"old-u-boot", b"new-u-boot"), \
+        f"{when}: firmware runs {k.name} = {k.read_bytes()!r}, not U-Boot"
+
+
+def cut_after(env, tmp, n):
+    """Make the n-th mv exit 99 right after it succeeds: a power cut after
+    that write. n=0 disarms."""
+    shim = Path(env["PATH"].split(":")[0]) / "mv"
+    count = tmp / "mv.count"
+    count.write_text("0")
+    shim.write_text(f"""#!/bin/sh
+/usr/bin/mv "$@" || exit $?
+n=$(( $(cat {count}) + 1 )); echo $n > {count}
+[ "$n" -eq {n} ] && exit 99
+exit 0
+""")
+    shim.chmod(0o755)
+
+
+def migrated(tmp, fx):
+    """A legacy device migrated by one complete update; returns its snapshot."""
+    boot, stage, env = updater_env(tmp, fx, cand_anchor="a_dual_any")
+    legacy = boot_state(boot)
+    rc, out = updater(env, "--yes")
+    assert rc == 0, out
+    run = sorted((tmp / "backup").iterdir())[0]
+    return boot, env, run, legacy
+
+
+@needs_userns
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_updater_cut_after_every_update_write(fx, tmp_path, n):
+    boot, _, env = updater_env(tmp_path, fx, cand_anchor="a_dual_any")
+    cut_after(env, tmp_path, n)
+    rc, out = updater(env, "--yes")
+    assert rc == 99, out
+    assert_boots_u_boot(boot, f"update cut after write {n}")
+    cut_after(env, tmp_path, 0)
+    rc, out = updater(env, "--yes")       # the retry completes
+    assert rc == 0, out
+    assert_boots_u_boot(boot, "update retry")
+
+
+@needs_userns
+def test_updater_restore_legacy_writes_config_first(fx, tmp_path):
+    boot, env, run, legacy = migrated(tmp_path, fx)
+    rc, out = updater(env, "--restore", run.name, "--yes", "--allow-trust-reduction")
+    assert rc == 0, out
+    order = [l.split()[1] for l in out.splitlines() if l.endswith("written and verified")]
+    assert order == ["config.txt", "kernel_2712.img", "bcm2712-rpi-5-b.dtb"], order
+    assert boot_state(boot) == legacy
+
+
+@needs_userns
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_updater_cut_after_every_restore_write(fx, tmp_path, n):
+    boot, env, run, legacy = migrated(tmp_path, fx)
+    cut_after(env, tmp_path, n)
+    rc, out = updater(env, "--restore", run.name, "--yes", "--allow-trust-reduction")
+    assert rc == 99, out
+    assert_boots_u_boot(boot, f"restore cut after write {n}")
+    cut_after(env, tmp_path, 0)
+    rc, out = updater(env, "--restore", run.name, "--yes", "--allow-trust-reduction")
+    assert rc == 0, out                   # the same restore, retried, completes
+    assert boot_state(boot) == legacy
+
+
+@needs_userns
+def test_updater_refuses_partial_snapshot(fx, tmp_path):
+    """The review's sequence: an update cut after its first write, a retry that
+    completes, then a restore of the first run."""
+    boot, _, env = updater_env(tmp_path, fx, cand_anchor="a_dual_any")
+    cut_after(env, tmp_path, 1)
+    assert updater(env, "--yes")[0] == 99
+    first = sorted((tmp_path / "backup").iterdir())[0]
+    # The cut came after the snapshot: that run is complete and restorable.
+    assert (first / "COMPLETE").exists()
+    cut_after(env, tmp_path, 0)
+    assert updater(env, "--yes")[0] == 0
+    # A run cut before its COMPLETE marker is refused.
+    (first / "COMPLETE").unlink()
+    before = boot_state(boot)
+    rc, out = updater(env, "--restore", first.name, "--yes", "--allow-trust-reduction")
+    assert rc != 0 and "not a COMPLETE snapshot" in out, out
+    assert boot_state(boot) == before
+
+
+@needs_userns
+@pytest.mark.parametrize("damage,expect", [
+    ("u_boot_missing", "missing or changed"),
+    ("u_boot_changed", "missing or changed"),
+    ("no_meta", "has no record of"),
+    ("kernel_absent", "has none"),
+    ("old_format", "not a COMPLETE snapshot"),
+    ("no_u_boot_ref", "no record of u-boot.bin"),
+    ("bad_run_id", "not a plain name"),
+])
+def test_updater_refuses_unsafe_restore(fx, tmp_path, damage, expect):
+    boot, env, run, _ = migrated(tmp_path, fx)
+    if damage == "u_boot_missing":
+        (boot / "u-boot.bin").unlink()
+    elif damage == "u_boot_changed":
+        (boot / "u-boot.bin").write_bytes(b"other-u-boot")
+    elif damage == "no_meta":
+        (run / "config.txt.meta").unlink()
+    elif damage == "kernel_absent":
+        # A current-layout snapshot without kernel_2712.img would boot nothing.
+        (run / "config.txt").write_text("arm_64bit=1\n")
+        (run / "config.txt.meta").write_text(
+            "target\tconfig.txt\npresent\t1\nsha256\t%s\n" % sha(run / "config.txt"))
+        (run / "kernel_2712.img").unlink()
+        (run / "kernel_2712.img.meta").write_text("target\tkernel_2712.img\npresent\t0\n")
+    elif damage == "old_format":
+        (run / "COMPLETE").write_text("format\t0\n")
+    elif damage == "no_u_boot_ref":
+        (run / "u-boot.bin.ref").unlink()
+    run_id = "../backup/" + run.name if damage == "bad_run_id" else run.name
+    before = boot_state(boot)
+    rc, out = updater(env, "--restore", run_id, "--yes", "--allow-trust-reduction")
+    assert rc != 0 and expect in out, out
+    assert boot_state(boot) == before
 
