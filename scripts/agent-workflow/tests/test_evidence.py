@@ -90,6 +90,86 @@ def test_check_detects_deleted_evidence_and_does_not_repair(run: Path) -> None:
     assert (run / "decisions.tsv").read_bytes() == before
 
 
+def test_lost_evidence_allows_followup_but_not_a_false_clean_check(run: Path) -> None:
+    evidence = run / "result.txt"
+    evidence.write_text("exit 0")
+    assert cli(*record_args(run, "PASS"), "--evidence", evidence.name).returncode == 0
+    before = (run / "decisions.tsv").read_bytes()
+    evidence.unlink()
+    args = record_args(run)
+    args[args.index("--decision") + 1] = "evidence for the PASS row was lost"
+    assert cli(*args).returncode == 0
+    assert (run / "decisions.tsv").read_bytes().startswith(before)
+    assert len(rows(run)) == 3
+    assert cli("check", run).returncode == 1
+    assert cli(*record_args(run, "PASS"), "--evidence", "absent.txt").returncode == 1
+    assert len(rows(run)) == 3
+
+
+def test_blank_checkpoint_warns_and_fails_readiness_check(run: Path) -> None:
+    before = (run / "checkpoint.md").read_bytes()
+    result = cli("check", run)
+    assert result.returncode == 0
+    assert "checkpoint" in result.stderr
+    assert "Goal and requested milestone" in result.stderr
+    assert cli("check", run, "--require-checkpoint").returncode == 1
+    assert (run / "checkpoint.md").read_bytes() == before
+
+
+@pytest.mark.parametrize("inline", [True, False])
+def test_filled_checkpoint_passes_readiness_check(run: Path, inline: bool) -> None:
+    checkpoint = run / "checkpoint.md"
+    separator = ": " if inline else ":\n\n"
+    checkpoint.write_text(
+        checkpoint.read_text().replace(
+            ":\n\n", separator + "Unknown; not observed.\n\n"
+        )
+    )
+    result = cli("check", run, "--require-checkpoint")
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+
+
+def test_partial_checkpoint_reports_each_missing_field(run: Path) -> None:
+    checkpoint = run / "checkpoint.md"
+    checkpoint.write_text(
+        "# Handoff\n\nGoal and requested milestone: review only\n\nDecision trail: decisions.tsv\n"
+    )
+    result = cli("check", run, "--require-checkpoint")
+    assert result.returncode == 1
+    assert "Worktree, branch" in result.stderr
+    assert "Pending work, blockers" in result.stderr
+    assert "Goal and requested milestone" not in result.stderr
+
+
+def test_short_checkpoint_labels_preserve_existing_handoff_style(run: Path) -> None:
+    (run / "checkpoint.md").write_text(
+        """# Handoff
+
+Goal and requested milestone: documentation review
+Worktree, branch, source revision and scoped dirty files: unknown
+Verified outcomes: none
+Inherited claims and unverified axes: runtime unverified
+Running builds: another session owns the build; details unknown
+Board / slot / image identity and serial owner: unknown; no serial opened
+Authorization already given: documentation only; no target access
+Pending work, blockers, first permitted next action: review the saved report
+Decision trail: decisions.tsv
+"""
+    )
+    result = cli("check", run, "--require-checkpoint")
+    assert result.returncode == 0, result.stderr
+    assert not result.stderr
+
+
+def test_missing_checkpoint_is_reported_without_creating_it(run: Path) -> None:
+    checkpoint = run / "checkpoint.md"
+    checkpoint.unlink()
+    assert cli("check", run, "--require-checkpoint").returncode == 1
+    assert "checkpoint" in cli("check", run).stderr
+    assert not checkpoint.exists()
+
+
 def test_missing_run_is_not_created(tmp_path: Path) -> None:
     run = tmp_path / "absent"
     assert cli(*record_args(run)).returncode == 1
