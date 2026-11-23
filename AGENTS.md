@@ -233,6 +233,15 @@ What makes it actually work:
 
 ## Working economically
 
+- **Evidence and continuity:** for multi-phase work, pickup or an explicit pause,
+  read `.claude/skills/agent-evidence/SKILL.md` (Codex and Claude Code alike).
+  Save long reviews/findings in the ignored scratch directory and link them
+  from chat, unless the user specifies another output. Shared format:
+  `docs/AGENT_WORKFLOW.md`.
+- **Operator corrections:** use `.claude/skills/correction-loop/SKILL.md` to
+  turn demonstrated mistakes into scoped checks; do not expand the task or
+  treat proposed controls as implemented enforcement.
+
 - Inspect narrowly before scanning broadly — a recipe name or `bitbake-getvar` beats a repo-wide grep.
 - Validate progressively: `make parse` → the affected recipe's task → image build. Don't launch a full image build to test a parse-level change.
 - On build failure, extract the **first causal error** from the task log and cite log files by path (`build/tmp/work/.../temp/log.do_*`); don't paste whole BitBake logs into the conversation.

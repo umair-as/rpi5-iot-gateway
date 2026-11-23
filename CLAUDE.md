@@ -12,6 +12,10 @@ The rest of this file is Claude-Code-specific tooling that does not apply to oth
 
 Repo-local skills in `.claude/skills/` — invoke when the task fits:
 
+- `agent-evidence` — shared decision trail, session pickup and explicit pause;
+  durable records and long reports stay in the ignored scratch directory
+- `correction-loop` — turn demonstrated agent mistakes into scoped, verified
+  guards; record unsupported claims and unavailable verification honestly
 - `devtool-workflow` — iterating on recipe source (U-Boot, kernel, app) via `devtool` instead of hand-editing patches: `--no-overrides`, patch export destinations, mandatory contamination verification, the U-Boot savedefconfig flow
 - `yocto-worktree` — isolated worktrees for subagent/parallel builds: `kas/local.yml` seeding, shared-cache verification, branch rename-before-PR, locked-worktree cleanup
 - `prebuild-gate` — run `make preflight` before any image build: maps changed paths to the cheapest check (policy source check, fragment gate, boot-script tests, do_patch, refpolicy compile, kernel configure, parse)
@@ -25,6 +29,11 @@ Three repo-local subagents in `.claude/agents/`:
 - `yocto-rules-reviewer` — read-only review of a recipe/patch/kas diff against `.claude/rules/*.md`; reports only violations, each with file:line, the rule and a fix
 
 BitBake failure triage lives in `.claude/rules/yocto-patterns.md`.
+
+General plugin workflows, including superpowers, defer to these domain rules.
+Use `yocto-worktree` for build isolation and `docs/AGENT_WORKFLOW.md` for shared
+evidence; generic worktree setup and fresh-verification rules do not authorize
+an unseeded build, an unnecessary rebuild or taking over the bench.
 
 ## Subagents & parallel work
 
