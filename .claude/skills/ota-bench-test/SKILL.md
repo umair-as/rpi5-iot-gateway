@@ -51,6 +51,15 @@ Log every command with its full output into `$RUN/step<N>-<name>.log`.
 `summary.md` holds one row per check: step, check, expected, observed,
 PASS/FAIL/SKIP. Write each row as soon as the check runs, not at the end.
 
+Before driving the board, use the baseline below as its doctor: confirm the
+authorized target, actual image/slot and SELinux state, and who owns the console.
+If the expected image or access is unavailable, record the mismatch and stop
+before installing; do not fix it through an implicit reflash or serial login.
+The bundle hash identifies bytes, not proof that the board runs those bytes.
+For a multi-phase task, link this run from the agent-evidence checkpoint rather
+than copying logs. Keep observations and proof artifacts after cleanup; target
+actions are still operator-invoked under the gates above.
+
 ## Step 0: baseline (current slot)
 
 ```bash
