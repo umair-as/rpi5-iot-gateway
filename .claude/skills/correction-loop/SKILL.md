@@ -19,7 +19,15 @@ gets a recorded follow-up, not an automatic refactor or separate PR. Never treat
 a proposed control as installed enforcement or permission to merge.
 
 Prove the check rejects the actual bad case and accepts a legitimate case. For
-matching/classification, compare old and new against real inputs in both
+an identity-dependent claim, list the required fields and test one mismatch or
+missing-value case per field while holding the others valid: source revision,
+dirty input state, image variant/composition, artifact hash and producer result;
+include board/slot identity when the claim depends on a target. The positive
+control must match every required field. A successful build from another source
+is a negative case even when its artifact hash is valid. Mark fields outside the
+claim as not applicable with a reason; untested required fields stay unverified.
+
+For matching/classification, compare old and new against real inputs in both
 directions and explain the whole delta (AGENTS.md). Synthetic fixtures are useful
 tests, not historical evidence. If real evidence or authorization is unavailable,
 save a draft and say exactly what remains unverified.

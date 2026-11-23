@@ -46,7 +46,8 @@ def cell(value: str) -> str:
     return "'" + value if value[0] in "=+-@" else value
 
 
-def validate(rows: list[list[str]], run: Path) -> None:
+def validate(rows: list[list[str]], run: Path, *, check_files: bool = True) -> None:
+    """Validate record structure, optionally checking current file availability."""
     if not rows or rows[0] != HEADER:
         raise ValueError("unexpected decisions.tsv header; leave history intact")
     for number, row in enumerate(rows[1:], 2):
@@ -63,9 +64,39 @@ def validate(rows: list[list[str]], run: Path) -> None:
             raise ValueError(f"row {number}: evidence must be a JSON list of paths")
         if result in ("PASS", "FAIL") and not paths:
             raise ValueError(f"row {number}: {result} requires an evidence file")
-        for path in paths:
+        for path in paths if check_files else ():
             if not (run / path).is_file():
                 raise ValueError(f"row {number}: missing evidence file: {path}")
+
+
+def checkpoint_gaps(path: Path) -> list[str]:
+    """Find unfilled template fields; explicit unknown state counts as content."""
+    if not path.is_file():
+        return ["checkpoint.md is missing"]
+    filled: dict[str, bool] = {
+        line[:-1]: False for line in CHECKPOINT.splitlines() if line.endswith(":")
+    }
+    # Accept existing handoffs that omit the template's explanatory hints.
+    aliases = {field.partition(" (")[0]: field for field in filled}
+    aliases["Authorization already given"] = (
+        "Authorization already given and operations still requiring approval"
+    )
+    aliases["Pending work, blockers, first permitted next action"] = (
+        "Pending work, blockers and first permitted next action"
+    )
+    current = None
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        label, _, value = stripped.lstrip("#").strip().partition(":")
+        label = aliases.get(label, label)
+        if label in filled:
+            current = label
+            filled[current] = filled[current] or bool(value.strip())
+        elif stripped.startswith(("#", "Decision trail:")):
+            current = None
+        elif current is not None and stripped:
+            filled[current] = True
+    return [label for label, has_content in filled.items() if not has_content]
 
 
 def main() -> int:
@@ -88,6 +119,11 @@ def main() -> int:
         "check", help="check trail structure and evidence paths, not claim truth"
     )
     check.add_argument("run", type=Path)
+    check.add_argument(
+        "--require-checkpoint",
+        action="store_true",
+        help="fail if any checkpoint field is absent or empty; otherwise warn",
+    )
     args = parser.parse_args()
     try:
         if args.command == "init":
@@ -109,7 +145,9 @@ def main() -> int:
                     "unterminated ledger; inspect interrupted history before appending"
                 )
             rows = list(csv.reader(io.StringIO(content), delimiter="\t"))
-            validate(rows, args.run)
+            # Lost old evidence must not prevent appending a record of that loss.
+            # New rows still require valid evidence; check audits the entire trail.
+            validate(rows, args.run, check_files=args.command == "check")
             if args.command == "record":
                 row = [dt.datetime.now(dt.UTC).isoformat()]
                 row.extend(cell(getattr(args, field)) for field in HEADER[1:5])
@@ -121,6 +159,15 @@ def main() -> int:
                 stream.seek(0, io.SEEK_END)
                 stream.write(buffer.getvalue())
             else:
+                gaps = checkpoint_gaps(args.run / "checkpoint.md")
+                if gaps:
+                    severity = "error" if args.require_checkpoint else "warning"
+                    print(
+                        f"{severity}: checkpoint incomplete: " + "; ".join(gaps),
+                        file=sys.stderr,
+                    )
+                    if args.require_checkpoint:
+                        return 1
                 print(
                     f"{len(rows) - 1} decision(s); evidence paths resolve; claim truth not checked"
                 )

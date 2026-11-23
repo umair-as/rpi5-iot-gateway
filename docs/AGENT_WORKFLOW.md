@@ -20,8 +20,9 @@ uv run --script scripts/agent-workflow/evidence.py init "$RUN"
 
 The helper creates `decisions.tsv` and `checkpoint.md` and refuses to overwrite
 an existing directory. On pickup use the existing directory. Fill the checkpoint
-with the actual state; unknown fields stay explicitly unknown. A pause preserves
-edits on disk without automatically committing them. A new session uses a new
+with the actual state before the first record; unknown fields stay explicitly
+unknown. A pause preserves edits on disk without automatically committing them.
+A new session uses a new
 actor identifier; two independent tasks use separate directories. Coordinate
 checkpoint edits with the task owner; the helper only locks ledger appends.
 
@@ -37,12 +38,26 @@ After saving actual command output to `host-tests.txt` in that directory:
 uv run --script scripts/agent-workflow/evidence.py record "$RUN" \
   --actor session-1 --phase host-check --decision 'targeted host checks passed' \
   --why 'verify the changed parser' --evidence host-tests.txt --result PASS
-uv run --script scripts/agent-workflow/evidence.py check "$RUN"
+uv run --script scripts/agent-workflow/evidence.py check "$RUN" --require-checkpoint
 ```
 
-`PASS` and `FAIL` require an existing evidence file. The helper refuses malformed
-history, missing evidence and empty decision fields. It normalizes multiline
-cells, neutralizes spreadsheet formula prefixes and serializes concurrent appends.
+`PASS` and `FAIL` require an existing evidence file for the new row. Recording
+checks old rows' structure without requiring their files still to exist: a lost
+evidence file must not prevent the row that records its loss. `check` verifies
+all evidence paths and still fails on missing old evidence, even after that loss
+has been documented. Preserve old rows; a recovery entry does not restore proof.
+
+A default `check` warns when checkpoint fields are absent or blank, including a
+fresh init template. Use `--require-checkpoint` before handing off or pausing to
+make those gaps fail. Fill each named template field inline or in the following
+paragraph; explicit unknowns are valid content. This checks presence, not truth,
+and a structurally complete checkpoint can still contain unsupported claims.
+Existing handoffs may omit parenthetical hints, shorten the authorization field
+to `Authorization already given`, and use `Pending work, blockers, first permitted
+next action` for the final field.
+
+The helper refuses malformed history and empty decision fields. It normalizes
+multiline cells, neutralizes spreadsheet formula prefixes and serializes concurrent appends.
 It does not execute commands, establish artifact provenance, prove claim truth,
 make the file tamper-proof or recover a partially written row after a crash.
 An interrupted/malformed ledger needs inspection and a separate recovery record;
@@ -55,7 +70,11 @@ evidence. Distinguish inherited claims from independently observed results.
 Match evidence to source revision/dirty state, composition/image variant and
 artifact identity; use a hash when recording a built artifact. Recorded exit zero
 proves only the named build. A missing result is unknown; mtime proves no success.
-Recheck what has changed, not every completed task from scratch.
+Recheck what has changed, not every completed task from scratch. For a correction
+to identity validation, enumerate the claim's required fields and reject a
+fixture with each field independently missing or mismatched; the positive control
+must match all of them. Include source revision and dirty state, variant/composition,
+artifact hash and producer result, plus board/slot identity for target claims.
 
 Use the existing verification surfaces, rather than generating another harness:
 

@@ -42,6 +42,12 @@ verification rather than substituting a successful host check for target proof.
 - A synthetic experiment is not reported as an actual build or historical proof.
 - With skills: a common checkpoint/trail is usable by another session; helper
   evidence paths resolve; a failed or missing check is not recorded as PASS.
+- Check the saved checkpoint with `check --require-checkpoint`; blank or missing
+  fields must fail. A path-valid ledger alone does not establish handoff readiness.
+- Inspect the correction's controls per required identity field: source revision,
+  dirty state, variant/composition, artifact hash and producer result, plus target
+  identity for target claims. Each needs its own negative control; the supplied
+  older artifact from a different source must never be the successful control.
 - Report baseline strengths as well as failures; do not claim improvement if the
   baseline already made the same safe decisions. Agent samples are observations,
   not a statistical guarantee. Record model identity only if actually available.
