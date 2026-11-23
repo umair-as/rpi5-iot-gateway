@@ -8,7 +8,7 @@ Canonical orientation for AI coding agents working in this repository. Agent-agn
 
 A Yocto/OpenEmbedded distribution (`iotgw`) for the Raspberry Pi 5, built with KAS. Produces hardened IoT-gateway images that boot SELinux enforcing on every image and ship rootless Podman containers as a first-class feature, with mandatory signed FIT boot, a dm-verity root, RAUC A/B OTA, and optional OpenThread Border Router, TPM and DEEPX DX-M1 support. AppArmor is not used.
 
-- Yocto release: **wrynose** (Yocto 6.0 LTS; colon-based override syntax — see `.claude/rules/yocto-patterns.md`, which applies to any agent regardless of name)
+- Yocto release: **wrynose** (Yocto 6.0 LTS; BitBake patterns in `.claude/rules/yocto-patterns.md`, which applies to any agent regardless of name)
 - Target machine: `raspberrypi5` (aarch64, hard-float)
 - Distro: `iotgw` (defined in `meta-iot-gateway/conf/distro/`)
 - KAS entry point: `rpi5.yml` (base) — composed with overlays in `kas/*.yml`
@@ -111,7 +111,7 @@ docs/                        # OPERATIONS, SECURITY, KERNEL, PARTITIONS, RAUC_UP
                              #   OTBR, FIT_BOOT_SIGNING, PERSISTENT_STATE, …
 scripts/                     # host-side tooling (release, OTA bench, signing, TPM utils)
 .claude/
-  rules/yocto-patterns.md    # wrynose syntax + parser limits + identity/rootfs patterns
+  rules/yocto-patterns.md    # parser limits, pin moves, fragments, identity/rootfs patterns
   rules/recipe-conventions.md # read before authoring a recipe or shipping a patch
   rules/cross-compilation.md # aarch64-poky-linux SDK notes — read before app cross-builds
   skills/devtool-workflow/   # devtool modify→finish cycle, patch export + verification
@@ -120,7 +120,6 @@ scripts/                     # host-side tooling (release, OTA bench, signing, T
 
 ## Conventions
 
-- **Colon override syntax (Scarthgap+)** — `RDEPENDS:${PN}`, `do_install:append()`, `SRC_URI:append:raspberrypi5`. Never the deprecated underscore form. See `.claude/rules/yocto-patterns.md`.
 - **No hardcoded paths in recipes** — use `${bindir}`, `${sysconfdir}`, `${systemd_system_unitdir}`, etc.
 - **Recipe & patch conventions** — HOMEPAGE, patch identity/attribution, `Upstream-Status` taxonomy, `/root` paths, `SYSTEMD_AUTO_ENABLE`, and the sstate patch-header rebuild gotcha live in `.claude/rules/recipe-conventions.md`. Read it before authoring a recipe or shipping a patch.
 - **Cross-compile target is aarch64-poky-linux** — `.claude/rules/cross-compilation.md` covers SDK setup, CMake/Rust/Go specifics, and verification commands.
@@ -263,7 +262,7 @@ What makes it actually work:
 | Task | Read |
 |---|---|
 | Authoring recipes / shipping patches | `.claude/rules/recipe-conventions.md` |
-| Yocto syntax, parser limits, identity/rootfs patterns | `.claude/rules/yocto-patterns.md` |
+| Parser limits, pin moves, OE_FRAGMENTS, identity/rootfs patterns | `.claude/rules/yocto-patterns.md` |
 | Cross-compiling apps outside bitbake | `.claude/rules/cross-compilation.md` |
 | FIT boot signing, HSM/YubiKey/SoftHSM | `docs/FIT_BOOT_SIGNING.md` |
 | Flashing, provisioning, target ops, SSH sessions and SELinux login domains | `docs/OPERATIONS.md` |

@@ -116,19 +116,6 @@ runtime writer; grep the layers.
 Between two builds, `buildhistory-diff` lists what entered or left each image;
 read it before a release, not only the size total.
 
-## Override Syntax (wrynose 6.0)
-
-```bitbake
-# Correct
-RDEPENDS:${PN} = "dep"
-do_install:append() { }
-SRC_URI:append:raspberrypi5 = " file://rpi5.patch"
-
-# Wrong (deprecated)
-RDEPENDS_${PN} = "dep"
-do_install_append() { }
-```
-
 ## File Paths
 
 Always use variables, never hardcode:
@@ -162,8 +149,67 @@ git ls-remote https://github.com/user/repo.git HEAD
 
 # In recipe
 SRCREV = "abc123def456..."  # Full 40-char SHA
-PV = "1.0.0+git${SRCPV}"    # Include git rev in version
+PV = "1.0.0+git"            # packaging appends the revision itself
 ```
+
+Since Yocto 4.3, packaging appends the source revision to `PKGV` on its own
+when `PKGV` (normally inherited from `PV`) contains a `+`, and `SRCPV`
+defaults to empty, so `${SRCPV}` in `PV` is a no-op. Keep the `+git`. Do not set
+`SRCPV` yourself: a populated `SRCPV` puts the revision into the version twice
+(`6.18.59+git0+<rev>_<meta>+<rev>_<meta>`).
+
+## Changing an upstream recipe: append, don't copy
+
+A copied `.bb` stops receiving upstream fixes the day it is copied. In order
+of preference:
+
+1. `.bbappend` for patches, `PACKAGECONFIG`, `CVE_STATUS`, files, small task
+   additions.
+2. Configuration fragments for Kconfig-based recipes: kernel `.cfg` in
+   `SRC_URI`, U-Boot `.cfg` (merged by oe-core's `u-boot-configure.inc`).
+3. A full copy only when an append cannot do it. Document why and its
+   removal condition in the recipe header. At each pin move, list copies with
+   `bitbake-layers show-overlayed`, compare the recipe and its supporting
+   files with upstream, and remove the copy once upstream provides the
+   required behaviour. A matching version alone does not prove that: patches,
+   configuration and CVE metadata can still differ.
+
+## Moving layer pins
+
+Measure first (`docs/SSTATE_SHARING.md`), then check, per layer moved:
+
+- **Dangling appends are fatal** since 5.2 (`BB_DANGLINGAPPENDS_WARNONLY` is
+  gone). A version-pinned `foo_1.2.bbappend` fails parse when upstream moves
+  to 1.3.
+- **`%` appends survive a version bump silently.** Re-check every patch and
+  version-bound `CVE_STATUS` they carry against the new version.
+- **A same-named CVE patch upstream is not proof of the same fix.** Diff it
+  against ours and read the CVE record before dropping ours; upstream has
+  shipped a patch tagged with a CVE ID that fixes different code.
+- **Use the kernel-cache branch that matches the kernel series**
+  (`yocto-kernel-cache;type=kmeta;branch=yocto-X.Y` for an X.Y kernel) unless
+  another has been explicitly validated. In this distro's composition
+  meta-virtualization's `linux-%.bbappend` adds kernel-cache features
+  (containers, SELinux, vswitch). It does so when `DISTRO_FEATURES` has
+  `virtualization`, `SKIP_META_VIRT_KERNEL_INCLUDE` is unset and a
+  series-specific include exists, so changing the cache needs a complete
+  final-`.config` comparison.
+
+## Configuration fragments (`OE_FRAGMENTS`)
+
+- `addfragments` runs in `bitbake.conf` after `local.conf` and **before** the
+  machine and distro confs. An `OE_FRAGMENTS` assignment made after that
+  point (a distro conf or include) still sets the variable but does not load
+  any fragment. Set it in `local.conf` or a file it includes (kas
+  `local_conf_header`; kas has no fragments key).
+- Names are `<collection>/<path>`: `core/yocto/sbom-cve-check`. An unknown
+  name is fatal, but only if it is evaluated.
+- Fragments are parsed after `local.conf`; normal BitBake assignment and
+  override rules apply (a fragment's `?=` does not beat an earlier `=`). The
+  upstream `core/yocto/sbom-cve-check` fragment hard-assigns the CVE database
+  SRCREVs to `AUTOREV`, which would replace this distro's weak database
+  defaults; that is why `kas/cve.yml` enables the scanner directly instead.
+- Fragment metadata: `BB_CONF_FRAGMENT_SUMMARY`, `BB_CONF_FRAGMENT_DESCRIPTION`.
 
 ## do_install Pattern
 
