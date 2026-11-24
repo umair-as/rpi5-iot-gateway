@@ -20,9 +20,9 @@
 #   No args: audits the fragments the kernel recipe applies in the kas
 #   composition IOTGW_AUDIT_KAS, read with bitbake-getvar
 #   (IOTGW_KERNEL_FRAGMENTS of linux-iotgw-mainline). Default: the Makefile's
-#   non-prod chain, <base>:kas/deepx.yml (base = kas/local.yml, else
+#   non-prod chain, <base>:kas/tpm.yml:kas/deepx.yml (base = kas/local.yml, else
 #   kas/rauc.yml), i.e. base and dev. Desktop:
-#     IOTGW_AUDIT_KAS=kas/local.yml:kas/desktop.yml
+#     IOTGW_AUDIT_KAS=kas/local.yml:kas/tpm.yml:kas/desktop.yml
 #   The .config must come from the same composition: DOTCONFIG=<path> (the
 #   work-shared one belongs to the last kernel build, whichever image it was).
 #
@@ -43,7 +43,7 @@ KSRC=${KSRC:-$REPO/build/tmp/work-shared/raspberrypi5/kernel-source}
 recipe_fragments() {
     local base chain out
     if [ -f "$REPO/kas/local.yml" ]; then base=kas/local.yml; else base=kas/rauc.yml; fi
-    chain=${IOTGW_AUDIT_KAS:-$base:kas/deepx.yml}
+    chain=${IOTGW_AUDIT_KAS:-$base:kas/tpm.yml:kas/deepx.yml}
     echo "fragments: IOTGW_KERNEL_FRAGMENTS in $chain (bitbake-getvar)" >&2
     out=$(cd "$REPO" && env -u KAS_WORK_DIR -u KAS_BUILD_DIR -u KAS_REPO_REF_DIR \
         bash -c '. scripts/env.sh >/dev/null && kas shell "$1" -c "bitbake-getvar -r linux-iotgw-mainline --value IOTGW_KERNEL_FRAGMENTS"' _ "$chain" 2>/dev/null \
