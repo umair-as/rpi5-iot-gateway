@@ -474,10 +474,10 @@ fi
 
 # ---------------------------------------------------------------------------
 section "/var narrowing & /data persistence"
-# /var is no longer overlaid — it reverts to the stock OE volatile model
-# (tmpfs /var/volatile + volatile-binds), with the must-persist state re-homed
-# onto dedicated /data-backed binds/redirects. This block asserts the narrowed
-# shape; on a pre-narrowing image (/var still overlaid) it SKIPs cleanly.
+# /var follows the stock OE volatile model (tmpfs /var/volatile +
+# volatile-binds), with the must-persist state on dedicated /data-backed
+# binds/redirects. This block asserts that shape; on an older image whose /var
+# is still an overlay it SKIPs cleanly.
 
 # Read the fstype through PID1's root, so the answer does not depend on the
 # calling shell's mount namespace.

@@ -44,7 +44,7 @@ artifact actually is with `rauc info --no-verify <bundle>.raucb`.
 
 For OTA feature-gate combinations (crypt default vs verity opt-out, file-key vs
 TPM vs PKCS#11 streaming) and the three locations device key material lives in,
-see [OTA Updates](OTA_UPDATE.md#feature-gating-matrix-verity--tpm--pkcs11--encrypted-bundles).
+see [OTA Updates](OTA_UPDATE.md), §Feature-Gating Profiles.
 
 Release version override example:
 

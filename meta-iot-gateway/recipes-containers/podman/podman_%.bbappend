@@ -1,3 +1,12 @@
+# Latest 5.8 patch release. The layer pins a 5.8.3-dev snapshot taken just
+# after v5.8.2; v5.8.10 is the same branch plus its security and bug-fix
+# releases (dependencies are vendored, so only the revision moves).
+# CVE-2026-57231.patch is part of v5.8.10 and no longer applies.
+# Remove this block once the layer's podman recipe reaches v5.8.10.
+SRCREV = "eacf7fc89d8980899f687f53f657ae40e2597954"
+PV = "5.8.10"
+SRC_URI:remove = "file://CVE-2026-57231.patch;patchdir=src/import"
+
 # CVE_STATUS — narrowly-evidenced VEX for sbom-cve-check matches.
 #
 # CVE-2019-10152 (podman cp path traversal, fixed 1.4.0) and CVE-2020-1726

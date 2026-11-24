@@ -24,9 +24,11 @@ local_conf_header:
     # verification and triggers RAUC/bootchooser A/B rollback to the
     # previous known-good slot.
     #
-    # These are bare assignments (FIT is now the only, unconditional boot flow —
-    # there is no ':fitflow' override anymore). The Makefile composes this
-    # overlay AFTER kas/local.yml (the Makefile's STACK_prod), so it wins by parse order.
+    # These are bare assignments: FIT is the only boot flow, so no override
+    # is needed. kas writes local_conf_header
+    # blocks sorted by key name, not in overlay order: this block wins because
+    # "fit_release_trust" sorts after kas/local.yml's "fit_dtb_*" trust blocks.
+    # Renaming either block can flip that.
     #
     # SAFETY: this overlay disables the file-key and SoftHSM trust roots. If
     # IOTGW_FIT_TRUST_YK_KEY is also not "1" in kas/local.yml (or another

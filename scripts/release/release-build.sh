@@ -4,11 +4,11 @@ set -euo pipefail
 usage() {
     cat <<'EOF'
 Usage:
-  scripts/release/release-build.sh --version X.Y.Z --build-id ID [--image dev|prod|base] [--bundle none|full|full-fit]
+  scripts/release/release-build.sh --version X.Y.Z --build-id ID [--image dev|prod|base] [--bundle none|full-fit]
 
 Examples:
   scripts/release/release-build.sh --version 0.4.0 --build-id 202605091930 --image dev --bundle full-fit
-  scripts/release/release-build.sh --version 0.4.0 --build-id 202605091930 --image prod --bundle full
+  scripts/release/release-build.sh --version 0.4.0 --build-id 202605091930 --image prod --bundle none
 EOF
 }
 
@@ -52,7 +52,7 @@ case "$image" in
 esac
 
 case "$bundle" in
-    none|full|full-fit) ;;
+    none|full-fit) ;;
     *) echo "error: invalid --bundle: $bundle" >&2; exit 1 ;;
 esac
 
@@ -79,7 +79,7 @@ make "${make_target}"
 
 if [[ "$bundle" != "none" ]]; then
     case "$bundle:$image" in
-        full:dev|full:prod|full-fit:dev|full-fit:prod) ;;
+        full-fit:dev|full-fit:prod) ;;
         *)
             echo "error: unsupported image/bundle combination: image=${image}, bundle=${bundle}" >&2
             exit 1

@@ -38,7 +38,7 @@ Collect these and confirm them with the operator before step 0:
 
 | Name | Source |
 |---|---|
-| `TARGET` | argument, or `IOTGW_TARGET`. Confirm it; the IP changes across reflashes. |
+| `TARGET` | board host/IP: argument, or `IOTGW_TARGET`. Confirm it; the IP changes across reflashes. Installs run as `devel` with `sudo`: root over SSH lands in `staff_t`, which cannot run the RAUC wrapper. |
 | `BUNDLE` | newest `build/tmp/deploy/images/raspberrypi5/*-bundle-full-fit-*.raucb`. Confirm which variant. |
 | `RUN` | `scratch/ota-bench/<UTC date-time>-<topic>/` (gitignored), created now |
 | `OTA_URL` | streaming base URL from the operator (step 3 only). The TLS SAN must match the host used. |
@@ -77,7 +77,7 @@ against.
 
 ```bash
 rsync -P "$BUNDLE" $TARGET:/data/ota-tmp/<dated-name>.raucb
-ssh $TARGET 'iotgw-rauc-install /data/ota-tmp/<dated-name>.raucb'
+ssh devel@$TARGET 'sudo iotgw-rauc-install /data/ota-tmp/<dated-name>.raucb'
 ```
 
 Expect: `rauc install` completes and marks the *other* slot active. **Ask**,
@@ -112,7 +112,7 @@ the compatible string recorded in step 0, so other bundles on the server are
 untouched. Then:
 
 ```bash
-ssh $TARGET "iotgw-rauc-install $OTA_URL/<dated-name>.raucb"
+ssh devel@$TARGET "sudo iotgw-rauc-install $OTA_URL/<dated-name>.raucb"
 ```
 
 Expect the install to switch back to the original slot. Run the same checks as

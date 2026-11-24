@@ -240,7 +240,8 @@ The workflow intentionally runs only fast hygiene checks (no Yocto build):
 
 - release docs/scripts presence
 - `bash -n` syntax check on release scripts
-- `shellcheck -S warning` on all tracked `scripts/*.sh`
+- `shellcheck -S warning` on all tracked `scripts/*.sh` and `scripts/hooks/*`
+- every port rule in a tracked `*/nftables*.conf` names an address family
 - `yamllint` on tracked `kas/*.yml` and `.github/workflows/*.yml`
   (rules in `.yamllint`)
 - `cliff.toml` is present for generated release notes

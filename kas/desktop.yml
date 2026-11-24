@@ -38,11 +38,13 @@ local_conf_header:
     # "<flag>_<pn>" form is what oe/license.py:license_flag_matches() tests
     # first, so these match exactly.
     #
-    # MUST be :append, not "=". rpi5.yml:150 assigns LICENSE_FLAGS_ACCEPTED with
-    # a plain "=" for the RPi Synaptics WiFi/BT firmware, and kas emits that
-    # AFTER this overlay -- a plain "=" here is silently clobbered (which is how
-    # this was first written, and the build failed with "Nothing RPROVIDES
-    # gstreamer1.0-libav ... not listed in your LICENSE_FLAGS_ACCEPTED").
+    # MUST be :append, not "=". rpi5.yml's "rpi_extras" block assigns
+    # LICENSE_FLAGS_ACCEPTED with a plain "=" for the RPi Synaptics WiFi/BT
+    # firmware, and kas emits it after this block (blocks are sorted by key
+    # name, "rpi_extras" after "desktop_license_flags") -- a plain "=" here
+    # is silently clobbered (which is how this was first written, and the
+    # build failed with "Nothing RPROVIDES gstreamer1.0-libav ... not listed
+    # in your LICENSE_FLAGS_ACCEPTED").
     # Assigning with "=" so as to win the ordering would be worse: it would drop
     # synaptics-killswitch and take the WiFi/BT firmware out of every image built
     # in this composition. :append is applied after all "=" assignments, so both

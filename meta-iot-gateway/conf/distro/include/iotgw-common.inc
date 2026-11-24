@@ -62,9 +62,6 @@ SDK_VERSION := "${DISTRO_VERSION}"
 SDK_NAME ?= "${VENDOR_SHORT_NAME}-${DISTRO}-${TCLIBC}-${SDK_ARCH}-${IMAGE_BASENAME}-${TUNE_PKGARCH}"
 SDKPATH ?= "/opt/${VENDOR_SHORT_NAME}-${DISTRO}/${SDK_VERSION}"
 
-# Prefer Lynis 3.1.5 from our overlay
-PREFERRED_VERSION_lynis ?= "3.1.5"
-
 # Node.js binary provider/version policy
 # Keep default on 20.x: the OTBR web UI is validated against this runtime.
 # Override in local/product config when testing newer runtime, e.g.:

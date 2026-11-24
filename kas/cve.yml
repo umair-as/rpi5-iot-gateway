@@ -1,11 +1,10 @@
 header:
   version: 18
 
-# Pure additive SBOM/CVE overlay. Compose on top of the normal stack:
-#   kas/local.yml:kas/cve.yml
+# Pure additive SBOM/CVE overlay. `make sbom-cve IMAGE=<image>` appends it to
+# that image's composition.
 #
-# Wrynose removed the old cve-check image flow; CVE scanning now runs through
-# sbom-cve-check over the SPDX 3.0 image SBOM.
+# CVE scanning runs through sbom-cve-check over the SPDX 3.0 image SBOM.
 local_conf_header:
   sbom_cve_check: |
     # rpi5.yml disables the default wrynose create-spdx inherit through this
@@ -28,7 +27,7 @@ local_conf_header:
     # output lives in DEPLOY_DIR_IMAGE. Keep image WORKDIRs around so rm_work
     # does not race artifact promotion and leave missing *.spdx.json /
     # *.sbom-cve-check.*.json files.
-    RM_WORK_EXCLUDE += "iot-gw-image-base iot-gw-image-dev iot-gw-image-prod"
+    RM_WORK_EXCLUDE += "iot-gw-image-base iot-gw-image-dev iot-gw-image-desktop iot-gw-image-prod"
 
     # The upstream fragment only enables compiled-source SPDX metadata for
     # pn-linux-yocto. This distro uses a custom mainline FIT kernel provider,

@@ -631,7 +631,7 @@ by that hook, so re-signing it (`sign_fit.py sign-bootfiles`) does **not**
 make a release bundle bootable. The slot FITs have to be re-signed:
 `make sign-slot-fits-yk` (see
 [Runtime dm-verity: signing the slot FITs](#runtime-dm-verity-signing-the-slot-fits)).
-Neither target touches the FITs baked into the WIC's boot partition.
+Neither command touches the FITs baked into the WIC's boot partition.
 
 The supported release artifact is therefore the **RAUC bundle assembled
 from YubiKey-signed slot FITs**:
