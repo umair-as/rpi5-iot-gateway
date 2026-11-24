@@ -122,7 +122,9 @@ class LauncherTest(unittest.TestCase):
                     time.sleep(0.05)
                 time.sleep(0.5)
                 subprocess.run(["tmux", "-L", SOCKET, "send-keys", "-t", sessions[-1], "C-c"], check=True)
-                self.assertEqual(finish(run), -2, (run / "terminal.log").read_text()[-2000:])
+                # make dies by SIGINT (-2), or exits 2 when it reaps the
+                # interrupted child first; either is an interruption.
+                self.assertIn(finish(run), (-2, 2), (run / "terminal.log").read_text()[-2000:])
                 self.assertEqual(state(run), "interrupted")
                 self.assertEqual(wait(run)[0], 2)
                 run = launch("hold")
@@ -221,6 +223,16 @@ class StatusUnitTest(unittest.TestCase):
             raise subprocess.CalledProcessError(1, "tmux")
         self.ab.tmux = tmux
         self.assertEqual(self.ab.status_of(self.run_dir)["state"], "succeeded")
+
+    def test_interrupt_seen_by_the_supervisor_is_the_outcome(self):
+        # make exit 2 after a Ctrl-C the supervisor recorded is interrupted;
+        # a clean exit after one stays succeeded.
+        for result, state in (({"exit_code": 2, "interrupted": True}, "interrupted"),
+                              ({"exit_code": 0, "interrupted": True}, "succeeded"),
+                              ({"exit_code": 2}, "failed")):
+            with self.subTest(result=result):
+                (self.run_dir / "result.json").write_text(json.dumps({"finished": "t", **result}))
+                self.assertEqual(self.ab.result_state(self.run_dir)["state"], state)
 
     def test_missing_session_without_result_is_unknown(self):
         def tmux(*args):
