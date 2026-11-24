@@ -216,7 +216,9 @@ Setting `ProtectKernelTunables=true` may cause issues if OTBR needs to modify sy
 
 Some operations in OTBR execute external commands via `system()`:
 - `ip -6 route` commands (in `dua_routing_manager.cpp`)
-- `ip6tables` commands (in `nd_proxy.cpp`)
+- `ip6tables` commands (in `nd_proxy.cpp`). These cannot work on this
+  distro: the kernel is nftables-only, with neither the legacy x_tables
+  engine nor `NFT_COMPAT` for `iptables-nft`.
 - `ipset` commands (firewall management)
 
 These commands require root privileges. The current workaround uses `ExecStartPre=+` to run initialization scripts as root.
@@ -224,7 +226,7 @@ These commands require root privileges. The current workaround uses `ExecStartPr
 **Potential improvement**: Configure sudo rules for specific commands:
 ```
 # /etc/sudoers.d/otbr
-otbr ALL=(root) NOPASSWD: /sbin/ip, /usr/sbin/ip6tables, /usr/sbin/ipset
+otbr ALL=(root) NOPASSWD: /sbin/ip, /usr/sbin/ipset
 ```
 
 ### 4. Multicast Routing

@@ -3,9 +3,8 @@ require recipes-kernel/linux/linux-iotgw-mainline-common.inc
 # CVE exclusions
 include recipes-kernel/linux/cve-exclusion.inc
 
-LINUX_VERSION ?= "6.18.59"
+LINUX_VERSION ?= "6.18.65"
 KERNEL_VERSION_SANITY_SKIP = "1"
-PV = "${LINUX_VERSION}+git${SRCPV}"
 
 BRANCH ?= "linux-6.18.y"
 KMETA = "kernel-meta"
@@ -15,7 +14,7 @@ KMETA = "kernel-meta"
 
 SRC_URI = " \
     git://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git;name=machine;branch=${BRANCH};protocol=https \
-    git://git.yoctoproject.org/yocto-kernel-cache;type=kmeta;name=meta;branch=yocto-6.6;destsuffix=${KMETA};protocol=https \
+    git://git.yoctoproject.org/yocto-kernel-cache;type=kmeta;name=meta;branch=yocto-6.18;destsuffix=${KMETA};protocol=https \
 "
 
 # Split-FIT model: this recipe builds a plain arm64 Image and PUBLISHES the FIT

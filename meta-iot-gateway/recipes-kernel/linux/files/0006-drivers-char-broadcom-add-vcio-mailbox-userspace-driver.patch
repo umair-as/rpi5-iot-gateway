@@ -4,6 +4,7 @@ Date: Fri, 10 Apr 2026 22:18:16 +0200
 Subject: [PATCH] drivers: char: broadcom: add VCIO mailbox userspace driver
 
 Upstream-Status: Pending
+Assisted-by: claude-code:claude-opus-5-5
 Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  .../dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts  |   4 +
@@ -18,20 +19,20 @@ Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
  create mode 100644 drivers/char/broadcom/vcio.c
 
 diff --git a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
-index 27fbf4eab30f..1cb6440e0e61 100644
+index d998bfa..f1352e6 100644
 --- a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
 +++ b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
-@@ -211,6 +211,10 @@ firmware_clocks: clocks {
- 		reset: reset {
- 			compatible = "raspberrypi,firmware-reset";
- 			#reset-cells = <1>;
- 		};
-+
-+		vcio: vcio {
-+			compatible = "raspberrypi,vcio";
-+		};
- 	};
+@@ -60,6 +60,10 @@
+ 				#reset-cells = <1>;
+ 			};
  
++			vcio: vcio {
++				compatible = "raspberrypi,vcio";
++			};
++
+ 			power: power {
+ 				compatible = "raspberrypi,bcm2835-power";
+ 				firmware = <&firmware>;
 diff --git a/drivers/char/Kconfig b/drivers/char/Kconfig
 index d2cfc584e202..94e52dc5ff11 100644
 --- a/drivers/char/Kconfig

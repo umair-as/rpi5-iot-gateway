@@ -15,27 +15,28 @@ inherit iotgw-kernel-module-sig-key
 require recipes-kernel/linux/linux-yocto.inc
 
 LINUX_VERSION_EXTENSION = ""
-PV = "${LINUX_VERSION}+git${SRCPV}"
+PV = "${LINUX_VERSION}+git"
 
 # CVE identity for cve-check/sbom-cve-check. kernel.bbclass defaults
 # CVE_PRODUCT to "linux_kernel linux:linux"; the trailing "linux:linux" token
 # over-matches unrelated "linux" NVD products and yields false positives, so
 # pin to the canonical kernel CPE only. CVE_VERSION defaults to PV, whose
-# "+git${SRCPV}" suffix breaks NVD version-range comparison — feed the clean
+# "+git" suffix breaks NVD version-range comparison — feed the clean
 # upstream release (e.g. 6.18.37) instead so fixed-below CVEs aren't flagged.
 CVE_PRODUCT = "linux_kernel"
 CVE_VERSION = "${LINUX_VERSION}"
 
 # Pinned revision for reproducible CI/release builds. SRCREV_machine tracks a
-# released linux-6.18.y tag (not the moving branch tip): v6.18.59. Floor
+# released linux-6.18.y tag (not the moving branch tip): v6.18.65. Floor
 # v6.18.37: it carries the Bluetooth close-path use-after-free fixes (the .34
 # hci_uart / l2cap / ISO / hci_conn / bnep batch) that close the
 # hci_sock_release -> sk_destruct -> reuseport UAF on HCI-socket close.
 # Bump LINUX_VERSION (linux-iotgw-mainline_6.18.bb) with it.
-SRCREV_machine = "1253a6aa5d104312bf0992afacc15220ae35bdf9"
-SRCREV_meta = "307ef96123620278563ff5b1c9fb8b7b4da26970"
+# SRCREV_meta pins yocto-kernel-cache on the branch matching the kernel
+# series (yocto-6.18); move both together on a series change.
+SRCREV_machine = "4700e3adf3b24b39dd4929e9c6d62811ba3ccea8"
+SRCREV_meta = "03eefba5e2b51af531fee31cf9705613a45d3688"
 SRCREV_FORMAT = "machine_meta"
-SRCPV = "${@bb.fetch2.get_srcrev(d)}"
 
 KCONFIG_MODE = "--alldefconfig"
 KBUILD_DEFCONFIG:raspberrypi5 ?= "defconfig"
@@ -79,12 +80,12 @@ SRC_URI:append = " file://0008-arm64-dts-broadcom-bcm2712-rpi-5-b-add-mmc-aliase
 SRC_URI:append = "${@' file://0003-arm64-dts-broadcom-rp1-common-add-RP1-SPI0-controller.patch' if d.getVar('IOTGW_ENABLE_TPM_SLB9672') == '1' else ''}"
 SRC_URI:append = "${@' file://0004-arm64-dts-broadcom-bcm2712-rpi-5-b-add-TPM-on-RP1-SPI0-CS1.patch' if d.getVar('IOTGW_ENABLE_TPM_SLB9672') == '1' else ''}"
 # V3D GPU on BCM2712 (mainline v6.19/v7.1 backports): the power-domain and PM
-# MFD support the GPU's power domain and reset need, then the V3D node.
+# MFD support the GPU's power domain and reset need. The V3D node itself is in
+# linux-6.18.y from 6.18.65 (upstream "bcm2712: Add V3D device node").
 SRC_URI:append = " \
     file://0009-pmdomain-bcm-bcm2835-power-Prepare-to-support-BCM271.patch \
     file://0010-mfd-bcm2835-pm-Introduce-SoC-specific-type-identifie.patch \
     file://0011-mfd-bcm2835-pm-Add-BCM2712-PM-device-support.patch \
-    file://0012-arm64-dts-broadcom-bcm2712-Add-V3D-device-node.patch \
 "
 # CVE fixes with no linux-6.18.y backport yet, for code this kernel compiles:
 # CVE-2026-46017 (THP deferred split queue vs migration) and CVE-2026-46153

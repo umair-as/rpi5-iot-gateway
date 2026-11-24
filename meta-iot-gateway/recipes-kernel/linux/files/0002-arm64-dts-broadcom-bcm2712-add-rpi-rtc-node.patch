@@ -11,17 +11,17 @@ and configuring backup-battery trickle charge voltage.
 This is required to support /dev/rtc0 and battery-backed time retention on
 Raspberry Pi 5 when using the mainline kernel provider.
 
-Upstream-Status: Backport [from raspberrypi/linux rpi-6.12.y; adapted for mainline 6.18]
+Upstream-Status: Backport [from raspberrypi/linux rpi-6.12.y; adapted for mainline 6.18.65, where the firmware node sits at the root]
 Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
 ---
  .../boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts      | 9 +++++++++
  1 file changed, 9 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
-index 5609db89eb67..a7ebca8a56d9 100644
+index d998bfa..20b1cd1 100644
 --- a/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
 +++ b/arch/arm64/boot/dts/broadcom/bcm2712-rpi-5-b-ovl-rp1.dts
-@@ -17,6 +17,11 @@ chosen: chosen {
+@@ -17,6 +17,11 @@
  		stdout-path = "serial10:115200n8";
  	};
  
@@ -33,18 +33,19 @@ index 5609db89eb67..a7ebca8a56d9 100644
  	clk_rp1_xosc: clock-50000000 {
  		compatible = "fixed-clock";
  		#clock-cells = <0>;
-@@ -207,6 +212,12 @@ power: power {
- 		firmware = <&firmware>;
- 		#power-domain-cells = <1>;
+@@ -65,6 +70,13 @@
+ 				firmware = <&firmware>;
+ 				#power-domain-cells = <1>;
+ 			};
++
++			rpi_rtc: rpi_rtc {
++				compatible = "raspberrypi,rpi-rtc";
++				firmware = <&firmware>;
++				status = "okay";
++				trickle-charge-microvolt = <0>;
++			};
+ 		};
  	};
-+	rpi_rtc: rpi_rtc {
-+		compatible = "raspberrypi,rpi-rtc";
-+		firmware = <&firmware>;
-+		status = "okay";
-+		trickle-charge-microvolt = <0>;
-+	};
- };
  
- /* uarta communicates with the BT module */
 -- 
 2.34.1
