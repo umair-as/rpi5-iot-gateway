@@ -220,6 +220,8 @@ tools-venv: ## sync .venv via uv (once, or after dependency bumps)
 ## Inspection
 # Interactive kas shell in IMAGE's composition, for ad-hoc bitbake runs
 # (bitbake-getvar, -c <task>, -e). No command text is passed through make.
+# IOTGW_ENABLE_* toggles are not forwarded: inside the shell, export the
+# toggle and add its name to BB_ENV_PASSTHROUGH_ADDITIONS.
 shell: | $(KAS_WORK_DIR) ## interactive kas shell in IMAGE's composition (default dev)
 	$(call check_selectors)
 	$(call check_stack,$(IMAGE))

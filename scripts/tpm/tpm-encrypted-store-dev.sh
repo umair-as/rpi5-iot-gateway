@@ -188,7 +188,10 @@ make_fs_if_needed() {
 
 mount_store() {
     mkdir -p "$MOUNT_POINT"
-    if findmnt -rn "$MOUNT_POINT" >/dev/null 2>&1; then
+    local source
+    if source=$(findmnt -rn -o SOURCE "$MOUNT_POINT" 2>/dev/null); then
+        [ "$source" = "/dev/mapper/$MAP_NAME" ] \
+            || die "$MOUNT_POINT holds $source, not /dev/mapper/$MAP_NAME; refusing to use it"
         log "already mounted: $MOUNT_POINT"
         return 0
     fi

@@ -134,6 +134,8 @@ def start(args):
             raise ValueError("Use targets and VAR=value arguments only; set KAS_BUILD_DIR in the environment")
         if arg.startswith("sign-"):
             raise ValueError("HSM signing is operator-driven; run this target interactively")
+        if arg in ("shell", "stack"):
+            raise ValueError(f"`make {arg}` is interactive or instant; run it directly, not in the launcher")
     if BUILD_TARGETS & set(command):
         busy = running_builds()
         if busy:

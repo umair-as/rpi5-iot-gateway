@@ -103,3 +103,18 @@ def test_preflight_refuses_kas_without_a_work_dir(tmp_path, monkeypatch):
     monkeypatch.delenv("KAS_WORK_DIR", raising=False)
     assert preflight.run(preflight.kas_task("bitbake curl -c patch")) == 2
     assert not (tmp_path / "ran").exists()
+
+
+def test_preflight_kas_tier_forwards_the_toggles(tmp_path, monkeypatch):
+    log = tmp_path / "kas.log"
+    kas = tmp_path / "kas"
+    kas.write_text(f'#!/bin/sh\nprintf "%s\\n" "$@" > "{log}"\n')
+    kas.chmod(kas.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("KAS", str(kas))
+    monkeypatch.setenv("KAS_WORK_DIR", str(tmp_path / "w"))
+    monkeypatch.setenv("IOTGW_ENABLE_OTBR", "1")
+    assert preflight.run(preflight.kas_task("bitbake curl -c patch")) == 0
+    command = log.read_text().splitlines()[-1]
+    assert "BB_ENV_PASSTHROUGH_ADDITIONS" in command
+    assert "IOTGW_ENABLE_OTBR=1 " in command
+    assert command.endswith("; bitbake curl -c patch")

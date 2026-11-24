@@ -29,6 +29,7 @@ import fcntl
 import os
 import pathlib
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -58,8 +59,22 @@ KAS_SHELL = "kas-shell"
 PN_RE = re.compile(r"^[a-z0-9][a-z0-9.+_-]*$")
 
 
+# Same toggle handling as the Makefile's iotgw_bitbake, so a check sees the
+# configuration `make dev` builds: whitelisted for BitBake, values from make.
+PASSTHROUGH = ("IOTGW_ENABLE_OTBR", "IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS",
+               "IOTGW_ENABLE_BTF_CORE_DEV", "IOTGW_ENABLE_DEEPX_DXM1")
+SET_TOGGLES = PASSTHROUGH[:3]
+
+
 def kas_task(command):
     return (KAS_SHELL, command)
+
+
+def toggle_prefix(environ):
+    names = " ".join(PASSTHROUGH)
+    values = " ".join(f"{n}={shlex.quote(environ.get(n, ''))}" for n in SET_TOGGLES)
+    return (f'export BB_ENV_PASSTHROUGH_ADDITIONS="$BB_ENV_PASSTHROUGH_ADDITIONS {names}" '
+            f"{values}; ")
 
 
 CHECKS = {
@@ -251,7 +266,8 @@ def run(argv):
             return 2
         stack = subprocess.run(make("-s", "stack"), cwd=REPO, check=True,
                                capture_output=True, text=True).stdout.strip()
-        argv = (os.environ.get("KAS", "kas"), "shell", stack, "-c", argv[1])
+        argv = (os.environ.get("KAS", "kas"), "shell", stack, "-c",
+                toggle_prefix(os.environ) + argv[1])
     print("  $ " + " ".join(argv), flush=True)
     return subprocess.run(argv, cwd=REPO).returncode
 
