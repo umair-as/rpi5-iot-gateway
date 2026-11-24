@@ -34,8 +34,10 @@
 # Environment overrides:
 #   IOTGW_TARGET     device host/IP (used if no positional host is given)
 #   IOTGW_SSH_USER   SSH user (default: root)
-#   IOTGW_SSH_OPTS   SSH options (default disables strict host-key checking,
-#                    because the gateway's host key changes per A/B slot)
+#   IOTGW_SSH_OPTS   SSH options, replacing the defaults entirely (default:
+#                    host key verified, accept-new; see scripts/lib/host-ssh.sh)
+#   IOTGW_KNOWN_HOSTS known_hosts file to verify against (bench-specific)
+#   IOTGW_SSH_INSECURE=1 skip host-key verification, explicitly (warns)
 #   IOTGW_REMOTE_ENV VAR=value pairs prefixed to the remote shell, for checks
 #                    that need a host-derived expectation, e.g.
 #                    IOTGW_REMOTE_ENV='IOTGW_DXM1_EXPECT_VERMAGIC=6.18.37-...'
@@ -98,8 +100,10 @@ if [ -z "$TARGET" ]; then
 fi
 
 SSH_USER="${IOTGW_SSH_USER:-root}"
-# Per-slot host key changes across A/B, so default to not pinning it.
-DEFAULT_SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8"
+# Host-key policy (strict by default, explicit opt-out): scripts/lib/host-ssh.sh.
+# shellcheck source=scripts/lib/host-ssh.sh
+. "${SCRIPT_DIR}/lib/host-ssh.sh"
+DEFAULT_SSH_OPTS="$(iotgw_ssh_host_key_opts) -o ConnectTimeout=8"
 # shellcheck disable=SC2206
 SSH_OPTS=(${IOTGW_SSH_OPTS:-$DEFAULT_SSH_OPTS})
 

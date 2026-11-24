@@ -67,8 +67,36 @@ parse_args() {
     done
 }
 
+# A mapper name is only a label: another store, or another tool, can hold
+# /dev/mapper/$MAP_NAME. Before reusing, formatting or closing a mapping,
+# prove it is backed by IMAGE_PATH (mapping -> loop device -> backing file).
+mapper_backing_file() {
+    local status dev
+    status=$(cryptsetup status "$MAP_NAME" 2>/dev/null) || return 1
+    dev=$(printf '%s\n' "$status" | awk '$1 == "device:" { print $2; exit }')
+    # A whole loop device only: not a partition of one (loopNpM), not a
+    # stacked dm device.
+    [[ "$dev" =~ ^/dev/loop[0-9]+$ ]] || return 1
+    losetup --noheadings --output BACK-FILE "$dev" 2>/dev/null | sed 's/[[:space:]]*$//'
+}
+
+mapper_is_ours() {
+    local backing
+    backing=$(mapper_backing_file) || return 1
+    [ -n "$backing" ] || return 1
+    [ "$(realpath -e -- "$backing" 2>/dev/null)" = "$(realpath -e -- "$IMAGE_PATH" 2>/dev/null)" ]
+}
+
+require_mapper_ours() {
+    mapper_is_ours || die "/dev/mapper/$MAP_NAME exists but is not backed by $IMAGE_PATH; refusing to touch it (set MAP_NAME to a free name)"
+}
+
 cleanup_mount_if_needed() {
-    if findmnt -rn "$MOUNT_POINT" >/dev/null 2>&1; then
+    local source
+    if source=$(findmnt -rn -o SOURCE "$MOUNT_POINT" 2>/dev/null); then
+        [ "$source" = "/dev/mapper/$MAP_NAME" ] \
+            || die "$MOUNT_POINT holds $source, not /dev/mapper/$MAP_NAME; refusing to unmount it"
+        require_mapper_ours
         log "unmounting existing mount: $MOUNT_POINT"
         umount "$MOUNT_POINT"
     fi
@@ -76,6 +104,7 @@ cleanup_mount_if_needed() {
 
 close_mapper_if_needed() {
     if [ -e "/dev/mapper/$MAP_NAME" ]; then
+        require_mapper_ours
         log "closing existing mapper: $MAP_NAME"
         cryptsetup close "$MAP_NAME"
     fi
@@ -121,19 +150,37 @@ enroll_tpm_if_needed() {
 }
 
 open_mapper() {
-    if [ ! -e "/dev/mapper/$MAP_NAME" ]; then
-        log "opening mapper: $MAP_NAME"
-        cryptsetup open "$IMAGE_PATH" "$MAP_NAME" --key-file "$RECOVERY_KEY_FILE"
-    fi
-}
-
-make_fs_if_needed() {
-    if blkid "/dev/mapper/$MAP_NAME" | grep -q 'TYPE="ext4"'; then
-        log "ext4 already present on mapper"
+    if [ -e "/dev/mapper/$MAP_NAME" ]; then
+        require_mapper_ours
+        log "reusing mapper backed by $IMAGE_PATH: $MAP_NAME"
         return 0
     fi
-    log "creating ext4 filesystem on mapper"
-    mkfs.ext4 -F -L dataenc "/dev/mapper/$MAP_NAME" >/dev/null
+    log "opening mapper: $MAP_NAME"
+    cryptsetup open "$IMAGE_PATH" "$MAP_NAME" --key-file "$RECOVERY_KEY_FILE"
+}
+
+# Formats only a mapping proven to be ours that carries no filesystem at all.
+# blkid -p exits 2 when it finds nothing; any other failure is a probe error,
+# and a filesystem of another type is data, so neither is formatted.
+make_fs_if_needed() {
+    local fstype rc=0
+    require_mapper_ours
+    fstype=$(blkid -p -o value -s TYPE "/dev/mapper/$MAP_NAME" 2>/dev/null) || rc=$?
+    case "$rc:$fstype" in
+        0:ext4)
+            log "ext4 already present on mapper"
+            ;;
+        2:)
+            log "creating ext4 filesystem on mapper"
+            mkfs.ext4 -F -L dataenc "/dev/mapper/$MAP_NAME" >/dev/null
+            ;;
+        0:*)
+            die "/dev/mapper/$MAP_NAME carries a ${fstype:-unknown} filesystem, not ext4; refusing to format it"
+            ;;
+        *)
+            die "blkid could not probe /dev/mapper/$MAP_NAME (exit $rc); refusing to format it"
+            ;;
+    esac
 }
 
 mount_store() {
@@ -168,6 +215,8 @@ main() {
     require_cmd mount
     require_cmd findmnt
     require_cmd blkid
+    require_cmd losetup
+    require_cmd realpath
     require_cmd head
     require_cmd base64
 

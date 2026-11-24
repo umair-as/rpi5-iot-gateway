@@ -464,29 +464,32 @@ def _rewrite_key_name_hints(fit: pathlib.Path, key_name_hint: str) -> int:
     confs = _list_subnodes(fit, "/configurations")
     if not confs:
         raise SignFitError(f"no /configurations subnodes in {fit}")
-    total = 0
+    # Resolve and validate every target before the first write, so a
+    # configuration without signature nodes fails with the file untouched.
+    targets = []
     for conf in confs:
-        children = _list_subnodes(fit, f"/configurations/{conf}")
-        sig_count = 0
-        for child in children:
-            if not child.startswith("signature"):
-                continue
-            path = f"/configurations/{conf}/{child}"
-            r = subprocess.run(
-                [fdtput, "-t", "s", str(fit), path, "key-name-hint", key_name_hint],
-                capture_output=True,
-                text=True,
-            )
-            if r.returncode != 0:
-                raise SignFitError(
-                    f"fdtput failed on {path}: {r.stderr.strip()}"
-                )
-            sig_count += 1
-            total += 1
-        if sig_count == 0:
+        sigs = [
+            f"/configurations/{conf}/{child}"
+            for child in _list_subnodes(fit, f"/configurations/{conf}")
+            if child.startswith("signature")
+        ]
+        if not sigs:
             raise SignFitError(
                 f"no signature* nodes under /configurations/{conf}"
             )
+        targets.extend(sigs)
+    total = 0
+    for path in targets:
+        r = subprocess.run(
+            [fdtput, "-t", "s", str(fit), path, "key-name-hint", key_name_hint],
+            capture_output=True,
+            text=True,
+        )
+        if r.returncode != 0:
+            raise SignFitError(
+                f"fdtput failed on {path}: {r.stderr.strip()}"
+            )
+        total += 1
     log.info(
         "rewrote key-name-hint to %r on %d signature node(s) across %d configuration(s)",
         key_name_hint,
@@ -615,10 +618,12 @@ def sign_fit_file(
 
     backup = fit.with_suffix(fit.suffix + ".bak")
     shutil.copy2(fit, backup)
-    mutated = False
+    # The rewrite edits the file node by node, so from here on the FIT may
+    # differ from the backup on any failure, including one partway through:
+    # every failure restores.
+    keep_backup = False
     try:
         total_sigs = _rewrite_key_name_hints(fit, profile.key_name_hint)
-        mutated = True
 
         verify_result = "skipped"
         if rewrite_only:
@@ -653,20 +658,22 @@ def sign_fit_file(
             "verify": verify_result,
         }
     except Exception:
-        if mutated and backup.is_file():
+        if backup.is_file():
             try:
                 shutil.copy2(backup, fit)
                 log.warning("restored %s from %s after failure", fit, backup)
             except Exception as restore_err:
+                keep_backup = True
                 log.error(
-                    "FAILED to restore %s from %s — inspect manually: %s",
+                    "FAILED to restore %s from %s — backup kept, inspect manually: %s",
                     fit,
                     backup,
                     restore_err,
                 )
         raise
     finally:
-        backup.unlink(missing_ok=True)
+        if not keep_backup:
+            backup.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -813,6 +820,7 @@ def sign_bootfiles_archive(
     backup = archive.with_suffix(archive.suffix + ".bak")
     shutil.copy2(archive, backup)
     mutated = False
+    keep_backup = False
     tmpdir = tempfile.mkdtemp(prefix="sign-bootfiles.")
     try:
         log.info("extracting into %s", tmpdir)
@@ -878,15 +886,17 @@ def sign_bootfiles_archive(
                 shutil.copy2(backup, archive)
                 log.warning("restored %s from %s after failure", archive, backup)
             except Exception as restore_err:
+                keep_backup = True
                 log.error(
-                    "FAILED to restore %s from %s — inspect manually: %s",
+                    "FAILED to restore %s from %s — backup kept, inspect manually: %s",
                     archive,
                     backup,
                     restore_err,
                 )
         raise
     finally:
-        backup.unlink(missing_ok=True)
+        if not keep_backup:
+            backup.unlink(missing_ok=True)
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 

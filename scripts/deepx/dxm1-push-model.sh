@@ -23,7 +23,10 @@ MODEL=${2:-}
 SSH_USER=${IOTGW_SSH_USER:-devel}
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 DEST=/var/cache/dxdemo/probe-model.dxnn
-SSH_OPTS="-o BatchMode=yes -o LogLevel=ERROR -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+# Host-key policy (strict by default, explicit opt-out): scripts/lib/host-ssh.sh.
+# shellcheck source=scripts/lib/host-ssh.sh
+. "$REPO/scripts/lib/host-ssh.sh"
+SSH_OPTS="-o BatchMode=yes -o LogLevel=ERROR $(iotgw_ssh_host_key_opts)"
 
 WORK=$(mktemp -d)
 trap 'rm -rf -- "$WORK"' EXIT

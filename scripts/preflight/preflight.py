@@ -69,6 +69,8 @@ CHECKS = {
               (("python3", "scripts/agent-build/test-agent-build.py"),)),
         Check("preflight", "host", "preflight mapping tests",
               (make("test", "SUITE=preflight"),)),
+        Check("host-tools", "host", "TPM store and SSH helper tests",
+              (make("test", "SUITE=host-tools"),)),
         Check("refpolicy-compile", "bitbake",
               "refpolicy-mcs do_compile (checkmodule on the iotgw module)",
               (make("bitbake-task", "BB_TASK=refpolicy-mcs -c compile"),)),
@@ -87,6 +89,12 @@ BOOT_SCRIPTS = {
     LAYER + "recipes-ota/rauc/files/bundle-hooks-fit.sh",
     LAYER + "recipes-support/iotgw-preinit/files/iotgw-preinit.sh",
     LAYER + "recipes-connectivity/openssh/files/iotgw-sshd-keys.sh",
+}
+# Host helpers that log in to a gateway through scripts/lib/host-ssh.sh.
+HOST_SSH_SCRIPTS = {
+    "scripts/run-target-checks.sh",
+    "scripts/deepx/dxm1-push-model.sh",
+    "scripts/selinux/policy-trial.sh",
 }
 METADATA_SUFFIXES = (".bb", ".bbappend", ".bbclass", ".inc", ".conf")
 # Recipe directories with their own targeted task above, or none to patch.
@@ -135,6 +143,8 @@ def classify(path):
         keys.add("agent-build")
     if p.startswith("scripts/preflight/"):
         keys.add("preflight")
+    if p.startswith(("scripts/tpm/", "scripts/lib/")) or p in HOST_SSH_SCRIPTS:
+        keys.add("host-tools")
     if recipe_names(p):
         keys.add("recipe-patch")
     if (p.endswith(METADATA_SUFFIXES) and p.startswith(LAYER)) \
