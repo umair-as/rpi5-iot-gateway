@@ -16,6 +16,9 @@ no non-FIT / `linux-raspberrypi` option.
 - `storage-filesystems.cfg` — OverlayFS, dm-verity, SquashFS (SquashFS xattr required for RAUC bundle mount under SELinux)
 - `ikconfig.cfg` — runtime kernel config introspection support
 - `audit.cfg` — audit framework plumbing
+- `nftables-only.cfg` — firewalling is nf_tables only: the legacy x_tables
+  engine (`NETFILTER_XTABLES_LEGACY`) and `IPVLAN` are off, overriding the
+  kernel-cache docker feature that meta-virtualization adds.
 - `panic-recovery.cfg` — `CONFIG_PANIC_TIMEOUT=30`. Always applied.
   Closes the early-boot "kernel hangs requiring power cycle" failure
   class — any panic auto-reboots within 30s, applies from the first
@@ -65,11 +68,11 @@ signed FIT; there is no runtime override.
 
 ### `igw_containers`
 
-Container runtime support (Podman, Docker).
+Container runtime support (Podman).
 
 **Features:** Namespaces, cgroups, overlay filesystem, seccomp
 
-**Required for:** Podman, Docker, LXC
+**Required for:** Podman, LXC
 
 ---
 
@@ -375,17 +378,11 @@ local_conf_header:
 
 ### TPM SPI Gate
 
-The TPM2-over-SPI profile follows the TPM feature switch,
-`IOTGW_ENABLE_TPM`. Including `kas/tpm.yml` sets it to `"1"` (and composes
-the TPM layers); the same switch also turns on the TPM crypto providers, OTA
-TPM mTLS and PKCS#11 RAUC streaming. `IOTGW_ENABLE_TPM_SLB9672` stays
-available to override the hardware profile alone.
-
-```yaml
-local_conf_header:
-  tpm_spi: |
-    IOTGW_ENABLE_TPM = "1"
-```
+The board carries the SLB9672, so the TPM2-over-SPI profile is in every
+image: the Makefile composes `kas/tpm.yml`, which composes the TPM layers and
+sets `IOTGW_ENABLE_TPM = "1"`. That switch enables the hardware profile and the
+TPM crypto providers. `IOTGW_ENABLE_TPM_SLB9672` stays available to override
+the hardware profile alone.
 
 ### Kernel EFI Surface Gate
 
@@ -481,9 +478,9 @@ via the single variable `IOTGW_KERNEL_FRAGMENTS`. `SRC_URI` is derived from
 that list so the two cannot drift, and `do_configure:append` enforces two
 invariants with `bbfatal`:
 
-1. Every name in `IOTGW_KERNEL_FRAGMENTS` must be present in `${WORKDIR}/fragments/`
+1. Every name in `IOTGW_KERNEL_FRAGMENTS` must be present in `${UNPACKDIR}/fragments/`
    (fetch guard — catches missing `file://fragments/<name>` entries).
-2. Every `.cfg` file in `${WORKDIR}/fragments/` must appear in `IOTGW_KERNEL_FRAGMENTS`
+2. Every `.cfg` file in `${UNPACKDIR}/fragments/` must appear in `IOTGW_KERNEL_FRAGMENTS`
    (stale-residue guard — catches fragments left over from a previous build
    with different `IOTGW_ENABLE_*` / `IOTGW_KERNEL_FEATURES` gates).
 

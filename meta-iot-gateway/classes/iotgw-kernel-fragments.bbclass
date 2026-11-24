@@ -26,7 +26,7 @@ IOTGW_ENABLE_VCIO ?= "${IOTGW_ENABLE_RPI_EEPROM}"
 # ---------------------------------------------------------------------------
 IOTGW_KERNEL_FRAGMENTS = "branding.cfg trim.cfg \
     storage-filesystems.cfg ikconfig.cfg \
-    audit.cfg panic-recovery.cfg"
+    audit.cfg panic-recovery.cfg nftables-only.cfg"
 
 # panic-on-oops.cfg is gated so dev builds can disable CONFIG_PANIC_ON_OOPS
 # (default-on) from kas/local.yml without source edits.
