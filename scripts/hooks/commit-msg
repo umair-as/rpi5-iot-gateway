@@ -15,7 +15,16 @@ msg_file="$1"
 # editor template (branch, status, file lists): it names branches and staged
 # paths and is never recorded.
 template='^#(	|$| (Please enter|Lines starting|with .#. will|On branch|Your branch|HEAD detached|Changes (to be|not staged)|Untracked files|You are|Author:|Date:|interactive rebase|Last command|Next command|No commands|It looks like|and try again|Explicit paths))'
-raw="$(sed '/^# -\{24\} >8 -\{24\}$/,$d' "$msg_file" | grep -vE "$template" || true)"
+# Cut only at git's own scissors block (the line and git's next line), so
+# text after a typed-in scissors line in a `-m` message is still checked.
+raw="$(awk '
+    cut { exit }
+    held != "" { if ($0 == "# Do not modify or remove the line above.") { cut = 1; exit }
+                 print held; held = "" }
+    $0 == "# ------------------------ >8 ------------------------" { held = $0; next }
+    { print }
+    END { if (held != "" && !cut) print held }
+' "$msg_file" | grep -vE "$template" || true)"
 
 # Subject = first line that is neither blank nor a git comment.
 subject="$(grep -vE '^[[:space:]]*(#|$)' <<<"$raw" | head -1 || true)"

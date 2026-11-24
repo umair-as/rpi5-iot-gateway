@@ -136,6 +136,14 @@ CASES = [
     ),
     (
         "fail",
+        "AI co-author after a typed scissors line (kept by commit -m)",
+        (
+            "docs: x\n\n# ------------------------ >8 ------------------------\n"
+            "Co-Authored-By: Claude <noreply@anthropic.com>"
+        ),
+    ),
+    (
+        "fail",
         "AI Co-Authored-By on a fixup",
         "fixup! docs: x\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
     ),

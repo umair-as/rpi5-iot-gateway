@@ -84,3 +84,22 @@ def test_kas_task_is_fixed_text():
         preflight.KAS_SHELL,
         "bitbake curl -c patch",
     )
+
+
+def test_stack_does_not_shell_evaluate_the_composition(tmp_path):
+    marker = tmp_path / "ran"
+    base = f"kas/x';touch {marker};'"
+    r = make("stack", f"BASE={base}")
+    assert r.returncode == 0, r.stderr
+    assert base in r.stdout
+    assert not marker.exists()
+
+
+def test_preflight_refuses_kas_without_a_work_dir(tmp_path, monkeypatch):
+    kas = tmp_path / "kas"
+    kas.write_text(f'#!/bin/sh\ntouch "{tmp_path / "ran"}"\n')
+    kas.chmod(kas.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setenv("KAS", str(kas))
+    monkeypatch.delenv("KAS_WORK_DIR", raising=False)
+    assert preflight.run(preflight.kas_task("bitbake curl -c patch")) == 2
+    assert not (tmp_path / "ran").exists()

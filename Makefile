@@ -228,7 +228,8 @@ shell: | $(KAS_WORK_DIR) ## interactive kas shell in IMAGE's composition (defaul
 # IMAGE's kas composition, machine-readable (scripts/preflight uses it).
 stack: ## print IMAGE's kas composition
 	$(call check_selectors)
-	@echo '$(call stack,$(IMAGE))'
+	$(info $(call stack,$(IMAGE)))
+	@:
 
 parse: | $(KAS_WORK_DIR) ## parse-only check in IMAGE's composition (cheapest validation)
 	$(call check_selectors)

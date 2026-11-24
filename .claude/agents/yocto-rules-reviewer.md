@@ -48,8 +48,8 @@ For each changed hunk, check the rules that apply to its file type:
   the counterfactual test for mixed motives); patch identity; if a
   `Backport` header changed, anything beyond the `Upstream-Status:` line is a
   violation unless the caller states the operator asked for a CVE sign-off.
-  A new or modified header carries no `Assisted-by:`; an agent never adds
-  a `Signed-off-by:`. A header edit on an existing patch costs a rebuild:
+  No `Assisted-by:` is added to a header; one already there stays. An agent
+  never adds a `Signed-off-by:`. A header edit on an existing patch costs a rebuild:
   flag it so the caller can batch it.
 - `.bb`/`.bbappend`/`.bbclass`/`.inc`/`.conf`: colon overrides only, path
   variables instead of literal paths (except the accepted `${D}/root`),
