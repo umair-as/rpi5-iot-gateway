@@ -92,7 +92,10 @@ def checkpoint_gaps(path: Path) -> list[str]:
         if label in filled:
             current = label
             filled[current] = filled[current] or bool(value.strip())
-        elif stripped.startswith(("#", "Decision trail:")):
+        # Only a Markdown heading ends a field; '#40' in a value is content.
+        elif stripped.startswith("Decision trail:") or (
+            stripped.startswith("#") and stripped.lstrip("#").startswith(" ")
+        ):
             current = None
         elif current is not None and stripped:
             filled[current] = True
@@ -129,7 +132,7 @@ def main() -> int:
         if args.command == "init":
             args.run.mkdir(parents=True, exist_ok=False)
             with (args.run / "decisions.tsv").open("x", newline="") as stream:
-                csv.writer(stream, delimiter="\t").writerow(HEADER)
+                csv.writer(stream, delimiter="\t", lineterminator="\n").writerow(HEADER)
             (args.run / "checkpoint.md").write_text(CHECKPOINT)
             print(args.run)
             return 0
@@ -155,7 +158,7 @@ def main() -> int:
                 validate([HEADER, row], args.run)
                 # Serialize before writing so validation failures never append half a row.
                 buffer = io.StringIO(newline="")
-                csv.writer(buffer, delimiter="\t").writerow(row)
+                csv.writer(buffer, delimiter="\t", lineterminator="\n").writerow(row)
                 stream.seek(0, io.SEEK_END)
                 stream.write(buffer.getvalue())
             else:

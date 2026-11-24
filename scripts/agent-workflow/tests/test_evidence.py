@@ -233,3 +233,18 @@ def test_concurrent_writers_keep_every_row(run: Path) -> None:
     assert len(rows(run)) == 13
     assert {row[1] for row in rows(run)[1:]} == {f"session-{i}" for i in range(12)}
     assert cli("check", run).returncode == 0
+
+
+def test_hash_content_under_a_field_counts_as_filled(run: Path) -> None:
+    text = (run / "checkpoint.md").read_text()
+    text = text.replace(
+        "Goal and requested milestone:\n", "Goal and requested milestone:\n#40 merged\n"
+    )
+    (run / "checkpoint.md").write_text(text)
+    result = cli("check", run)
+    assert "Goal and requested milestone" not in result.stderr
+
+
+def test_ledger_rows_end_in_lf_only(run: Path) -> None:
+    assert cli(*record_args(run)).returncode == 0
+    assert b"\r" not in (run / "decisions.tsv").read_bytes()
