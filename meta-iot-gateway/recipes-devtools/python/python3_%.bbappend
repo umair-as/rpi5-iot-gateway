@@ -33,6 +33,11 @@ CVE_STATUS[CVE-2026-3644] = "fixed-version: fixed in CPython 3.14.4 (shipped)"
 CVE_STATUS[CVE-2026-4224] = "fixed-version: fixed in CPython 3.14.4 (shipped)"
 CVE_STATUS[CVE-2026-3479] = "disputed: PSF-disputed, CVSS 0.0; also fixed in 3.14.4 (shipped)"
 CVE_STATUS[CVE-2025-15366] = "fixed-version: fixed in CPython 3.14.7 (3.14.10 shipped); CNA lists 3.14.0 to <3.14.7 affected"
+# CVE-2026-119170 is a hashlib regression in 3.14.10 only that bites when
+# OpenSSL runs in FIPS mode (CNA record). This distro's OpenSSL is built
+# without the fips PACKAGECONFIG (enable-fips), so no FIPS provider exists to
+# enter that mode. Revisit if FIPS is ever enabled; 3.14.11 has the fix.
+CVE_STATUS[CVE-2026-119170] = "not-applicable-config: FIPS-mode-only regression; OpenSSL built without the fips PACKAGECONFIG, no FIPS provider"
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 
 SRC_URI += "file://CVE-2025-15367.patch"
