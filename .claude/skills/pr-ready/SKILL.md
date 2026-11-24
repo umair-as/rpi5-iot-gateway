@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 Run the steps in order and stop at the first one that fails. Report what each
 step showed. The rules live in AGENTS.md ("Conventions", "Git hooks", "AI
-attribution in commits", "Validating behaviour changes") and CLAUDE.md
+attribution", "Validating behaviour changes") and CLAUDE.md
 ("Commit trailers"); this skill only orders them.
 
 1. **On-target gate.** If the change affects runtime behaviour on the board

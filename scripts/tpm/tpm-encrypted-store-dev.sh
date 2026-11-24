@@ -81,10 +81,13 @@ mapper_backing_file() {
 }
 
 mapper_is_ours() {
-    local backing
+    local backing ours theirs
     backing=$(mapper_backing_file) || return 1
     [ -n "$backing" ] || return 1
-    [ "$(realpath -e -- "$backing" 2>/dev/null)" = "$(realpath -e -- "$IMAGE_PATH" 2>/dev/null)" ]
+    # Each side must resolve on its own: two failed resolutions compare equal.
+    theirs=$(realpath -e -- "$backing" 2>/dev/null) && [ -n "$theirs" ] || return 1
+    ours=$(realpath -e -- "$IMAGE_PATH" 2>/dev/null) && [ -n "$ours" ] || return 1
+    [ "$theirs" = "$ours" ]
 }
 
 require_mapper_ours() {

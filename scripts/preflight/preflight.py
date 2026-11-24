@@ -244,6 +244,11 @@ def build_dir_busy():
 
 def run(argv):
     if argv[0] == KAS_SHELL:
+        # Without it kas clones every layer into the repo root (AGENTS.md).
+        if not os.environ.get("KAS_WORK_DIR"):
+            print("preflight: KAS_WORK_DIR is unset; run `make preflight` or "
+                  "source scripts/env.sh first", file=sys.stderr)
+            return 2
         stack = subprocess.run(make("-s", "stack"), cwd=REPO, check=True,
                                capture_output=True, text=True).stdout.strip()
         argv = (os.environ.get("KAS", "kas"), "shell", stack, "-c", argv[1])

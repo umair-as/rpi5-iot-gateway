@@ -176,3 +176,13 @@ def test_mapping_not_on_a_whole_loop_device_is_refused(store, device):
     assert r.returncode != 0
     assert "not backed by" in r.stdout
     assert calls == []
+
+
+def test_unresolvable_backing_and_image_are_not_ours(store, tmp_path):
+    """Two failed path resolutions must not compare equal."""
+    store["image"].unlink()
+    gone = tmp_path / "deleted-image"
+    r, calls = run(store, "--force-recreate", exists=True, backfile=gone)
+    assert r.returncode != 0
+    assert not called(calls, "cryptsetup close")
+    assert not called(calls, "umount")
