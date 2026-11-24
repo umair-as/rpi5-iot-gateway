@@ -278,6 +278,7 @@ What makes it actually work:
 | AI accelerators — new to the domain, vocabulary, the host/target model | `docs/AI_ACCELERATION_101.md` |
 | AI accelerators — pipeline diagram, what's built by whom, extending to a second vendor | `docs/AI_ACCELERATION_ARCHITECTURE.md` |
 | Deciding whether a CVE applies: stages, evidence, what may suppress | `docs/CVE_APPLICABILITY.md` |
+| Layer compatibility: what `yocto-check-layer` checks and where the layer deliberately deviates | `docs/LAYER_COMPATIBILITY.md` |
 | Kernel applicability — build-object oracle, CNA re-derivation, the compiled-source blind spot | `docs/KERNEL_CVE_APPLICABILITY.md` |
 | Release workflow | `docs/RELEASE.md` |
 | Shared sstate not reused across builds; hash-equivalence DB; measuring with `bitbake -n` | `docs/SSTATE_SHARING.md` |
