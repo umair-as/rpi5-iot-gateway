@@ -225,10 +225,10 @@ class StatusUnitTest(unittest.TestCase):
         self.assertEqual(self.ab.status_of(self.run_dir)["state"], "succeeded")
 
     def test_interrupt_seen_by_the_supervisor_is_the_outcome(self):
-        # make exit 2 after a Ctrl-C the supervisor recorded is interrupted;
-        # a clean exit after one stays succeeded.
+        # Any exit after a Ctrl-C the supervisor recorded is interrupted, even a
+        # zero one: a run that was cut short is never reported as succeeded.
         for result, state in (({"exit_code": 2, "interrupted": True}, "interrupted"),
-                              ({"exit_code": 0, "interrupted": True}, "succeeded"),
+                              ({"exit_code": 0, "interrupted": True}, "interrupted"),
                               ({"exit_code": 2}, "failed")):
             with self.subTest(result=result):
                 (self.run_dir / "result.json").write_text(json.dumps({"finished": "t", **result}))

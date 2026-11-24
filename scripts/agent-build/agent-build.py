@@ -175,9 +175,10 @@ def start(args):
     # are scoped to this session; global and user tmux settings are untouched.
     # The first client's command line becomes the tmux server's, so the
     # placeholder avoids text a cleanup like `pkill -f 'sleep 60'` would match:
-    # that once killed the server and every build on it.
+    # that once killed the server and every build on it. It still expires on
+    # its own if the launcher dies before removing it.
     placeholder = tmux("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", session,
-                       sys.executable, "-c", "import signal; signal.pause()")
+                       sys.executable, "-c", "import time; time.sleep(60)")
     try:
         tmux("set-option", "-t", session, "mouse", "on")
         tmux("set-option", "-t", session, "history-limit", "50000")
@@ -251,8 +252,9 @@ def result_state(run):
     # build (Ctrl-C is -2), not a failing one.
     if code < 0:
         return {"state": "interrupted", "signal": -code, **result}
-    # A non-zero exit after the supervisor saw Ctrl-C is an interruption too.
-    if code != 0 and result.get("interrupted"):
+    # Any exit after the supervisor saw Ctrl-C is an interruption: a run that
+    # was cut short is never reported as succeeded.
+    if result.get("interrupted"):
         return {"state": "interrupted", "signal": signal.SIGINT.value, **result}
     return {"state": "succeeded" if code == 0 else "failed", **result}
 
