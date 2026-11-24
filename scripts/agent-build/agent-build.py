@@ -4,6 +4,7 @@
 Usage:
   agent-build.py start [--worktree PATH] <topic> -- <target>... [VAR=value]...
   agent-build.py status <run-dir>
+  agent-build.py wait [--timeout SECONDS] <run-dir>
 
 Each run gets scratch/builds/<run-id>/ with run.json (command, build directory,
 source commit and dirty files), started.json, result.json (make's exit code)
@@ -189,31 +190,98 @@ def start(args):
             raise RuntimeError((run / "startup-error").read_text().strip()) from None
         raise
     print(f"Run: {run}\nWatch: tmux -L {SOCKET} attach-session -r -t {session}")
+    print(f"Detach: prefix d (prefix twice inside another tmux), "
+          f"or tmux -L {SOCKET} detach-client -s {session}")
     print(f"Status: python3 {SELF} status {shlex.quote(str(run))}")
     print(f"Log: {run / 'terminal.log'}")
 
 
-def status(run):
+# OSC 8 hyperlinks (BitBake wraps log paths in them), then colour/cursor codes.
+ANSI = re.compile(r"\x1b\][^\x1b\x07]*(?:\x1b\\|\x07)|\x1b\[[0-9;?]*[a-zA-Z]")
+PROGRESS = re.compile(r"Currently +(\d+) +running tasks? +\((\d+) of (\d+)\)")
+TASK_LINE = re.compile(r"^\s*\d+: (\S.*?)\s*$")
+# Exit codes of `wait`. Timeout is its own code: "still running, keep waiting"
+# must never be confused with "gone without a result, investigate".
+WAIT_EXIT = {"succeeded": 0, "failed": 1, "interrupted": 2, "startup-failed": 2,
+             "unknown/interrupted": 2}
+WAIT_TIMEOUT_EXIT = 3
+
+
+def progress(log, tail_bytes=262144):
+    """Last BitBake 'Currently N running tasks (X of Y)' block of a terminal log."""
+    try:
+        with open(log, "rb") as fh:
+            fh.seek(0, os.SEEK_END)
+            fh.seek(max(0, fh.tell() - tail_bytes))
+            text = fh.read().decode("utf-8", "replace")
+    except OSError:
+        return None
+    lines = [ln for ln in ANSI.sub("", text).replace("\r", "\n").split("\n") if ln.strip()]
+    for i in range(len(lines) - 1, -1, -1):
+        m = PROGRESS.search(lines[i])
+        if m:
+            tasks = []
+            for line in lines[i + 1:i + 1 + int(m.group(1))]:
+                t = TASK_LINE.match(line)
+                if not t:
+                    break
+                tasks.append(t.group(1))
+            return {"running": int(m.group(1)), "task": int(m.group(2)),
+                    "of": int(m.group(3)), "tasks": tasks}
+    return None
+
+
+def result_state(run):
+    result = json.loads((run / "result.json").read_text())
+    code = result["exit_code"]
+    # A negative code is Popen's "killed by signal -code": an interrupted
+    # build (Ctrl-C is -2), not a failing one.
+    if code < 0:
+        return {"state": "interrupted", "signal": -code, **result}
+    return {"state": "succeeded" if code == 0 else "failed", **result}
+
+
+def status_of(run):
+    if not (run / "run.json").exists():
+        return {"state": "unknown/interrupted", "error": f"no run.json in {run}"}
     meta = json.loads((run / "run.json").read_text())
     if (run / "result.json").exists():
-        result = json.loads((run / "result.json").read_text())
-        code = result["exit_code"]
-        # A negative code is Popen's "killed by signal -code": an interrupted
-        # build (Ctrl-C is -2), not a failing one.
-        if code < 0:
-            print(json.dumps({"state": "interrupted", "signal": -code, **result}))
-        else:
-            print(json.dumps({"state": "succeeded" if code == 0 else "failed", **result}))
-        return
+        return result_state(run)
     if (run / "startup-error").exists():
-        print(json.dumps({"state": "startup-failed", "error": (run / "startup-error").read_text().strip()}))
-        return
+        return {"state": "startup-failed", "error": (run / "startup-error").read_text().strip()}
+    # Always this launcher's socket: a plain `tmux` talks to another server and
+    # never finds the session.
     try:
         alive = tmux("list-panes", "-t", meta["session"], "-F", "#{pane_dead}") == "0"
     except subprocess.CalledProcessError:
         alive = False
-    print(json.dumps({"state": ("running" if (run / "started.json").exists() else "starting")
-                     if alive else "unknown/interrupted"}))
+    if not alive:
+        # The runner writes result.json before its pane dies; a result that
+        # landed between the two checks above is the real outcome.
+        if (run / "result.json").exists():
+            return result_state(run)
+        return {"state": "unknown/interrupted"}
+    if not (run / "started.json").exists():
+        return {"state": "starting"}
+    return {"state": "running", "progress": progress(run / "terminal.log")}
+
+
+def status(run):
+    print(json.dumps(status_of(run)))
+
+
+def wait(run, timeout, interval=5.0):
+    """Block until the run ends, or timeout. Prints status JSON; returns WAIT_EXIT."""
+    deadline = None if timeout is None else time.monotonic() + timeout
+    while True:
+        state = status_of(run)
+        if state["state"] in WAIT_EXIT:
+            print(json.dumps(state))
+            return WAIT_EXIT[state["state"]]
+        if deadline is not None and time.monotonic() >= deadline:
+            print(json.dumps(state | {"timeout": True}))
+            return WAIT_TIMEOUT_EXIT
+        time.sleep(interval if deadline is None else max(0.0, min(interval, deadline - time.monotonic())))
 
 
 def main():
@@ -225,11 +293,19 @@ def main():
     launch.add_argument("make_args", nargs=argparse.REMAINDER)
     for name in ("status", "_run"):
         sub.add_parser(name).add_argument("run", type=Path)
+    waiter = sub.add_parser(
+        "wait", help="Block until the run ends: exit 0 succeeded, 1 failed, "
+                     "2 interrupted/unknown/startup-failed, 3 timeout (still running)")
+    waiter.add_argument("--timeout", type=float, default=None, help="seconds; default: no limit")
+    waiter.add_argument("--interval", type=float, default=5.0, help=argparse.SUPPRESS)
+    waiter.add_argument("run", type=Path)
     args = parser.parse_args()
     if args.action == "start":
         start(args)
     elif args.action == "status":
         status(args.run.resolve())
+    elif args.action == "wait":
+        return wait(args.run.resolve(), args.timeout, args.interval)
     else:
         return runner(args.run.resolve())
     return 0

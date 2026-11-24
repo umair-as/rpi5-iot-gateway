@@ -39,11 +39,19 @@ Status is authoritative from the helper:
 ## Procedure
 
 1. Read `run.json` and run `agent-build.py status <run-dir>`.
-2. **Still running** (no `result.json`, pane alive): do not wait or poll.
-   Report progress and stop; the caller re-invokes you later (or waits with
-   its own Monitor). `status` prints only `{"state": "running"}`, so take
-   progress from the last `Currently N running tasks (X of Y)` line of
-   `terminal.log`, and name the task(s) currently running. Clean the log first:
+2. **Still running** (`"state": "running"` or `"starting"`): if the caller
+   asked you to wait, run ONE bounded wait and act on its exit code:
+   `python3 scripts/agent-build/agent-build.py wait --timeout <seconds> <run-dir>`
+   (0 succeeded, 1 failed, 2 interrupted/unknown/startup-failed, 3 timeout:
+   still running). It prints the same JSON as `status`. On 3, or if you were
+   not asked to wait, report progress and stop; never loop or start a poller
+   of your own. Progress comes from the `progress` field of `status`/`wait`
+   (`task` of `of`, and the running `tasks`).
+   **Never call `tmux` yourself.** Builds run on the launcher's own tmux
+   socket; a plain `tmux` asks another server, never finds the session and
+   makes a running build look finished. `status` and `wait` use the right
+   socket.
+   For the searches below, clean the log first:
    `sed -e 's/\x1b\][^\x1b]*\x1b\\//g' -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' <run-dir>/terminal.log | tr '\r' '\n'`
    (the first expression removes the OSC 8 hyperlinks BitBake wraps around
    log paths; the second removes colour and cursor codes). Every search below
