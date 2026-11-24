@@ -7,9 +7,11 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import textwrap
+import types
 
 import pytest
 
@@ -295,3 +297,105 @@ def test_redact_pkcs11_uri_never_leaks_pin():
         "pkcs11:object=k?pin-value=SECRET&module-path=/p11.so",
     ):
         assert "SECRET" not in sign_fit.redact_pkcs11_uri(uri)
+
+
+# ---------------------------------------------------------------------------
+# A failed key-name-hint rewrite must leave the FIT exactly as it was.
+# Tiny dtc-built FIT-shaped fixtures; no mkimage signing, token or key.
+# ---------------------------------------------------------------------------
+
+_FDT_TOOLS = ("dtc", "fdtget", "fdtput", "mkimage")
+needs_fdt_tools = pytest.mark.skipif(
+    any(shutil.which(t) is None for t in _FDT_TOOLS),
+    reason="needs dtc, fdtget, fdtput and mkimage on PATH",
+)
+
+
+def _fit_fixture(tmp_path, conf2_signed):
+    conf2 = (
+        'signature-1 { key-name-hint = "original-key"; };'
+        if conf2_signed
+        else 'description = "configuration with no signature";'
+    )
+    dts = tmp_path / "fixture.dts"
+    dts.write_text(textwrap.dedent(f"""\
+        /dts-v1/;
+        / {{
+            configurations {{
+                default = "conf-1";
+                conf-1 {{ signature-1 {{ key-name-hint = "original-key"; }}; }};
+                conf-2 {{ {conf2} }};
+            }};
+        }};
+        """))
+    fit = tmp_path / "fitImage"
+    subprocess.run(["dtc", "-I", "dts", "-O", "dtb", "-o", str(fit), str(dts)], check=True)
+    return fit
+
+
+def _rewrite_only(fit, env=None):
+    return run_sign_fit(
+        "sign-fit", "--fit", str(fit), "--key-name-hint", "review-new-key",
+        "--uri", "pkcs11:object=fixture", "--engine-conf", str(fit.parent / "unused.cnf"),
+        "--rewrite-only", env=env, check=False,
+    )
+
+
+@needs_fdt_tools
+def test_rewrite_missing_later_signature_leaves_fit_unchanged(tmp_path):
+    fit = _fit_fixture(tmp_path, conf2_signed=False)
+    before = fit.read_bytes()
+    r = _rewrite_only(fit)
+    assert r.returncode == 1
+    assert "no signature" in r.stdout + r.stderr
+    assert fit.read_bytes() == before
+    assert not fit.with_suffix(".bak").exists()
+
+
+@needs_fdt_tools
+def test_rewrite_failing_later_fdtput_restores_fit(tmp_path):
+    fit = _fit_fixture(tmp_path, conf2_signed=True)
+    before = fit.read_bytes()
+    # fdtput that writes the first node, then fails on the second.
+    wrap = tmp_path / "bin"
+    wrap.mkdir()
+    real = shutil.which("fdtput")
+    (wrap / "fdtput").write_text(textwrap.dedent(f"""\
+        #!/bin/sh
+        n=$(cat "{tmp_path}/fdtput.count" 2>/dev/null || echo 0)
+        n=$((n + 1)); echo "$n" > "{tmp_path}/fdtput.count"
+        [ "$n" -ge 2 ] && {{ echo "simulated fdtput failure" >&2; exit 1; }}
+        exec "{real}" "$@"
+        """))
+    (wrap / "fdtput").chmod(0o755)
+    r = _rewrite_only(fit, env={"PATH": f"{wrap}{os.pathsep}{os.environ['PATH']}"})
+    assert r.returncode == 1
+    assert "simulated fdtput failure" in r.stdout + r.stderr
+    assert (tmp_path / "fdtput.count").read_text().strip() == "2"
+    assert fit.read_bytes() == before
+
+
+@needs_fdt_tools
+def test_failed_restore_keeps_backup(tmp_path, monkeypatch):
+    fit = _fit_fixture(tmp_path, conf2_signed=True)
+    before = fit.read_bytes()
+
+    def partial_rewrite(path, hint):
+        path.write_bytes(b"partially rewritten")
+        raise sign_fit.SignFitError("simulated mid-rewrite failure")
+
+    real_copy2 = sign_fit.shutil.copy2
+
+    def copy2(src, dst, *a, **kw):
+        if pathlib.Path(src).name.endswith(".bak"):
+            raise OSError("simulated restore failure")
+        return real_copy2(src, dst, *a, **kw)
+
+    monkeypatch.setattr(sign_fit, "_rewrite_key_name_hints", partial_rewrite)
+    monkeypatch.setattr(sign_fit.shutil, "copy2", copy2)
+    profile = types.SimpleNamespace(key_name_hint="review-new-key")
+    with pytest.raises(sign_fit.SignFitError):
+        sign_fit.sign_fit_file(fit, profile, verify=False, rewrite_only=True, verbose=False)
+    backup = fit.with_suffix(".bak")
+    assert backup.is_file()
+    assert backup.read_bytes() == before

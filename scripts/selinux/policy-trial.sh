@@ -17,6 +17,7 @@
 
 set -eu
 
+HERE=$(cd -- "$(dirname -- "$0")" && pwd)
 CANDIDATE=${1:?usage: policy-trial.sh <candidate.cil> [--load user@host]}
 LOAD_TARGET=
 if [ "${2:-}" = "--load" ]; then
@@ -57,7 +58,10 @@ esac
 echo "negative control rejected"
 
 if [ -n "$LOAD_TARGET" ]; then
-    SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+    # Host-key policy (strict by default, explicit opt-out): scripts/lib/host-ssh.sh.
+    # shellcheck source=scripts/lib/host-ssh.sh
+    . "$HERE/../lib/host-ssh.sh"
+    SSH_OPTS="$(iotgw_ssh_host_key_opts) -o LogLevel=ERROR"
     # shellcheck disable=SC2086
     scp -q $SSH_OPTS policy.trial "$LOAD_TARGET:/tmp/policy.trial"
     # shellcheck disable=SC2086

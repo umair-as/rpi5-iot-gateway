@@ -200,8 +200,9 @@ TEST_kernel    := scripts/kernel/tests/
 TEST_boot      := scripts/ota/tests/ scripts/preinit/tests/ scripts/sshd/tests/
 TEST_selinux   := scripts/selinux/tests/
 TEST_preflight := scripts/preflight/tests/
-TEST_SUITES    := sign-fit sbom-cve kernel boot selinux preflight
-test: ## host test suites (SUITE=all|sign-fit|sbom-cve|kernel|boot|selinux|preflight, SOFTHSM=1)
+TEST_host-tools := scripts/tpm/tests/ scripts/lib/tests/
+TEST_SUITES    := sign-fit sbom-cve kernel boot selinux preflight host-tools
+test: ## host test suites (SUITE=all|sign-fit|sbom-cve|kernel|boot|selinux|preflight|host-tools, SOFTHSM=1)
 	$(if $(call one_of,$(SUITE),all $(TEST_SUITES)),,$(error SUITE='$(SUITE)' is not one of: all $(TEST_SUITES)))
 	$(if $(filter 1,$(SOFTHSM)),SOFTHSM_AVAILABLE=1 )$(UV) run pytest $(foreach s,$(if $(filter all,$(SUITE)),$(TEST_SUITES),$(SUITE)),$(TEST_$(s)))
 
