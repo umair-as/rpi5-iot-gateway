@@ -9,22 +9,21 @@ target:
   - iot-gw-image-base
 
 repos:
-  # Full standalone wrynose stack (SHA-pinned to match rpi5.yml / kas/rauc.yml
-  # / kas/tpm.yml). Kept in lockstep with those files; meta-security and
-  # meta-lts-mixins removed for wrynose.
+  # Full standalone wrynose stack. The SHA pins match rpi5.yml, kas/rauc.yml
+  # and kas/tpm.yml; the layer lists can differ.
   bitbake:
     url: https://git.openembedded.org/bitbake
-    commit: fae9db3168dbff1b8c76fe9c6726a9687ff97514
+    commit: 6e260eb6ab1631607ea414d9ff8ede1155faa5d9
     layers: {}
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
-    commit: 0f03c732a0a2d0506b41b1abe60b3f368b2300dc
+    commit: 16a03ed6c2db2fa1d7edac4f288a74958a00eb9f
     layers:
       meta:
 
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
-    commit: 6bf0d8ad57b33950bab4c7f6c037e1ccb6f6e2eb
+    commit: c0fcd7cca3760ef24e087ac4a31b8f357cb204da
     layers:
       meta-oe:
       meta-python:
@@ -39,7 +38,7 @@ repos:
   meta-virtualization:
     url: https://git.yoctoproject.org/meta-virtualization
     branch: wrynose
-    commit: 4a9f704d82a8a5d65aaffa598eeaeb86f1cb5b86
+    commit: f27e2594ab43f4e596eb8e287e7e446ef4064810
 
   # Pin and carried patches mirror rpi5.yml; the rationale lives there.
   meta-selinux:
@@ -77,7 +76,7 @@ repos:
     branch: wrynose
     commit: 38da0e5866a953e664001ba90b5edad68d68cd5d
 
-  # meta-rauc-community dropped — see kas/rauc.yml for the absorption note.
+  # meta-rauc only; see kas/rauc.yml.
 
   # Project layer lives in this repo (see rpi5.yml for the rationale on the
   # no-url/path current-repo form vs KAS_WORK_DIR).

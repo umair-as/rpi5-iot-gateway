@@ -16,26 +16,23 @@ repos:
   # enforced.
   bitbake:
     url: https://git.openembedded.org/bitbake
-    # 2.18 branch tip, 2026-07-09. Moves with the poky cluster: bump this,
+    # 2.18 branch tip, 2026-10-07. Moves with the poky cluster: bump this,
     # openembedded-core and meta-openembedded together or not at all.
-    commit: fae9db3168dbff1b8c76fe9c6726a9687ff97514
+    commit: 6e260eb6ab1631607ea414d9ff8ede1155faa5d9
     layers: {}
 
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
-    # wrynose branch tip. meta-openembedded stays at its own pin below: the
-    # class/python API is stable within wrynose.
-    commit: 0f03c732a0a2d0506b41b1abe60b3f368b2300dc
+    # wrynose branch tip, 2026-11-20.
+    commit: 16a03ed6c2db2fa1d7edac4f288a74958a00eb9f
     layers:
       meta:
 
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
-    # wrynose branch tip, 2026-07-30. Shares oe-core's class/python API, so it
-    # moves in lockstep with the poky cluster above; carries userland CVE
-    # backports (99 distinct CVE ids since the previous pin -- jq alone gained
-    # ten).
-    commit: 6bf0d8ad57b33950bab4c7f6c037e1ccb6f6e2eb
+    # wrynose branch tip, 2026-11-09. Shares oe-core's class/python API, so it
+    # moves in lockstep with the poky cluster above.
+    commit: c0fcd7cca3760ef24e087ac4a31b8f357cb204da
     layers:
       meta-oe:
       meta-python:
@@ -50,15 +47,13 @@ repos:
 
   meta-virtualization:
     url: https://git.yoctoproject.org/meta-virtualization
-    # wrynose branch tip, 2026-11-05. Moves independently of the poky cluster:
+    # wrynose branch tip, 2026-11-16. Moves independently of the poky cluster:
     # it is mostly container-stack CVE fixes and declares no newer oe-core API.
     branch: wrynose
-    commit: 4a9f704d82a8a5d65aaffa598eeaeb86f1cb5b86
+    commit: f27e2594ab43f4e596eb8e287e7e446ef4064810
 
-  # meta-rust-bin dropped: wrynose OE-core ships rust/cargo 1.94.1 (the version
-  # meta-rust-bin used to pin), and meta-rust-bin master lacks wrynose
-  # LAYERSERIES_COMPAT. tpm-ops now inherits the OE-core `cargo` class instead
-  # of `cargo_bin`.
+  # Rust and cargo come from OE-core; Rust recipes (tpm-ops) use its `cargo`
+  # class.
 
   # SELinux MAC stack: libselinux/policycoreutils/setools, the refpolicy
   # variants, packagegroup-core-selinux, and selinux-image.bbclass. Also

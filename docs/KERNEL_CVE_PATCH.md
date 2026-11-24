@@ -243,7 +243,8 @@ Hand-editing the hunks is a sign you grabbed the wrong backport.
 
 ## 5. Annotate for Yocto QA
 
-`oe-core` requires two lines for `cve-check.bbclass` and the patch-status
+`oe-core` requires two lines for its CVE tooling (`oe.cve_check`, used by
+`sbom-cve-check`) and the patch-status
 QA to recognise the patch:
 
 ```

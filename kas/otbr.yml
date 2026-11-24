@@ -10,8 +10,9 @@ header:
 
 local_conf_header:
   otbr_support: |
-    # Allow toggling fast mode from environment (to avoid kernel churn)
-    BB_ENV_PASSTHROUGH_ADDITIONS .= " OTBR_FAST"
+    # Fast mode (avoids kernel churn): set OTBR_FAST = "1" in kas/local.yml.
+    # kas runs bitbake with a clean environment, so a shell variable does not
+    # reach it.
     OTBR_FAST ?= "0"
 
     # When OTBR_FAST=1, add an override and use it to trim work

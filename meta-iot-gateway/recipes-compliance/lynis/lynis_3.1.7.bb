@@ -1,5 +1,4 @@
-# Lynis 3.1.5 recipe (override for meta-security)
-# Fetch from GitHub releases (asset tarball) instead of cisofy top-level.
+# Lynis (no other layer in the stack provides lynis).
 
 SUMMARY = "Lynis is a free and open source security and auditing tool."
 HOMEPAGE = "https://cisofy.com/"
@@ -8,7 +7,7 @@ LIC_FILES_CHKSUM = "file://LICENSE;md5=3edd6782854304fd11da4975ab9799c1"
 
 # Vendor tarball; extracts to 'lynis' (no version suffix).
 SRC_URI = "https://downloads.cisofy.com/lynis/lynis-${PV}.tar.gz"
-SRC_URI[sha256sum] = "8d2c6652ba60116a82514522b666ca77293f4bfc69f1e581028769f7ebb52ba4"
+SRC_URI[sha256sum] = "b5314a07fd85fa3ffc7da57b508f0108ec3280d84e4af823f805d95cbbc2428c"
 
 S = "${UNPACKDIR}/${BPN}"
 

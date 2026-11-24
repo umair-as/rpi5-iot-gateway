@@ -11,6 +11,9 @@ SRC_URI = " \
     file://99-dx-dma.rules \
 "
 
+# Local files only: they unpack straight into UNPACKDIR.
+S = "${UNPACKDIR}"
+
 inherit systemd useradd
 
 # --- service identity --------------------------------------------------------

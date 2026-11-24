@@ -804,7 +804,7 @@ re-derived. Each costs hours the first time.
 
 ### 1. Leaf cert needs both `codeSigning` AND `emailProtection` EKUs
 
-**Symptom**: `make bundle-...-fit` fails in `do_bundle` with:
+**Symptom**: `make bundle IMAGE=<image>` fails in `do_bundle` with:
 
 ```
 signature verification failed: Verify error: unsuitable certificate purpose

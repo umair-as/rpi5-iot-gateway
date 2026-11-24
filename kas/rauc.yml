@@ -6,14 +6,11 @@ header:
 distro: iotgw
 
 repos:
-  # meta-lts-mixins removed: wrynose ships stock u-boot 2026.01.
-  # meta-rauc-community/meta-rauc-raspberrypi dropped: the only bits our
-  # images consumed (rauc-grow-data-part subpackage, u-boot-fw-utils/
-  # u-boot-env RDEPENDS, /data mount point) are absorbed into
-  # meta-iot-gateway (recipes-ota/rauc/rauc_%.bbappend, base-files
-  # bbappend). Everything else there (rauc-conf, rpi-u-boot-scr boot flow,
-  # linux-raspberrypi cfg, example keys, wic) was already superseded by the
-  # custom RAUC/FIT setup.
+  # meta-rauc only. The Raspberry Pi pieces the images need (the
+  # rauc-grow-data-part subpackage, u-boot-fw-utils/u-boot-env RDEPENDS, the
+  # /data mount point) live in meta-iot-gateway (recipes-ota/rauc/rauc_%.bbappend,
+  # base-files bbappend); the boot flow, keys and wic layout are the custom
+  # RAUC/FIT setup. U-Boot is OE-core's stock recipe.
 
   meta-rauc:
     url: https://github.com/rauc/meta-rauc.git

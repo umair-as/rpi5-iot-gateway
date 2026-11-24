@@ -52,11 +52,9 @@ jobs:
           # global IPv6 address: the ruleset family-qualified ICMP but not the
           # service ports, and nothing checked.
           #
-          # This lint only works because the OTBR rules live in their own .conf
-          # file. They were previously embedded as text inside a sed script in
-          # iotgw-firewall.bb, invisible to any grep over *.conf — so a check
-          # like this would have passed while the branch that actually shipped
-          # carried unqualified rules.
+          # This lint relies on every ruleset living in its own .conf file:
+          # rules embedded as text in a recipe script would escape it and the
+          # check would pass while unqualified rules shipped.
           mapfile -t rulesets < <(git ls-files '*/nftables*.conf')
           if [[ ${#rulesets[@]} -eq 0 ]]; then
             echo "no tracked nftables rulesets found"

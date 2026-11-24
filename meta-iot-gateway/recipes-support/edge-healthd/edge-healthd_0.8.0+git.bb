@@ -5,4 +5,4 @@ require edge-healthd.inc
 # it carries the daemon running without a writable state directory, which a
 # boot without /data needs.
 SRCREV = "4ac4e6c808c55b37451cb7b44577e7e378591f40"
-PV = "0.8.0+git${SRCPV}"
+PV = "0.8.0+git"

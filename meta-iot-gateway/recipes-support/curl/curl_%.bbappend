@@ -1,9 +1,3 @@
-# CVE-2026-80230 is carried ahead of the layer pin; the pinned layer's wrynose
-# branch ships the same patch. Remove it at the next joint pin move.
-#
-# CVE-2026-80230: openssl backend accepted a missing server certificate even
-# when a public key was pinned. Header unchanged from the openembedded-core copy.
-#
 # CVE-2026-10536: use-after-free in the HTTP/2 stream-dependency tree
 # (CURLOPT_STREAM_DEPENDS[_E] + curl_easy_reset() + curl_easy_cleanup()).
 # Affected 7.88.0-8.20.0; this build enables HTTP/2 (PACKAGECONFIG nghttp2).
@@ -15,10 +9,7 @@
 # Patch files are named CVE-<id>.patch so the scanner links them to the CVE.
 FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
 
-SRC_URI += " \
-    file://CVE-2026-80230.patch \
-    file://CVE-2026-10536.patch \
-"
+SRC_URI += "file://CVE-2026-10536.patch"
 
 # The recipe sets CVE_STATUS[CVE-2026-10536] to "unpatched" whenever nghttp2
 # is enabled, and oe.cve_check.get_patched_cves() lets CVE_STATUS overwrite

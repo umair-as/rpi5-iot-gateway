@@ -33,7 +33,7 @@ export KAS_WORK_DIR="${KAS_WORK_DIR:-${_IOTGW_REPO_ROOT}/.kas}"
 export KAS_BUILD_DIR="${KAS_BUILD_DIR:-${_IOTGW_REPO_ROOT}/build}"
 
 # kas refuses to start if KAS_WORK_DIR doesn't exist (it does not mkdir it).
-# The Makefile creates it at parse time; replicate for shell-scope invocations.
+# The Makefile creates it before any kas target runs; replicate for shell-scope invocations.
 mkdir -p "${KAS_WORK_DIR}"
 
 echo "rpi5-iot-gw kas env loaded:"
