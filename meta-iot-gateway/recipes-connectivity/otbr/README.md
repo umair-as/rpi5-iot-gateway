@@ -19,7 +19,7 @@ build path. It is not the default runtime model used by the gateway images.
 ## Build Container Image
 
 ```bash
-kas build kas/otbr.yml --target otbr-rpi5-container
+. scripts/env.sh && kas build kas/otbr.yml --target otbr-rpi5-container
 ```
 
 Typical artifact:

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TARGET="${TARGET:-iotgw}"
-LOCAL_WEBUI_DIR="${LOCAL_WEBUI_DIR:-$HOME/GitRepos/otbr-webui}"
+LOCAL_WEBUI_DIR="${LOCAL_WEBUI_DIR:-}"
 REMOTE_ROOT="${REMOTE_ROOT:-/data/otbr-webui}"
 RESTART_SERVICE=1
 
@@ -15,7 +15,7 @@ to run from /data for fast iteration.
 
 Options:
   -t, --target <host>       SSH target (default: iotgw or $TARGET)
-  -s, --source <dir>        Local otbr-webui checkout (default: ~/GitRepos/otbr-webui)
+  -s, --source <dir>        Local otbr-webui checkout (required; or set LOCAL_WEBUI_DIR)
   -r, --remote-root <dir>   Remote root path (default: /data/otbr-webui)
       --no-persistent       Accepted for compatibility; /etc is rebuilt every boot, so the override is always runtime only
       --no-restart          Do not restart service after deploy
@@ -56,6 +56,12 @@ while [ "$#" -gt 0 ]; do
             ;;
     esac
 done
+
+if [[ -z "${LOCAL_WEBUI_DIR}" ]]; then
+    echo "error: no otbr-webui checkout given (use --source <dir> or LOCAL_WEBUI_DIR)" >&2
+    usage >&2
+    exit 2
+fi
 
 DIST_SERVER="${LOCAL_WEBUI_DIR}/dist/server"
 DIST_CLIENT="${LOCAL_WEBUI_DIR}/dist/client"

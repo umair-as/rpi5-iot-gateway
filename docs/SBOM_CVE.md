@@ -300,7 +300,7 @@ pin moves):
 | Bluetooth controller patch `BCM4345C0.hcd` (loaded), `BCM4345C5.hcd` | controller reports `BCM4345C0 (003.001.025) build 0000` | `bluez-firmware-rpidistro` 1.2-9+rpt3 | HCI/L2CAP/SMP from any peer in range | Raspberry Pi `bluez-firmware` repository |
 | Raspberry Pi 5 bootloader EEPROM images, `recovery.bin`, `vl805-*.bin` | `pieeprom-2026-02-23` (newest shipped) | `rpi-eeprom` v2026.02.23+2712 | boot media, network boot if enabled | Raspberry Pi `rpi-eeprom` release notes |
 | Raspberry Pi GPU/boot firmware on /boot (`bootcode.bin`, `fixup*.dat`, `start*.elf`) | from the pinned `rpi-bootfiles` | `rpi-bootfiles` | boot media | Raspberry Pi `firmware` repository |
-| Node.js runtime (prebuilt) | 22.22.0 | `nodejs-bin` | HTTP (OTBR web UI, dev images only) | NVD (the recipe sets `CVE_PRODUCT = "nodejs:node.js"`; it has a feed, and is listed because it is a prebuilt binary) |
+| Node.js runtime (prebuilt) | 24.22.3 | `nodejs-bin` | HTTP (OTBR web UI, dev images only) | NVD (the recipe sets `CVE_PRODUCT = "nodejs:node.js"`; it has a feed, and is listed because it is a prebuilt binary) |
 
 Rules for this table: a pin move that changes any of these recipes must update
 the version column from the built artifact (`strings` on the blob, `dmesg` for

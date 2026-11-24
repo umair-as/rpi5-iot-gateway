@@ -2,13 +2,13 @@ SUMMARY = "Prebuilt Node.js binary for target"
 DESCRIPTION = "Installs official prebuilt Node.js ${PV} binary for aarch64 (arm64). Builds fast by avoiding V8 compilation."
 HOMEPAGE = "https://nodejs.org/"
 LICENSE = "MIT & ISC & BSD-2-Clause & BSD-3-Clause & Artistic-2.0 & Apache-2.0"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=1fdf4f79da4006c3b5183fddc768f1c8"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=edc0683b77d2c503217642fa000b5b31"
 
 # Only for aarch64 targets (arm64 binaries)
 COMPATIBLE_HOST = "aarch64.*-linux"
 
 SRC_URI = "https://nodejs.org/dist/v${PV}/node-v${PV}-linux-arm64.tar.xz"
-SRC_URI[sha256sum] = "1bf1eb9ee63ffc4e5d324c0b9b62cf4a289f44332dfef9607cea1a0d9596ba6f"
+SRC_URI[sha256sum] = "6e51a2ada00f0011cc266f65d98922b403d7ad88f809ca2aa615a5fe1ce6e86c"
 
 S = "${UNPACKDIR}/node-v${PV}-linux-arm64"
 
