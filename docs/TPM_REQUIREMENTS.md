@@ -13,8 +13,8 @@ out of scope.
 
 ## Current State (What We Have)
 - Hardware target: Infineon SLB9672 class TPM2 over SPI on RPi5.
-- Kernel/device enablement exists behind the TPM feature switch `IOTGW_ENABLE_TPM=1`
-  (set by `kas/tpm.yml`), which drives the hardware profile `IOTGW_ENABLE_TPM_SLB9672`.
+- Kernel/device enablement is in every image: the Makefile composes `kas/tpm.yml`,
+  whose `IOTGW_ENABLE_TPM=1` drives the hardware profile `IOTGW_ENABLE_TPM_SLB9672`.
 - Userspace includes TPM policy and tooling (`tpm-ops`; `tpm2-tools` in dev profile).
 - RAUC/FIT/OTA flow is currently used without U-Boot TPM integration.
 - U-Boot TPM integration attempt was parked due to upstream and stability blockers.

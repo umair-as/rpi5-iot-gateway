@@ -732,11 +732,8 @@ else
         #
         # Whether it can run is a property of the IMAGE, not of this script: the
         # headless dev image ships none of that stack, the desktop/lab image ships
-        # all of it. This used to be an UNCONDITIONAL say_skip with the reason
-        # hardcoded to "none are in this image" — so on an image that could in fact
-        # run the pipeline it still reported a skip, and the one check that
-        # exercises the full decode -> NPU -> compositor path silently never ran.
-        # Detect, do not assume.
+        # all of it. Detect it, do not assume it: a hardcoded skip would leave the
+        # one check of the full decode -> NPU -> compositor path silently unrun.
         #
         # run_model above proves the NPU works. It does NOT prove the GStreamer
         # elements, the postprocess library or the display path work; only this does.

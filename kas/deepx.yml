@@ -3,7 +3,7 @@ header:
 
 # DEEPX DX-M1 PCIe AI accelerator (M.2, Geekworm-style carrier on the RPi5
 # FFC connector). Part of the platform: the Makefile composes this overlay for
-# base, dev and their bundles (STACK_base/STACK_dev), and kas/desktop.yml includes it.
+# base, dev and the dev bundle (STACK_base/STACK_dev), and kas/desktop.yml includes it.
 # Prod does not compose it until the module-signing key is protected
 # (docs/DEEPX_DXM1.md).
 #
@@ -81,7 +81,5 @@ local_conf_header:
     # after signing. Re-fetching gets the source back but not the build tree.
     #
     # Note this only matters on SUCCESS — do_rm_work runs after do_build, so a
-    # failed compile leaves its workdir intact for diagnosis either way. The
-    # kernel is already excluded in kas/local.yml, which the signing class
-    # depends on separately (it needs ${STAGING_KERNEL_BUILDDIR}/certs).
+    # failed compile leaves its workdir intact for diagnosis either way.
     RM_WORK_EXCLUDE += "dx-driver dx-rt"

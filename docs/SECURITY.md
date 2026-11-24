@@ -428,16 +428,16 @@ When `IOTGW_ENABLE_TPM_SLB9672=1`, the following TPM security components are inc
 - **`tpm2-tools`** — Low-level TPM2 CLI (dev image only)
 - Default TCTI policy is pinned to `device:/dev/tpmrm0` to avoid simulator/fallback ambiguity.
 
-### Optional TPM Crypto Providers
+### TPM Crypto Providers
 
-Enable extra userspace integrations for PKCS#11/OpenSSL consumers:
+Userspace integrations for PKCS#11/OpenSSL consumers, in every image with the TPM:
 
 - `tpm2-pkcs11`
 - `tpm2-openssl`
 - `tpm2-tss-engine`
 
-Build-time gate: `IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS` follows the TPM switch
-`IOTGW_ENABLE_TPM`; set it on its own only to diverge from the switch.
+Build-time gate: `IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS` follows `IOTGW_ENABLE_TPM`
+(on in every image); set it on its own only to diverge.
 
 Notes:
 - Gate is additive and only effective when `IOTGW_ENABLE_TPM_SLB9672=1`.
@@ -451,11 +451,11 @@ Notes:
 - `/dev/spidev` intentionally disabled on TPM chip-select to prevent conflicts
 
 ### Build-Time Enablement
-Include `kas/tpm.yml` in `kas/local.yml`: it composes the TPM layers and sets
-the TPM switch `IOTGW_ENABLE_TPM = "1"`, which enables the hardware profile,
-crypto providers, OTA TPM mTLS and PKCS#11 RAUC streaming together. To keep the
-layers but switch the TPM off, set `IOTGW_ENABLE_TPM = "0"` under the same
-`tpm_spi` block name in `kas/local.yml`.
+The Makefile composes `kas/tpm.yml` into every image: it composes the TPM
+layers and sets `IOTGW_ENABLE_TPM = "1"`, which enables the hardware profile and
+the crypto providers. OTA TPM mTLS (`IOTGW_ENABLE_OTA_TPM_MTLS`) and PKCS#11
+RAUC streaming (`IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"`) need TPM-backed
+device keys provisioned on the target and are separate opt-ins, off by default.
 
 ---
 

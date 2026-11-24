@@ -6,7 +6,7 @@ Canonical orientation for AI coding agents working in this repository. Agent-agn
 
 ## What this repo is
 
-A Yocto/OpenEmbedded distribution (`iotgw`) for the Raspberry Pi 5, built with KAS. Produces hardened IoT-gateway images that boot SELinux enforcing on every image and ship rootless Podman containers as a first-class feature, with mandatory signed FIT boot, a dm-verity root, RAUC A/B OTA, and optional OpenThread Border Router, TPM and DEEPX DX-M1 support. AppArmor is not used.
+A Yocto/OpenEmbedded distribution (`iotgw`) for the Raspberry Pi 5, built with KAS. Produces hardened IoT-gateway images that boot SELinux enforcing on every image and ship rootless Podman containers as a first-class feature, with mandatory signed FIT boot, a dm-verity root, RAUC A/B OTA, a TPM (SLB9672) and the DEEPX DX-M1 AI accelerator on the board, and optional OpenThread Border Router support. AppArmor is not used.
 
 - Yocto release: **wrynose** (Yocto 6.0 LTS; BitBake patterns in `.claude/rules/yocto-patterns.md`, which applies to any agent regardless of name)
 - Target machine: `raspberrypi5` (aarch64, hard-float)
@@ -31,16 +31,20 @@ make clean-lock          # remove a stale bitbake.lock (refuses a live one)
 
 `make help` is the source of truth for the full catalogue (prod bundles, HSM re-signing, signing-tool tests, uv venv). FIT/HSM signing is **operator-driven** (YubiKey PIN+touch, or SoftHSM for YK-less devs) — profiles, tooling (`scripts/fit-signing/sign_fit.py`), and the resign flow are documented in `docs/FIT_BOOT_SIGNING.md`; do not run HSM signing targets unattended. **FIT signed boot is the only flow and is mandatory:** the distro selects the FIT kernel unconditionally and image builds hard-fail (at u-boot `do_configure`, via `iotgw-fit-signing-guard.bbclass`) unless the build-time FIT signing key (`UBOOT_SIGN_KEYDIR` / `UBOOT_SIGN_KEYNAME`, `fit_signing` block: a file key, or a PKCS#11 URI) is configured in `kas/local.yml`. A YubiKey cannot sign the build-time FIT; it is a DTB trust root and the post-build re-signer. Metadata inspection (`make parse`, `bitbake -e`) is not blocked.
 
-Feature toggles (env vars; default off unless an overlay sets them):
+Feature toggles (env vars, passed to BitBake by the Makefile; default off unless an overlay sets them):
 
 ```
 IOTGW_ENABLE_OTBR
 IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS
 IOTGW_ENABLE_BTF_CORE_DEV
-IOTGW_ENABLE_DEEPX_DXM1
 ```
 
 Example: `IOTGW_ENABLE_OTBR=1 make bundle IMAGE=dev`.
+
+The TPM and the DX-M1 are part of the board, not toggles: every image composes
+`kas/tpm.yml`, and every image but prod composes `kas/deepx.yml` (prod follows
+once the module-signing key is under HSM custody). `IOTGW_ENABLE_DEEPX_DXM1=0`
+still works as a one-build escape hatch for debugging.
 
 The container runtime is not a toggle: every image ships it (`iotgw-common.inc`).
 
@@ -50,10 +54,11 @@ The Makefile picks `BASE = kas/local.yml` if present, else `kas/rauc.yml` (RAUC 
 
 - `kas/local.yml` — developer-local secrets/WiFi/RAUC keys and shared cache paths (gitignored; copy from `local.yml.example`)
 - `kas/rauc.yml` — RAUC OTA stack
-- `kas/otbr.yml`, `kas/tpm.yml`, `kas/cve.yml`, `kas/spdx.yml` — feature overlays
+- `kas/tpm.yml` — the board's SLB9672 TPM (meta-secure-core layers, SPI overlay, crypto providers); composed by every image
+- `kas/otbr.yml`, `kas/cve.yml` — feature overlays
 - `kas/uboot-prod-hardening.yml` — composed with `prod` and `bundle IMAGE=prod`; required (the target fails if it is missing)
 - `kas/fit-release-trust.yml` — release FIT trust profile (YubiKey anchor only); composed with `prod` and `bundle IMAGE=prod`; required
-- `kas/deepx.yml` — DEEPX DX-M1 layer + `IOTGW_ENABLE_DEEPX_DXM1=1`; composed by every non-prod composition (`base`, `dev`, their bundles, and `parse`/`layers`/`shell`/`sbom-cve` at the default `IMAGE=dev`) and included by `kas/desktop.yml`. Prod stays without it until the module-signing key is protected (`docs/DEEPX_DXM1.md` §7)
+- `kas/deepx.yml` — DEEPX DX-M1 layer + `IOTGW_ENABLE_DEEPX_DXM1=1`; composed by every non-prod composition (`base`, `dev`, the dev bundle, and `parse`/`layers`/`shell`/`sbom-cve` at the default `IMAGE=dev`) and included by `kas/desktop.yml`. Prod stays without it until the module-signing key is protected (`docs/DEEPX_DXM1.md` §7)
 - `kas/desktop.yml` — desktop image variant; includes `kas/deepx.yml` (the desktop is the AI demo station)
 
 Shared layers are not cloned manually: kas checks them out into the gitignored `.kas/` (`KAS_WORK_DIR`) using bare-mirror alternates from `KAS_REPO_REF_DIR` (an operator-local layer cache set by `scripts/env.sh`), preserving the SHA pins in `rpi5.yml`. `kas/local.yml` supplies the shared `DL_DIR`/`SSTATE_DIR`.
@@ -86,7 +91,7 @@ Build artifacts land in `build/tmp/deploy/images/raspberrypi5/`. Flash the `.wic
 ### Releases & CI
 
 - Release helper: `scripts/release/release-build.sh` + `scripts/release/release-manifest.sh` — process in `docs/RELEASE.md`
-- CI: `.github/workflows/release-hygiene.yml` (release-hygiene lint only — no Yocto builds in CI)
+- CI: `.github/workflows/release-hygiene.yml` (lint) and `release-notes.yml` (release notes on tag push); no Yocto builds in CI
 - Changelog assembled in batches before release — do not add an entry for every trivial bump
 
 ## Repo layout (orient yourself fast)
