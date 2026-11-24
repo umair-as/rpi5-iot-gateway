@@ -20,7 +20,10 @@ to read the result.
    make preflight                           # run the host tier
    ```
    This needs no BitBake and does not touch `build/`. The boot-script suite
-   takes a few minutes; the others take seconds.
+   takes a few minutes; the others take seconds. Changed paths run from the
+   merge base with `origin/main` (else `main`): the branch's commits plus
+   uncommitted and untracked files. A WARNING about 0 changed paths means
+   nothing was checked; pass `--base REF` or `--paths`.
 
 2. **BitBake tier, only after coordinating.** It runs targeted tasks
    (`refpolicy-mcs -c compile`, `virtual/kernel -c configure`,
@@ -36,7 +39,7 @@ to read the result.
 
    A targeted task replaces `parse` (BitBake parses everything first anyway).
    The kernel configure runs with the default (dev) kas composition only.
-   Prod tier fragments need a separate configure: `make bitbake-task IMAGE=prod BB_TASK="virtual/kernel -c configure"`.
+   Prod tier fragments need a separate configure, from `make shell IMAGE=prod`: `bitbake virtual/kernel -c configure`.
 
 ## Read the result
 
@@ -59,6 +62,6 @@ neverallows and file-context aliasing, which no compiler run proves.
 
 ## Extending
 
-When a new host test suite is added, give it a `make test-*` target and a
-mapping rule in `scripts/preflight/preflight.py` (`CHECKS` and `classify`).
+When a new host test suite is added, give it a `make test SUITE=` entry
+(`TEST_<suite>` and `TEST_SUITES` in the Makefile) and a mapping rule in `scripts/preflight/preflight.py` (`CHECKS` and `classify`).
 Add a case for it to `scripts/preflight/tests/test_preflight.py`.

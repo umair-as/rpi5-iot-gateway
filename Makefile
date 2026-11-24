@@ -52,8 +52,8 @@ space := $(empty) $(empty)
 IMAGES  := base dev desktop prod
 BUNDLES := dev desktop prod
 
-# IMAGE selects the composition for bundle, sbom-cve, parse, layers, info and
-# bitbake-task. A makefile assignment beats the environment, so an IMAGE the
+# IMAGE selects the composition for bundle, sbom-cve, parse, layers, info,
+# shell and stack. A makefile assignment beats the environment, so an IMAGE the
 # calling shell exports is ignored (unless make -e); `make <target> IMAGE=...`
 # sets it. unexport keeps both selectors out of the commands' environment.
 IMAGE := dev
@@ -75,7 +75,7 @@ one_of = $(if $(and $(filter 1,$(words $(1))),$(call eq,$(1),$(strip $(1)))),$(s
 # $(1) = the image the target builds (fixed image targets only).
 define check_selectors
 	$(if $(SBOM_CVE_IMAGE),$(error SBOM_CVE_IMAGE is replaced by IMAGE=<$(subst $(space),|,$(IMAGES))>, e.g. make sbom-cve IMAGE=prod))
-	$(if $(IMAGE_KAS),$(error IMAGE_KAS is replaced by IMAGE=<$(subst $(space),|,$(IMAGES))>, e.g. make bitbake-task IMAGE=desktop BB_TASK=...))
+	$(if $(IMAGE_KAS),$(error IMAGE_KAS is replaced by IMAGE=<$(subst $(space),|,$(IMAGES))>, e.g. make shell IMAGE=desktop))
 	$(if $(call one_of,$(IMAGE),$(IMAGES)),,$(error IMAGE='$(IMAGE)' is not one of: $(IMAGES)))
 	$(if $(1),$(if $(and $(filter command line,$(origin IMAGE)),$(filter-out $(1),$(IMAGE))),$(error $@ builds IMAGE=$(1); drop IMAGE=$(IMAGE) or use a target that takes IMAGE=)))
 endef
@@ -123,7 +123,7 @@ $(KAS_WORK_DIR):
 
 .PHONY: help info $(IMAGES) bundle sign-slot-fits-yk sign-slot-fits-softhsm \
         sbom-cve cve-report sbom-report kernel-hardening-report \
-        test preflight tools-venv bitbake-task parse layers clean-lock hooks
+        test preflight tools-venv shell stack parse layers clean-lock hooks
 
 ## Images
 base: ## base image (DX-M1 stack)
@@ -201,8 +201,9 @@ TEST_boot      := scripts/ota/tests/ scripts/preinit/tests/ scripts/sshd/tests/
 TEST_selinux   := scripts/selinux/tests/
 TEST_preflight := scripts/preflight/tests/
 TEST_host-tools := scripts/tpm/tests/ scripts/lib/tests/
-TEST_SUITES    := sign-fit sbom-cve kernel boot selinux preflight host-tools
-test: ## host test suites (SUITE=all|sign-fit|sbom-cve|kernel|boot|selinux|preflight|host-tools, SOFTHSM=1)
+TEST_tooling   := scripts/tests/
+TEST_SUITES    := sign-fit sbom-cve kernel boot selinux preflight host-tools tooling
+test: ## host test suites (SUITE=all|sign-fit|sbom-cve|kernel|boot|selinux|preflight|host-tools|tooling, SOFTHSM=1)
 	$(if $(call one_of,$(SUITE),all $(TEST_SUITES)),,$(error SUITE='$(SUITE)' is not one of: all $(TEST_SUITES)))
 	$(if $(filter 1,$(SOFTHSM)),SOFTHSM_AVAILABLE=1 )$(UV) run pytest $(foreach s,$(if $(filter all,$(SUITE)),$(TEST_SUITES),$(SUITE)),$(TEST_$(s)))
 
@@ -217,11 +218,17 @@ tools-venv: ## sync .venv via uv (once, or after dependency bumps)
 	$(UV) sync
 
 ## Inspection
-bitbake-task: | $(KAS_WORK_DIR) ## one BitBake task in IMAGE's composition, e.g. BB_TASK="refpolicy-mcs -c compile"
-	$(if $(BB_TASK),,$(error BB_TASK is required, e.g. BB_TASK="refpolicy-mcs -c compile"))
+# Interactive kas shell in IMAGE's composition, for ad-hoc bitbake runs
+# (bitbake-getvar, -c <task>, -e). No command text is passed through make.
+shell: | $(KAS_WORK_DIR) ## interactive kas shell in IMAGE's composition (default dev)
 	$(call check_selectors)
 	$(call check_stack,$(IMAGE))
-	$(call iotgw_bitbake,bitbake $(BB_TASK),$(call stack,$(IMAGE)))
+	$(KAS) shell $(call stack,$(IMAGE))
+
+# IMAGE's kas composition, machine-readable (scripts/preflight uses it).
+stack: ## print IMAGE's kas composition
+	$(call check_selectors)
+	@echo '$(call stack,$(IMAGE))'
 
 parse: | $(KAS_WORK_DIR) ## parse-only check in IMAGE's composition (cheapest validation)
 	$(call check_selectors)
@@ -272,7 +279,7 @@ help: ## this list
 	    /^[a-z][a-zA-Z0-9_-]*:.*## / { printf "  make %-26s %s\n", $$1, $$2 }' $(firstword $(MAKEFILE_LIST))
 	@echo ""
 	@echo "Settings:"
-	@echo "  IMAGE=base|dev|desktop|prod     composition for bundle, sbom-cve, parse, layers, info, bitbake-task (default dev)"
+	@echo "  IMAGE=base|dev|desktop|prod     composition for bundle, sbom-cve, parse, layers, info, shell, stack (default dev)"
 	@echo "  IOTGW_ENABLE_OTBR=1, IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=1, IOTGW_ENABLE_BTF_CORE_DEV=1   optional features"
 	@echo "  KAS_BUILD_DIR=, KAS_WORK_DIR=   alternate build / layer directories"
 	@echo "Long builds: scripts/agent-build/agent-build.py (docs/AGENT_BUILDS.md)."

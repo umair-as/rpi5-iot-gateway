@@ -2,7 +2,9 @@
 
 import fcntl
 import importlib.util
+import os
 import pathlib
+import subprocess
 
 import pytest
 
@@ -29,6 +31,9 @@ L = "meta-iot-gateway/"
     ("scripts/run-target-checks.sh", {"host-tools"}),
     ("scripts/deepx/dxm1-push-model.sh", {"host-tools"}),
     ("scripts/selinux/policy-trial.sh", {"selinux-policy", "host-tools"}),
+    ("scripts/hooks/commit-msg", {"tooling"}),
+    ("scripts/tests/test_makefile.py", {"tooling"}),
+    ("Makefile", {"tooling"}),
     (L + "conf/distro/iotgw.conf", {"parse"}),
     ("kas/desktop.yml", {"parse"}),
     ("rpi5.yml", {"parse"}),
@@ -76,3 +81,45 @@ def test_bitbake_tier_refused_when_busy(tmp_path, monkeypatch):
         rc = pf.main(["--bitbake", "--paths", L + "conf/distro/iotgw.conf"])
     assert rc == 3
     assert not any("parse" in a for argv in ran for a in argv)
+
+
+def test_changed_paths_default_base_is_the_merge_base(tmp_path, monkeypatch):
+    """A branch whose work is committed still has changed paths."""
+    env = dict(
+        os.environ,
+        GIT_CONFIG_GLOBAL=os.devnull,
+        GIT_CONFIG_NOSYSTEM="1",
+        GIT_AUTHOR_NAME="t",
+        GIT_AUTHOR_EMAIL="t@example.invalid",
+        GIT_COMMITTER_NAME="t",
+        GIT_COMMITTER_EMAIL="t@example.invalid",
+    )
+
+    def git(*args):
+        subprocess.run(
+            ["git", "-C", str(tmp_path), *args],
+            env=env,
+            check=True,
+            capture_output=True,
+        )
+
+    git("init", "-q", "-b", "main")
+    (tmp_path / "a").write_text("a")
+    git("add", "a")
+    git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "topic")
+    (tmp_path / "committed").write_text("c")
+    git("add", "committed")
+    git("commit", "-q", "-m", "topic")
+    (tmp_path / "a").write_text("modified")
+    (tmp_path / "untracked").write_text("u")
+    for k in ("GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM"):
+        monkeypatch.setenv(k, env[k])
+    monkeypatch.setattr(pf, "REPO", tmp_path)
+    assert pf.changed_paths(None) == ["a", "committed", "untracked"]
+
+
+def test_no_changed_paths_warns(monkeypatch, capsys):
+    monkeypatch.setattr(pf, "changed_paths", lambda base: [])
+    assert pf.main(["--plan"]) == 0
+    assert "WARNING: no changed paths" in capsys.readouterr().out

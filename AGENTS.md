@@ -2,6 +2,8 @@
 
 Canonical orientation for AI coding agents working in this repository. Agent-agnostic — Claude Code, Codex, Cursor, Copilot, etc. Claude-specific extras (skills, MCP servers) live in `CLAUDE.md`.
 
+**This project is agent-driven.** Its commits, patches and docs are written by AI coding agents (Claude Code, Codex, Kiro) under the maintainer's direction and review; the maintainer is the commit author and answers for every change. Because that holds for the whole repository, individual commits do not carry an AI attribution trailer — see §"AI attribution".
+
 ## What this repo is
 
 A Yocto/OpenEmbedded distribution (`iotgw`) for the Raspberry Pi 5, built with KAS. Produces hardened IoT-gateway images that boot SELinux enforcing on every image and ship rootless Podman containers as a first-class feature, with mandatory signed FIT boot, a dm-verity root, RAUC A/B OTA, and optional OpenThread Border Router, TPM and DEEPX DX-M1 support. AppArmor is not used.
@@ -23,6 +25,7 @@ make parse               # bitbake -p (parse-only sanity — cheapest validation
 make layers              # bitbake-layers show-layers
 make test                # host test suites (SUITE= picks one; no build)
 make info                # effective composition for IMAGE= (no build)
+make shell               # interactive kas shell in IMAGE='s composition (ad-hoc bitbake)
 make clean-lock          # remove a stale bitbake.lock (refuses a live one)
 ```
 
@@ -50,7 +53,7 @@ The Makefile picks `BASE = kas/local.yml` if present, else `kas/rauc.yml` (RAUC 
 - `kas/otbr.yml`, `kas/tpm.yml`, `kas/cve.yml`, `kas/spdx.yml` — feature overlays
 - `kas/uboot-prod-hardening.yml` — composed with `prod` and `bundle IMAGE=prod`; required (the target fails if it is missing)
 - `kas/fit-release-trust.yml` — release FIT trust profile (YubiKey anchor only); composed with `prod` and `bundle IMAGE=prod`; required
-- `kas/deepx.yml` — DEEPX DX-M1 layer + `IOTGW_ENABLE_DEEPX_DXM1=1`; composed by every non-prod composition (`base`, `dev`, their bundles, and `parse`/`layers`/`bitbake-task`/`sbom-cve` at the default `IMAGE=dev`) and included by `kas/desktop.yml`. Prod stays without it until the module-signing key is protected (`docs/DEEPX_DXM1.md` §7)
+- `kas/deepx.yml` — DEEPX DX-M1 layer + `IOTGW_ENABLE_DEEPX_DXM1=1`; composed by every non-prod composition (`base`, `dev`, their bundles, and `parse`/`layers`/`shell`/`sbom-cve` at the default `IMAGE=dev`) and included by `kas/desktop.yml`. Prod stays without it until the module-signing key is protected (`docs/DEEPX_DXM1.md` §7)
 - `kas/desktop.yml` — desktop image variant; includes `kas/deepx.yml` (the desktop is the AI demo station)
 
 Shared layers are not cloned manually: kas checks them out into the gitignored `.kas/` (`KAS_WORK_DIR`) using bare-mirror alternates from `KAS_REPO_REF_DIR` (an operator-local layer cache set by `scripts/env.sh`), preserving the SHA pins in `rpi5.yml`. `kas/local.yml` supplies the shared `DL_DIR`/`SSTATE_DIR`.
@@ -122,7 +125,7 @@ scripts/                     # host-side tooling (release, OTA bench, signing, T
 - **Recipe & patch conventions** — HOMEPAGE, patch identity/attribution, `Upstream-Status` taxonomy, `/root` paths, `SYSTEMD_AUTO_ENABLE`, and the sstate patch-header rebuild gotcha live in `.claude/rules/recipe-conventions.md`. Read it before authoring a recipe or shipping a patch.
 - **Cross-compile target is aarch64-poky-linux** — `.claude/rules/cross-compilation.md` covers SDK setup, CMake/Rust/Go specifics, and verification commands.
 - **Public-repo discipline** — committed files reference only repo-relative paths or public `docs/`; never absolute `/home/<user>/...` paths, device IPs, or home-lab topology. Operator-local material goes in `kas/local.yml` / `scripts/env.sh`-managed locations (gitignored).
-- **Commit style**: `<type>(<scope>): <subject>` — imperative, no period. Types: `feat|fix|docs|refactor|test|chore|build|ci|perf|style|revert` — the set `cliff.toml` parses; anything else lands in the changelog's "Other" bucket. Scopes may be hyphenated (`ota-certs`, `sbom-cve`) or comma-composed (`fit,uboot`). Enforced by the `commit-msg` hook. Prefer a lowercase subject, but leading initialisms (`CVE`, `FIT`, `TPM`) are fine and the hook does not block them. AI-assisted commits carry attribution trailers — see §"AI attribution in commits".
+- **Commit style**: `<type>(<scope>): <subject>` — imperative, no period. Types: `feat|fix|docs|refactor|test|chore|build|ci|perf|style|revert` — the set `cliff.toml` parses; anything else lands in the changelog's "Other" bucket. Scopes may be hyphenated (`ota-certs`, `sbom-cve`) or comma-composed (`fit,uboot`). Enforced by the `commit-msg` hook. Prefer a lowercase subject, but leading initialisms (`CVE`, `FIT`, `TPM`) are fine and the hook does not block them. No AI attribution trailers — see §"AI attribution".
 - **Commit body length scales with the change**: trivial (bump, rename, typo, a few lines) — no body or 1–2 lines; normal — at most 10 lines: what and why, plus one line on what verified it; large or behaviour-changing — at most 25. Long evidence goes in `docs/` or the PR, and the body points to it. The `commit-msg` hook blocks bodies over 25 lines (trailers and blank lines not counted).
 - **Branch naming**: `<type>-<scope>-<subject>`, matching commit style (e.g. `feat-rauc-pki-yubikey-stage1`).
 - **PR scope**: bundle trivial recipe/version bumps into a related feature PR rather than landing them standalone.
@@ -140,8 +143,10 @@ make hooks     # run once after cloning; idempotent
   `keys/`. Defense-in-depth over `.gitignore`, which does not stop
   `git add -f` or a `git mv` into `keys/`. Checks renames too.
 - `commit-msg` — enforces the Conventional Commit subject above, so the
-  git-cliff release notes stay parseable, and the 25-line body cap.
-  Merge/revert/fixup subjects pass through untouched.
+  git-cliff release notes stay parseable, the 25-line body cap, and no AI
+  `Co-Authored-By:` (§"AI attribution"). Merge/revert/fixup subjects skip
+  the subject check; the AI co-author and pattern checks apply to every
+  message.
 - Both also apply an optional per-clone pattern list,
   `.git/info/commit-patterns` (untracked; one regex per line), to added
   lines and commit messages. No file, no check.
@@ -151,40 +156,31 @@ make hooks     # run once after cloning; idempotent
 a security control on its own — CI and review still are. Escape hatch for
 a hook you are certain is wrong: `git commit --no-verify`.
 
-## AI attribution in commits
+## AI attribution
 
-Every commit an agent contributed to ends with an `Assisted-by:` trailer naming
-the tool and the **exact model that did the work**:
+The project is agent-driven (top of this file), so attribution is stated once,
+here, instead of on every commit.
 
-```
-Assisted-by: <tool>:<model-id>
-```
+- **No `Assisted-by:` trailer** on new commits or newly written patches.
+  Commits and patches that already carry one keep it: history is not rewritten,
+  and a patch header edit forces a rebuild (`.claude/rules/recipe-conventions.md`).
+- **No `Co-Authored-By:` for an AI tool** — not in commits, not in PR bodies. It
+  claims authorship by something that cannot hold it. The `commit-msg` hook
+  blocks it. A bot co-author that is not an AI tool (e.g. `dependabot[bot]`)
+  passes.
+- **The maintainer is the author** and is responsible for having reviewed what
+  the agents produced. No agent adds a `Signed-off-by:` on its own initiative.
+- When how a change was made matters to its review — a model-written
+  migration, a fix taken from an automated finding — say so in the PR
+  description, where it can be explained, not in a trailer.
+- Patches sent upstream follow the receiving project's rules at submission
+  time.
 
-Tool names in use: `claude-code`, `codex`, `kiro`. The model id half is
-deliberately shown as a placeholder here and nowhere spelled out — see the first
-rule below.
-
-- **Never copy a model id out of this file, `CLAUDE.md`, or a past commit.**
-  State the model the session is actually running as. A doc-pinned model string
-  goes stale the moment the next release ships, and every agent that copies it
-  writes a trailer that is quietly false.
-- **One trailer per model that touched the change, in the order they touched
-  it.** If Sonnet drafted and Opus later reviewed and amended, both lines stay.
-  That is the whole point: a later reader — human or model — can see which model
-  produced the original reasoning and which one revised it.
-- **Never drop an earlier agent's trailer when amending.** The trailer records
-  participation, not the largest share.
-- Attribution is not certification. The operator remains the commit author and
-  is responsible for having reviewed what the agent produced.
-
-**Patches are not commits.** Shipped `.patch` files carry their own headers
-and their own rules — including the hard rule that a `Backport` patch's header
-is never touched. See `.claude/rules/recipe-conventions.md` §"AI attribution in
-patch headers" before adding a trailer to anything under `files/`.
-
-Rationale: provenance matters more than terse messages — commits originate
-from several tools (Claude Code, Codex), and knowing which model reasoned about
-a change is what makes a later review of it auditable.
+Background: the Linux kernel asked for an `Assisted-by:` tag from 7.0 and
+removed it again in mainline commit `1e035297ffda` ("docs: remove Assisted-by
+references"): a per-patch tag that many contributors leave off gives no
+reliable signal, and how tools were used belongs in the cover letter. This
+repository took the trailer from there and drops it for the same reason.
 
 ## Validating behaviour changes
 

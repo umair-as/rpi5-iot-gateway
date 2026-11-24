@@ -13,9 +13,9 @@ Two tiers:
            build/bitbake.lock, and agent-build.py holds
            build/.agent-build.lock for its whole run.
 
-Changed paths default to the working tree against HEAD, untracked files
-included. --base REF compares against REF instead; --paths takes an
-explicit list.
+Changed paths default to everything since the merge base with origin/main
+(else main): the branch's commits, uncommitted changes and untracked files.
+--base REF compares against REF instead; --paths takes an explicit list.
 
 Usage:
   scripts/preflight/preflight.py [--plan] [--bitbake] [--base REF] [--paths P ...]
@@ -50,6 +50,18 @@ def make(*args):
     return ("make", "--no-print-directory", *args)
 
 
+# The bitbake tier runs fixed BitBake commands in the default (dev)
+# composition: `kas shell <stack> -c <command>`, with the stack from
+# `make stack`. Commands are built here from fixed text and recipe names that
+# pass PN_RE, never from free text.
+KAS_SHELL = "kas-shell"
+PN_RE = re.compile(r"^[a-z0-9][a-z0-9.+_-]*$")
+
+
+def kas_task(command):
+    return (KAS_SHELL, command)
+
+
 CHECKS = {
     c.key: c for c in (
         Check("selinux-policy", "host",
@@ -71,12 +83,14 @@ CHECKS = {
               (make("test", "SUITE=preflight"),)),
         Check("host-tools", "host", "TPM store and SSH helper tests",
               (make("test", "SUITE=host-tools"),)),
+        Check("tooling", "host", "commit-msg hook, make shell/stack and preflight command tests",
+              (make("test", "SUITE=tooling"),)),
         Check("refpolicy-compile", "bitbake",
               "refpolicy-mcs do_compile (checkmodule on the iotgw module)",
-              (make("bitbake-task", "BB_TASK=refpolicy-mcs -c compile"),)),
+              (kas_task("bitbake refpolicy-mcs -c compile"),)),
         Check("kernel-configure", "bitbake",
               "kernel do_configure (fragment merge + keep-block gate)",
-              (make("bitbake-task", "BB_TASK=virtual/kernel -c configure"),)),
+              (kas_task("bitbake virtual/kernel -c configure"),)),
         Check("recipe-patch", "bitbake",
               "do_patch on the touched recipes (SRC_URI files present, patches apply)",
               ()),  # argv built per run from the touched recipes
@@ -145,6 +159,8 @@ def classify(path):
         keys.add("preflight")
     if p.startswith(("scripts/tpm/", "scripts/lib/")) or p in HOST_SSH_SCRIPTS:
         keys.add("host-tools")
+    if p.startswith(("scripts/hooks/", "scripts/tests/")) or p == "Makefile":
+        keys.add("tooling")
     if recipe_names(p):
         keys.add("recipe-patch")
     if (p.endswith(METADATA_SUFFIXES) and p.startswith(LAYER)) \
@@ -158,9 +174,23 @@ def changed_paths(base):
         out = subprocess.run(("git", *args), cwd=REPO, check=True,
                              capture_output=True, text=True).stdout
         return [line for line in out.splitlines() if line]
-    paths = git("diff", "--name-only", base or "HEAD")
+
     if not base:
-        paths += git("ls-files", "--others", "--exclude-standard")
+        base = "HEAD"
+        for ref in ("origin/main", "main"):
+            probe = subprocess.run(
+                ("git", "rev-parse", "--quiet", "--verify", ref + "^{commit}"),
+                cwd=REPO,
+                capture_output=True,
+                check=False,
+            )
+            if probe.returncode == 0:
+                base = git("merge-base", ref, "HEAD")[0]
+                break
+    # git diff <commit> compares that commit with the working tree: committed
+    # and uncommitted changes alike.
+    paths = git("diff", "--name-only", "--no-renames", base)
+    paths += git("ls-files", "--others", "--exclude-standard")
     return sorted(set(paths))
 
 
@@ -213,6 +243,10 @@ def build_dir_busy():
 
 
 def run(argv):
+    if argv[0] == KAS_SHELL:
+        stack = subprocess.run(make("-s", "stack"), cwd=REPO, check=True,
+                               capture_output=True, text=True).stdout.strip()
+        argv = (os.environ.get("KAS", "kas"), "shell", stack, "-c", argv[1])
     print("  $ " + " ".join(argv), flush=True)
     return subprocess.run(argv, cwd=REPO).returncode
 
@@ -221,7 +255,7 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--plan", action="store_true", help="print the plan, run nothing")
     ap.add_argument("--bitbake", action="store_true", help="also run the bitbake tier")
-    ap.add_argument("--base", help="compare against REF instead of the working tree vs HEAD")
+    ap.add_argument("--base", help="compare against REF instead of the merge base with main")
     ap.add_argument("--paths", nargs="+", help="explicit changed paths (repo-relative)")
     args = ap.parse_args(argv)
 
@@ -242,9 +276,12 @@ def main(argv=None):
     checks = dict(CHECKS)
     if "recipe-patch" in selected:
         pns = sorted(set().union(*(recipe_names(p) for p in selected["recipe-patch"])))
+        bad = [pn for pn in pns if not PN_RE.match(pn)]
+        if bad:
+            raise SystemExit(f"preflight: refusing unexpected recipe names: {bad}")
         checks["recipe-patch"] = Check(
             "recipe-patch", "bitbake", CHECKS["recipe-patch"].what + ": " + " ".join(pns),
-            (make("bitbake-task", "BB_TASK=" + " ".join(pns) + " -c patch"),))
+            (kas_task("bitbake " + " ".join(pns) + " -c patch"),))
         if len(pns) > 10:
             print(f"note: do_patch spans {len(pns)} recipes and recreates their WORKDIRs; "
                   "narrow with --base REF or --paths")
@@ -252,6 +289,10 @@ def main(argv=None):
     bb = [checks[k] for k in checks if k in selected and checks[k].tier == "bitbake"]
 
     print(f"preflight: {len(paths)} changed path(s)")
+    if not paths and not args.paths:
+        print(
+            "  WARNING: no changed paths, so nothing is checked; give --base REF or --paths"
+        )
     for c in host + bb:
         n = len(selected[c.key])
         print(f"  [{c.tier:7}] {c.key:22} {c.what}  ({n} path(s), e.g. {selected[c.key][0]})")
