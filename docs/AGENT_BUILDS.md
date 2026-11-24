@@ -67,7 +67,10 @@ and the source: commit, branch and the dirty files at launch.
 `started.json` records actual startup; `result.json` records make's exit code and
 finish time. Only a recorded zero exit code means success. A negative code means
 make was killed by that signal (`-2` is Ctrl-C); `status` reports it as
-`interrupted` with the signal number, not as `failed`. A missing result with
+`interrupted` with the signal number, not as `failed`. make can also exit 2
+after a Ctrl-C (when it reaps the interrupted child first), so the supervisor
+records `"interrupted": true` in `result.json` itself, and any run with that
+flag is reported as `interrupted`, whatever the exit code. A missing result with
 a dead or missing pane means unknown/interrupted. Logging can fail independently
 (for example, a full filesystem); a successful build is not proof of a complete log.
 
