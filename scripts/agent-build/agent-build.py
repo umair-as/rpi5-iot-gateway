@@ -107,13 +107,20 @@ def runner(run):
         env = meta["environment"] | {"TERM": os.environ.get("TERM", "screen")}
         write_json(run / "started.json", {"started": now()})
         print("+ " + shlex.join(meta["command"]), flush=True)
-        # Ctrl-C reaches make through the pane's foreground process group.
-        # Keep the supervisor alive long enough to record make's exit status.
-        signal.signal(signal.SIGINT, lambda *_: None)
+        # Ctrl-C reaches make through the pane's foreground process group, and
+        # this supervisor with it. The supervisor stays alive to record make's
+        # status and notes the interrupt itself: make exits 2, not by signal,
+        # when its interrupted child is reaped first (and bitbake always exits
+        # cleanly on SIGINT), so the exit code alone cannot tell.
+        interrupted = []
+        signal.signal(signal.SIGINT, lambda *_: interrupted.append(True))
         process = subprocess.Popen(meta["command"], cwd=meta["worktree"], env=env,
                                    pass_fds=(lock.fileno(), host_lock.fileno()))
         code = process.wait()
-        write_json(run / "result.json", {"finished": now(), "exit_code": code})
+        result = {"finished": now(), "exit_code": code}
+        if interrupted:
+            result["interrupted"] = True
+        write_json(run / "result.json", result)
         print(f"\nBUILD EXIT={code}", flush=True)
         return code if code >= 0 else 128 - code
 
@@ -240,6 +247,9 @@ def result_state(run):
     # build (Ctrl-C is -2), not a failing one.
     if code < 0:
         return {"state": "interrupted", "signal": -code, **result}
+    # A non-zero exit after the supervisor saw Ctrl-C is an interruption too.
+    if code != 0 and result.get("interrupted"):
+        return {"state": "interrupted", "signal": signal.SIGINT.value, **result}
     return {"state": "succeeded" if code == 0 else "failed", **result}
 
 
