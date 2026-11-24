@@ -97,7 +97,7 @@ repository's `AGENTS.md`.
 
 ## 👤 Maintainer
 
-**Umair A.S** • [@umair-as](https://github.com/umair-as)
+**Umair A.S** • [@umair-as](https://github.com/umair-as) • 11776979+umair-as@users.noreply.github.com
 
 ---
 
