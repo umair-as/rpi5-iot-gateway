@@ -3,28 +3,47 @@
 # ("Commit style"). cliff.toml routes release notes off these subjects on
 # `v*` tag push — an off-pattern subject does not fail anything loudly, it
 # just lands in the "Other" bucket and quietly degrades the changelog.
+# Also enforces AGENTS.md "AI attribution": no AI `Co-Authored-By:`.
 # Override (only if you are certain) with: git commit --no-verify
 set -euo pipefail
 
 msg_file="$1"
 
+# The message as git will record it, for the content checks. A `commit -v`
+# message carries the diff below the scissors line, which git drops. '#'
+# lines are kept by `git commit -m/-F`, so they are checked, except git's own
+# editor template (branch, status, file lists): it names branches and staged
+# paths and is never recorded.
+template='^#(	|$| (Please enter|Lines starting|with .#. will|On branch|Your branch|HEAD detached|Changes (to be|not staged)|Untracked files|You are|Author:|Date:|interactive rebase|Last command|Next command|No commands|It looks like|and try again|Explicit paths))'
+raw="$(sed '/^# -\{24\} >8 -\{24\}$/,$d' "$msg_file" | grep -vE "$template" || true)"
+
 # Subject = first line that is neither blank nor a git comment.
-subject="$(grep -vE '^[[:space:]]*(#|$)' "$msg_file" | head -1 || true)"
+subject="$(grep -vE '^[[:space:]]*(#|$)' <<<"$raw" | head -1 || true)"
 
 # Empty message: git aborts on its own, nothing to add.
 [ -z "$subject" ] && exit 0
 
-# Optional per-clone patterns (see commit-patterns.sh). Git comment lines
-# are skipped: they never reach history.
+# Optional per-clone patterns (see commit-patterns.sh).
 . "$(dirname "$0")/commit-patterns.sh"
 pat="$(commit_patterns)"
 if [ -n "$pat" ]; then
-    hits="$(grep -vE '^#' "$msg_file" | grep -nEi -e "$pat" | sed 's/^/  /' || true)"
+    hits="$(grep -nEi -e "$pat" <<<"$raw" | sed 's/^/  /' || true)"
     if [ -n "$hits" ]; then
         printf '\nCOMMIT BLOCKED — message matches a local commit pattern:\n%s\n\n' "$hits" >&2
         printf 'Override only if certain: git commit --no-verify\n\n' >&2
         exit 1
     fi
+fi
+
+# No AI tool is a co-author (AGENTS.md "AI attribution"). Checked on every
+# message, fixups included: a fixup's lines survive into the squashed commit.
+# A plain bot co-author (e.g. dependabot[bot]) is not an AI tool and passes.
+ai_coauthor='^co-authored-by:.*(claude|anthropic|codex|openai|copilot|kiro|gemini|cursor)'
+hits="$(grep -nEi -e "$ai_coauthor" <<<"$raw" | sed 's/^/  /' || true)"
+if [ -n "$hits" ]; then
+    printf '\nCOMMIT BLOCKED — AI Co-Authored-By trailer:\n%s\n\n' "$hits" >&2
+    printf 'Drop the line. See AGENTS.md "AI attribution".\n\n' >&2
+    exit 1
 fi
 
 # Subjects git itself generates, or that rebase consumes before they ever
@@ -40,7 +59,7 @@ types='feat|fix|docs|refactor|test|chore|build|ci|perf|style|revert'
 
 # Scope charset covers this repo's real scopes: hyphenated (ota-certs,
 # sbom-cve, machine-id) and comma-composed multi-scope (fit,uboot).
-if ! printf '%s' "$subject" | grep -qE "^(${types})(\([a-z0-9][a-z0-9._,/-]*\))?!?: .+"; then
+if ! grep -qE "^(${types})(\([a-z0-9][a-z0-9._,/-]*\))?!?: .+" <<<"$subject"; then
     printf '\nCOMMIT BLOCKED — subject is not a Conventional Commit:\n\n  %s\n\n' "$subject" >&2
     printf 'Expected: <type>(<scope>): <subject>\n' >&2
     printf 'Types:    %s\n' "${types//|/, }" >&2

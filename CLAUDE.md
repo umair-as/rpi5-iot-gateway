@@ -16,11 +16,13 @@ Repo-local skills in `.claude/skills/` — invoke when the task fits:
 - `yocto-worktree` — isolated worktrees for subagent/parallel builds: `kas/local.yml` seeding, shared-cache verification, branch rename-before-PR, locked-worktree cleanup
 - `prebuild-gate` — run `make preflight` before any image build: maps changed paths to the cheapest check (policy source check, fragment gate, boot-script tests, do_patch, refpolicy compile, kernel configure, parse)
 - `ota-bench-test` — operator-invoked only: OTA-only bench test of a new bundle (baseline, local install, recovery, streaming, tampered-bundle rejection) with a results log
+- `pr-ready` — operator-invoked only: finished branch to open PR (on-target gate, `make test` + `make preflight`, diff and commit hygiene, independent review, terse PR body with a Learn/Guard/Review/Score Workflow section)
 
-Two repo-local subagents in `.claude/agents/`:
+Three repo-local subagents in `.claude/agents/`:
 
 - `selinux-policy-reviewer` — read-only review of `iotgw.te/.if/.fc` and the `/data` file-context files against the pinned refpolicy source; run it before compiling a policy change
 - `build-watcher` — watches one `agent-build.py` run and reports the outcome, or the first causal error, in five lines
+- `yocto-rules-reviewer` — read-only review of a recipe/patch/kas diff against `.claude/rules/*.md`; reports only violations, each with file:line, the rule and a fix
 
 BitBake failure triage lives in `.claude/rules/yocto-patterns.md`.
 
@@ -32,27 +34,10 @@ Before starting build-running/build-polluting work or a substantial multi-file c
 
 ## Commit trailers
 
-The canonical rule is `AGENTS.md` §"AI attribution in commits": an
-`Assisted-by: <tool>:<model-id>` line per model that touched the change. From
-Claude Code that is `Assisted-by: claude-code:<the model id you are running as>`.
-
-**Do not add `Co-Authored-By:` for an AI tool** — not in commits, not in PR
-bodies. This overrides the harness default, which emits one; drop that line.
-`Assisted-by:` already records the same participation and records it better:
-it names the exact tool and model, one line per model in the order they
-touched the change. `Co-Authored-By:` asserts conventional authorship by
-something that cannot hold it, and duplicates a fact the line above states
-precisely. One label, deliberately.
-
-Applies to **new** commits from 2026-08-11 onward. Existing history keeps
-whatever it carries — do not retrofit, amend or rewrite past commits to match.
-A mixed history is honest; a rewritten one destroys the record the trailer
-exists to provide.
-
-**Do not copy a model name from this file or from a past commit.** This section
-deliberately contains no literal model id — read your own model identity from
-your instructions and write that. A pinned string goes stale silently and turns
-the audit trail into fiction.
+The rule is `AGENTS.md` §"AI attribution": no `Assisted-by:` trailer, and
+**no `Co-Authored-By:` for an AI tool** — not in commits, not in PR bodies.
+This overrides the harness default, which emits a `Co-Authored-By:` line;
+drop it. The `commit-msg` hook refuses it.
 
 ## Serial console + target diagnostics MCPs
 

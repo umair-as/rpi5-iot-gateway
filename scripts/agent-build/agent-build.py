@@ -29,7 +29,7 @@ import uuid
 SELF = Path(__file__).resolve()
 SOCKET = "iotgw-builds"
 # Makefile targets that end up running bitbake; keep in step with the Makefile.
-BUILD_TARGETS = {"base", "dev", "prod", "desktop", "bundle", "parse", "layers", "bitbake-task",
+BUILD_TARGETS = {"base", "dev", "prod", "desktop", "bundle", "parse", "layers",
                  "sbom-cve", "cve-report", "sbom-report", "kernel-hardening-report"}
 RUNNING = r"bin/(bitbake|bitbake-server|kas|kas-container)( |$)"
 # One BitBake build per host, across worktrees and build directories. The
