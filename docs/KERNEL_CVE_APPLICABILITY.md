@@ -85,7 +85,7 @@ python3 scripts/sbom-cve/cve-report.py -i "$R" --strict --require-latest
 
 ```bash
 # Derive the expected version from the build — do not type it from memory.
-LV=$(. scripts/env.sh >/dev/null 2>&1 && kas shell kas/local.yml:kas/cve.yml \
+LV=$(. scripts/env.sh >/dev/null 2>&1 && kas shell kas/local.yml:kas/tpm.yml:kas/deepx.yml:kas/cve.yml \
        -c 'bitbake-getvar -q -r linux-iotgw-mainline --value LINUX_VERSION' \
        2>/dev/null | tail -1)
 

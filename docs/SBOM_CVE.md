@@ -94,7 +94,7 @@ bitbake:
 ```bash
 # 0. Resolve DL_DIR through the same configuration the build uses.
 DL_DIR=$(. scripts/env.sh >/dev/null 2>&1 && \
-         kas shell kas/local.yml:kas/cve.yml \
+         kas shell kas/local.yml:kas/tpm.yml:kas/deepx.yml:kas/cve.yml \
            -c 'bitbake-getvar -q --value DL_DIR' 2>/dev/null | tail -1)
 [ -d "$DL_DIR" ] || { echo "DL_DIR did not resolve: '$DL_DIR'"; exit 1; }
 
@@ -114,7 +114,7 @@ git -C "$DL_DIR/git2/github.com.fkie-cad.nvd-json-data-feeds.git" log -1 --forma
 # 4. Confirm BOTH new values actually bind, in RECIPE context, before starting a
 #    long build. Two pins were edited, so two must be verified — checking only
 #    one leaves the other free to be a typo that silently keeps the old database.
-. scripts/env.sh && kas shell kas/local.yml:kas/cve.yml -c "\
+. scripts/env.sh && kas shell kas/local.yml:kas/tpm.yml:kas/deepx.yml:kas/cve.yml -c "\
   bitbake-getvar -q -r sbom-cve-check-update-cvelist-native --value SRCREV; \
   bitbake-getvar -q -r sbom-cve-check-update-nvd-native     --value SRCREV"
 ```
