@@ -48,8 +48,10 @@ dependencies. A distro layer must then:
    project.
 3. **telegraf fetches during `do_compile`.** The check also refuses network
    access in any task other than fetch; the telegraf recipe's Go build fetches
-   its modules at compile time. The recipe is in no image, and whether to keep
-   and update it or drop it is under review.
+   its modules at compile time. The observability recipes are masked unless
+   `IOTGW_ENABLE_OBSERVABILITY = "1"`, so iotgw builds never parse it; the
+   check, which runs without the distro, still sees it. Building it offline
+   (`go-mod-update-modules`) is the fix when the stack is switched on.
 
 Revisit these if the layer is ever offered for reuse outside this project.
 

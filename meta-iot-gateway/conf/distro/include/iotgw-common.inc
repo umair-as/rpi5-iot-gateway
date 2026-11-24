@@ -94,6 +94,13 @@ KERNEL_BOOTCMD = "bootm"
 BBMASK:append = " .*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi.*\\.(bb|bbappend)"
 BBMASK:append = " .*/meta-raspberrypi/recipes-kernel/linux/linux-raspberrypi-v7.*\\.(bb|bbappend)"
 
+# Observability stack (telegraf, influxdb3-bin, the influxdb append): kept in
+# the layer for the planned MQTT/InfluxDB/Telegraf deployment, but parsed and
+# built only when switched on. Off, BBMASK hides recipes-observability/
+# entirely; no image installs any of it yet.
+IOTGW_ENABLE_OBSERVABILITY ?= "0"
+BBMASK:append = "${@'' if bb.utils.to_boolean(d.getVar('IOTGW_ENABLE_OBSERVABILITY')) else ' .*/meta-iot-gateway/recipes-observability/'}"
+
 # FIT signing algorithms (control-DTB pubkey injection + FIT config signature).
 FIT_HASH_ALG = "sha256"
 FIT_SIGN_ALG = "rsa2048"

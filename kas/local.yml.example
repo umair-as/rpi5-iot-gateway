@@ -242,6 +242,12 @@ local_conf_header:
     # Optional overlay override if wiring/CS differs:
     # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
 
+  observability: |
+    # Telegraf, InfluxDB 3 and the influxdb hardening append. Masked unless
+    # switched on: the recipes stay in the layer, nothing parses or builds
+    # them. Turn on together with adding them to an image.
+    # IOTGW_ENABLE_OBSERVABILITY = "1"
+
   ota_tpm_mtls: |
     # OTA updater TPM-backed mTLS key flow. Off by default; enable once the
     # device keys are provisioned. When enabled:
