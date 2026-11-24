@@ -232,25 +232,19 @@ local_conf_header:
     # BUILDHISTORY_FEATURES:remove = "package"
 
   tpm: |
-    # === TPM (SLB9672 over SPI) — one switch, off by default ===
-    # Composing kas/tpm.yml (add it to `includes:` above) brings the TPM layers
-    # and sets IOTGW_ENABLE_TPM = "1", which turns on together: the SPI TPM
-    # profile + firmware overlay, the crypto providers (tpm2-pkcs11,
-    # tpm2-openssl, tpm2-tss-engine), OTA updater TPM mTLS and PKCS#11 RAUC
-    # streaming. The target then needs its TPM-backed device keys provisioned
-    # (scripts/ota/ota-pkcs11-provision-check.sh), or streaming cannot
-    # authenticate.
-    # Keep kas/tpm.yml included but switch the TPM off (its layers also carry
-    # meta-integrity, which IMA needs) by overriding the same block name:
-    # tpm_spi: |
-    #   IOTGW_ENABLE_TPM = "0"
-    # IOTGW_ENABLE_TPM = "1"
+    # === TPM (SLB9672 over SPI) — part of every image ===
+    # The board carries the TPM, so the Makefile composes kas/tpm.yml into
+    # every image: SPI TPM profile + firmware overlay and the crypto providers
+    # (tpm2-pkcs11, tpm2-openssl, tpm2-tss-engine). The features that need
+    # TPM-backed device keys provisioned on the target
+    # (scripts/ota/ota-pkcs11-provision-check.sh) stay off until you opt in:
+    # see ota_tpm_mtls and rauc_pkcs11_streaming below.
     # Optional overlay override if wiring/CS differs:
     # IOTGW_TPM_DTO_OVERLAY = "tpm-slb9670"
 
   ota_tpm_mtls: |
-    # OTA updater TPM-backed mTLS key flow. Follows IOTGW_ENABLE_TPM; set it
-    # only to diverge from the switch. When enabled:
+    # OTA updater TPM-backed mTLS key flow. Off by default; enable once the
+    # device keys are provisioned. When enabled:
     # - ota-updater uses TPM key handle URI instead of /etc/ota/device.key
     # - ota-certs allows keyless cert provisioning (device.crt + ca.crt)
     # IOTGW_ENABLE_OTA_TPM_MTLS = "1"
@@ -259,8 +253,8 @@ local_conf_header:
     # IOTGW_OTA_OPENSSL_CONF = "/etc/ota/openssl-tpm2.cnf"
 
   rauc_pkcs11_streaming: |
-    # RAUC streaming key mode. Follows IOTGW_ENABLE_TPM (pkcs11 with the TPM on,
-    # file with it off); set it only to diverge from the switch.
+    # RAUC streaming key mode. Default "file"; switch to "pkcs11" once the
+    # TPM-backed device keys are provisioned.
     # IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
     # IOTGW_RAUC_PKCS11_BACKEND = "tpm2"
     # TPM2 preset (defaults in layer):
@@ -313,10 +307,10 @@ local_conf_header:
     # Profile A': the DEFAULT — file-key mTLS, bundles encrypted (crypt).
     # Needs only a recipient source:
     # RAUC_OTA_CA_DIR = "$HOME/rauc-keys/ota-dev-ca"
-    # Profile B: full TPM + PKCS#11 + encrypted-bundle lane (include
-    # kas/tpm.yml; its IOTGW_ENABLE_TPM = "1" sets the TPM mTLS and PKCS#11
-    # streaming defaults)
-    # IOTGW_ENABLE_TPM = "1"
+    # Profile B: full TPM + PKCS#11 + encrypted-bundle lane (device keys
+    # provisioned; the TPM itself is in every image)
+    # IOTGW_ENABLE_OTA_TPM_MTLS = "1"
+    # IOTGW_RAUC_STREAMING_KEY_MODE = "pkcs11"
     # IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION = "1"
     # IOTGW_RAUC_BUNDLE_ENCRYPT_RECIPIENTS = "/home/you/rauc-keys/ota-dev-ca/device-filekey.crt"
     # IOTGW_RAUC_ENCRYPTION_KEY = "/etc/ota/device.key"
@@ -330,7 +324,8 @@ local_conf_header:
   # --- Feature switches (each is a layer on/off; off unless noted) ---
   otbr_toggle: |
     # Native OpenThread Border Router (otbr-rpi5) in dev + prod images. Needs an
-    # RCP radio dongle on the target. kas/otbr.yml sets the same switch.
+    # RCP radio dongle on the target. `IOTGW_ENABLE_OTBR=1 make <image>` sets it
+    # for one build.
     # IOTGW_ENABLE_OTBR = "1"
     # Infrastructure link of the Border Router: wlan0 (default) or br0 (wired;
     # gives br0 an IPv6 link-local address and accepts router advertisements).
@@ -362,8 +357,9 @@ local_conf_header:
     # IOTGW_OTA_SERVER_URL = "https://ota.example.invalid:8443"
     # IOTGW_OTA_MANIFEST_PATH = "/api/v1/manifest.json"
   nodejs_runtime: |
-    # The OTBR web UI needs a newer Node.js than the default 20.x.
-    # IOTGW_NODEJS_BIN_VERSION = "22.22.0"
+    # Node.js for the OTBR web UI. The distro default (24.x LTS) is the only
+    # version with a recipe; override only to test a newly added one.
+    # IOTGW_NODEJS_BIN_VERSION = "24.22.3"
   rtc_test: |
     # RPi5 RTC battery charge target (3.0 V), for bring-up validation only.
     # RPI_EXTRA_CONFIG:append = "\ndtparam=rtc_bbat_vchg=3000000\n"

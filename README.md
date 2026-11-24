@@ -23,7 +23,7 @@ A **hardened, embedded Linux distribution** for IoT gateway deployments on Raspb
 - 📦 **Containers, first-class** — rootless Podman in every image: dedicated service account, Quadlet units, `pasta` networking, seccomp, store under `/data`, workloads confined as `container_t`; Buildah/Skopeo opt-in (`IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=1`)
 - 🔐 **Verified boot chain** — mandatory signed FIT, dm-verity root authenticated by the FIT
 - 🔄 **A/B OTA Updates** — Rootfs A/B updates with RAUC slot rollback semantics (enabled by default)
-- ⚡ **Hardware-validated AI acceleration** — Optional DEEPX DX-M1 PCIe NPU stack with signed drivers and on-target inference checks
+- ⚡ **Hardware-validated AI acceleration** — DEEPX DX-M1 PCIe NPU stack with signed drivers and on-target inference checks, in every image but prod (yet)
 - 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags, runtime hardening, SBOM and CVE triage
 - 🛠️ **Developer-Friendly** — Tooling for debugging and development
 
@@ -70,7 +70,7 @@ adding a workload, and the acceptance check.
 
 ## ⚡ DEEPX DX-M1 AI Acceleration
 
-The optional DX-M1 stack has completed hardware acceptance on Raspberry Pi 5:
+The DX-M1 stack has completed hardware acceptance on Raspberry Pi 5:
 the signed PCIe driver binds automatically, DX-RT discovers all three NPU
 cores, the unprivileged runtime starts, and the bundled YOLOv5s sample produces
 non-zero NPU utilization during inference. The acceptance suite passes with
@@ -83,7 +83,8 @@ make desktop                      # Desktop lab image, always with DX-M1 + on-sc
 make bundle IMAGE=desktop         # OTA bundle for the desktop lab image
 ```
 
-The accelerator is opt-in and carries proprietary vendor software; images
+The accelerator ships in the base, dev and desktop images (not prod yet) and
+carries proprietary vendor software; images
 built with it must not be redistributed. See the
 [DX-M1 integration guide](docs/DEEPX_DXM1.md),
 [AI acceleration primer](docs/AI_ACCELERATION_101.md), and
@@ -193,7 +194,7 @@ flat single-cert flow.
 
 | Image | Purpose | Includes | Size |
 |-------|---------|----------|------|
-| `iot-gw-image-base` | Minimal base image | Core system, RAUC | Small |
+| `iot-gw-image-base` | Minimal base image | Core system, RAUC, DX-M1 stack | Small |
 | `iot-gw-image-dev` | Development | +Debug tools, compilers | Medium |
 | `iot-gw-image-prod` | Production | Lean runtime, hardened | Minimal |
 | `iot-gw-image-desktop` | Lab/demo image (not hardened) | +Weston, DX-M1 accelerator and on-screen inference demo | Large |

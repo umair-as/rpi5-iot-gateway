@@ -32,7 +32,8 @@ Bundles are deliberately `full-fit`: they carry the matching slot FITs
 (kernel, device tree and command line) alongside the rootfs, so the modules
 always arrive with the kernel that trusts their signing key.
 
-The image targets clean `make-mod-scripts` before building. dev, desktop and
+The base, dev and desktop image targets (and `bundle`, `sbom-cve`) clean
+`make-mod-scripts` before building; prod has no out-of-tree module. dev, desktop and
 prod kernels differ but share the `kernel-build-artifacts` tree, and after a
 build in another composition its stale stamp otherwise breaks `dx-driver` with
 `No rule to make target 'modules'`.

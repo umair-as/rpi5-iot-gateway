@@ -28,6 +28,8 @@ LOCAL ?= kas/local.yml
 BASE  ?= $(if $(wildcard $(LOCAL)),$(LOCAL),$(RAUC))
 
 DEEPX_KAS                ?= kas/deepx.yml
+# The board carries the SLB9672 TPM: every image composes the TPM layers.
+TPM_KAS                  ?= kas/tpm.yml
 DESKTOP_KAS              ?= kas/desktop.yml
 UBOOT_PROD_HARDENING_KAS ?= kas/uboot-prod-hardening.yml
 FIT_RELEASE_TRUST_KAS    ?= kas/fit-release-trust.yml
@@ -43,10 +45,10 @@ CVE_KAS                  ?= kas/cve.yml
 # includes kas/local.yml (no signing key: u-boot do_configure fails) and both
 # files may assign IOTGW_KERNEL_FEATURES with `=`, where the last file kas
 # emits wins.
-STACK_base    = $(BASE):$(DEEPX_KAS)
-STACK_dev     = $(BASE):$(DEEPX_KAS)
-STACK_desktop = $(BASE):$(DESKTOP_KAS)
-STACK_prod    = $(BASE):$(UBOOT_PROD_HARDENING_KAS):$(FIT_RELEASE_TRUST_KAS)
+STACK_base    = $(BASE):$(TPM_KAS):$(DEEPX_KAS)
+STACK_dev     = $(BASE):$(TPM_KAS):$(DEEPX_KAS)
+STACK_desktop = $(BASE):$(TPM_KAS):$(DESKTOP_KAS)
+STACK_prod    = $(BASE):$(TPM_KAS):$(UBOOT_PROD_HARDENING_KAS):$(FIT_RELEASE_TRUST_KAS)
 empty :=
 space := $(empty) $(empty)
 IMAGES  := base dev desktop prod
@@ -74,8 +76,6 @@ one_of = $(if $(and $(filter 1,$(words $(1))),$(call eq,$(1),$(strip $(1)))),$(s
 # Selector checks run in the recipes, so `help` works whatever was passed.
 # $(1) = the image the target builds (fixed image targets only).
 define check_selectors
-	$(if $(SBOM_CVE_IMAGE),$(error SBOM_CVE_IMAGE is replaced by IMAGE=<$(subst $(space),|,$(IMAGES))>, e.g. make sbom-cve IMAGE=prod))
-	$(if $(IMAGE_KAS),$(error IMAGE_KAS is replaced by IMAGE=<$(subst $(space),|,$(IMAGES))>, e.g. make shell IMAGE=desktop))
 	$(if $(call one_of,$(IMAGE),$(IMAGES)),,$(error IMAGE='$(IMAGE)' is not one of: $(IMAGES)))
 	$(if $(1),$(if $(and $(filter command line,$(origin IMAGE)),$(filter-out $(1),$(IMAGE))),$(error $@ builds IMAGE=$(1); drop IMAGE=$(IMAGE) or use a target that takes IMAGE=)))
 endef
@@ -96,11 +96,9 @@ endef
 # module, so it skips the reset.
 mod_scripts_reset = $(if $(filter prod,$(1)),,bitbake make-mod-scripts -c clean && )
 
-# Optional feature toggles, e.g. IOTGW_ENABLE_OTBR=1 make dev
-export IOTGW_ENABLE_OTBR
-export IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS
-export IOTGW_ENABLE_BTF_CORE_DEV
-export IOTGW_ENABLE_DEEPX_DXM1
+# Optional feature toggles, e.g. IOTGW_ENABLE_OTBR=1 make dev. make reads them
+# from the environment; iotgw_bitbake sets them inline in the kas shell, the
+# only way they reach bitbake (kas starts it with a clean environment).
 
 # One kas + bitbake invocation for every kas target. Exports the IOTGW_ENABLE_*
 # toggles into the kas shell env and whitelists them (plus BUNDLE_IMAGE_NAME
@@ -108,11 +106,19 @@ export IOTGW_ENABLE_DEEPX_DXM1
 #   $(1) = command(s) run in the kas shell (an `a && b` chain shares the env)
 #   $(2) = kas composition
 #   $(3) = BUNDLE_IMAGE_NAME (bundles only)
+# Passed to bitbake only when set: an empty value from the environment would
+# override the overlays' and the distro's weak defaults (e.g. kas/deepx.yml's
+# IOTGW_ENABLE_DEEPX_DXM1 ?= "1"). The distro lists them all in
+# BB_ENV_PASSTHROUGH_ADDITIONS; kas starts bitbake with a clean environment,
+# so only what is set here reaches it.
+IOTGW_PASS_IF_SET := IOTGW_ENABLE_DEEPX_DXM1 IOTGW_VERSION_MAJOR IOTGW_VERSION_MINOR \
+                     IOTGW_VERSION_PATCH IOTGW_BUILD_ID
 define iotgw_bitbake
-  $(KAS) shell -c 'export BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS$(if $(3), BUNDLE_IMAGE_NAME) IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV IOTGW_ENABLE_DEEPX_DXM1" \
+  $(KAS) shell -c 'export BB_ENV_PASSTHROUGH_ADDITIONS="$$BB_ENV_PASSTHROUGH_ADDITIONS$(if $(3), BUNDLE_IMAGE_NAME) IOTGW_ENABLE_OTBR IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS IOTGW_ENABLE_BTF_CORE_DEV $(IOTGW_PASS_IF_SET)" \
                    $(if $(3),BUNDLE_IMAGE_NAME=$(3)) IOTGW_ENABLE_OTBR=$(IOTGW_ENABLE_OTBR) \
                    IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS=$(IOTGW_ENABLE_CONTAINERS_IMAGE_TOOLS) \
-                   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV); \
+                   IOTGW_ENABLE_BTF_CORE_DEV=$(IOTGW_ENABLE_BTF_CORE_DEV) \
+                   $(foreach v,$(IOTGW_PASS_IF_SET),$(if $($(v)),$(v)=$($(v)))); \
                    $(1)' $(2)
 endef
 

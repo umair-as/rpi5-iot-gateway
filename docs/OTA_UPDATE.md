@@ -174,8 +174,8 @@ private key. Configure `/etc/ota/updater.conf`:
 
 Notes:
 - `device_key_uri` takes precedence over `device_key`.
-- TPM mode is build-gated by `IOTGW_ENABLE_OTA_TPM_MTLS`, which follows the TPM
-  switch `IOTGW_ENABLE_TPM` (default `0`, the file-key flow).
+- TPM mode is build-gated by `IOTGW_ENABLE_OTA_TPM_MTLS` (default `0`, the
+  file-key flow). It needs TPM-backed device keys provisioned on the target.
 - Current curl builds use OpenSSL engine mode (`tpm2tss`) for TPM handles.
   Provider-based key support is deferred to future curl builds.
 - With TPM mode enabled, `ota-updater.service` gets supplementary `iotgwtpm`
@@ -273,16 +273,14 @@ recipient set. A production fleet needs per-device re-encryption performed
 `classes-recipe/bundle.bbclass`. This layer does not provide such a pipeline;
 it makes no claim of per-device revocation.
 
-**TPM switch** — `IOTGW_ENABLE_TPM = "1"` (set by including `kas/tpm.yml`)
-turns on the TPM hardware profile, OTA updater TPM mTLS and PKCS#11 RAUC
-streaming with the `tpm2` backend together. The profiles below are the
-individual overrides, for diverging from the switch.
+**TPM** — every image carries the TPM hardware profile (the Makefile composes
+`kas/tpm.yml`). The default OTA flow still uses the file key: updater TPM mTLS
+and PKCS#11 RAUC streaming need TPM-backed device keys provisioned on the
+target (`scripts/ota/ota-pkcs11-provision-check.sh`) and are opt-ins, below.
 
 **Updater TPM only** — `ota-updater` uses a TPM key URI for manifest
 polling; RAUC streaming still uses the file key.
 ```
-IOTGW_ENABLE_TPM              = "1"
-IOTGW_RAUC_STREAMING_KEY_MODE = "file"
 IOTGW_ENABLE_OTA_TPM_MTLS = "1"
 IOTGW_OTA_TPM_KEY_URI     = "handle:0x81000001"
 IOTGW_OTA_TPM_KEY_ENGINE  = "tpm2tss"
@@ -321,8 +319,9 @@ variables from the profiles above; crypt needs nothing added.
 
 > 💡 **Compatibility notes:**
 > - PKCS#11 streaming and encrypted bundle decryption are independent.
-> - To return to baseline: set `IOTGW_ENABLE_TPM = "0"` (or drop `kas/tpm.yml`). Leave
->   `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION` alone — encryption *is* the baseline.
+> - To return to baseline: unset `IOTGW_ENABLE_OTA_TPM_MTLS` and
+>   `IOTGW_RAUC_STREAMING_KEY_MODE`. Leave `IOTGW_ENABLE_RAUC_BUNDLE_ENCRYPTION`
+>   alone — encryption *is* the baseline.
 
 ### 🔒 PKCS#11 PIN Handling
 

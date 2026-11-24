@@ -87,10 +87,8 @@ QA_LOG ?= "1"
 ERROR_TO_WARN_QA ?= "version-going-backwards"
 
 # ── FIT signed-boot policy (mandatory; the ONLY supported boot flow) ──────────
-# Historically gated behind IOTGW_BOOT_FLOW / a ':fitflow' override that lived
-# only in the gitignored kas/local.yml — so a clean checkout silently built the
-# stock linux-raspberrypi kernel, unsigned. FIT is now unconditional and tracked;
-# there is no non-FIT flow. Operator key *paths* stay in kas/local.yml.
+# FIT is unconditional and tracked here, so a clean checkout can never build an
+# unsigned stock kernel. Operator key *paths* stay in kas/local.yml.
 PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline"
 PREFERRED_VERSION_linux-iotgw-mainline = "6.18%"
 KERNEL_BOOTCMD = "bootm"
@@ -448,13 +446,12 @@ IOTGW_ENABLE_SYSTEMD_HW_WATCHDOG ?= "1"
 IOTGW_SYSTEMD_RUNTIME_WATCHDOG_SEC ?= "15s"
 IOTGW_SYSTEMD_SHUTDOWN_WATCHDOG_SEC ?= "30s"
 
-# TPM feature switch. One on/off choice for the whole TPM stack: it sets the
-# defaults of the TPM hardware profile, the TPM crypto providers, the OTA
-# updater TPM mTLS key and the RAUC streaming key mode below. Each of those
-# can still be overridden on its own. Turning it on also needs the TPM-backed
-# device keys provisioned on the target (scripts/ota/ota-pkcs11-provision-check.sh),
-# or RAUC streaming cannot authenticate. kas/tpm.yml composes the TPM layers
-# and sets it to "1".
+# TPM hardware switch. The board carries the SLB9672 and the Makefile composes
+# kas/tpm.yml (which sets this to "1") into every image. It sets the defaults of
+# the TPM hardware profile and the TPM crypto providers below. The OTA updater
+# TPM mTLS key and PKCS#11 RAUC streaming need TPM-backed device keys
+# provisioned on the target (scripts/ota/ota-pkcs11-provision-check.sh), so
+# they are separate opt-ins, off by default.
 IOTGW_ENABLE_TPM ?= "0"
 
 # Optional TPM2 over SPI profile for Infineon SLB9672-class modules.
@@ -473,7 +470,7 @@ IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS ?= "${IOTGW_ENABLE_TPM}"
 # Optional OTA mTLS TPM key mode (ota-updater + ota-certs behavior):
 # - 0: default file-key flow (/etc/ota/device.key required)
 # - 1: TPM key-handle flow (keyless cert provisioning allowed; updater uses TPM key URI)
-IOTGW_ENABLE_OTA_TPM_MTLS ?= "${IOTGW_ENABLE_TPM}"
+IOTGW_ENABLE_OTA_TPM_MTLS ?= "0"
 IOTGW_OTA_TPM_KEY_URI ?= "handle:0x81000001"
 IOTGW_OTA_TPM_KEY_ENGINE ?= "tpm2tss"
 IOTGW_OTA_OPENSSL_CONF ?= "/etc/ota/openssl-tpm2.cnf"
@@ -481,10 +478,10 @@ IOTGW_OTA_OPENSSL_CONF ?= "/etc/ota/openssl-tpm2.cnf"
 IOTGW_ENABLE_OTA_TPM_MTLS_EFFECTIVE ?= "${@'1' if ((d.getVar('IOTGW_ENABLE_TPM_SLB9672') or '0') == '1' and (d.getVar('IOTGW_ENABLE_OTA_TPM_MTLS') or '0') == '1') else '0'}"
 
 # RAUC streaming TLS key mode:
-# - file:   tls-key=/etc/ota/device.key (default with the TPM off)
-# - pkcs11: tls-key=<pkcs11:...> via configured PKCS#11 backend (default with
-#           the TPM on)
-IOTGW_RAUC_STREAMING_KEY_MODE ?= "${@'pkcs11' if (d.getVar('IOTGW_ENABLE_TPM') or '0') == '1' else 'file'}"
+# - file:   tls-key=/etc/ota/device.key (default)
+# - pkcs11: tls-key=<pkcs11:...> via configured PKCS#11 backend (opt-in once
+#           the device keys are provisioned)
+IOTGW_RAUC_STREAMING_KEY_MODE ?= "file"
 
 # PKCS#11 backend selector used when IOTGW_RAUC_STREAMING_KEY_MODE=pkcs11:
 # - tpm2:  tpm2-pkcs11 provider + TPM2 token/object
@@ -534,7 +531,7 @@ IOTGW_RAUC_PKCS11_USES_TPM2 ?= "${@'1' if ((d.getVar('IOTGW_RAUC_STREAMING_KEY_M
 # IOTGW_RAUC_PKCS11_USES_TPM2 in a recipe-scoped .bbappend -- bbappends only
 # mutate their own recipe's datastore, so this derived gate would evaluate
 # differently in that recipe than in the image-rootfs / other-recipe context.
-# Set IOTGW_ENABLE_TPM, or the underlying primitives (IOTGW_ENABLE_TPM_SLB9672,
+# Set the primitives (IOTGW_ENABLE_TPM, IOTGW_ENABLE_TPM_SLB9672,
 # IOTGW_ENABLE_OTA_TPM_MTLS, IOTGW_RAUC_STREAMING_KEY_MODE,
 # IOTGW_RAUC_PKCS11_BACKEND) at distro / local.conf / kas-overlay level, not
 # in a bbappend.
