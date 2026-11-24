@@ -50,7 +50,10 @@ systemd-cryptenroll() { log_call "systemd-cryptenroll $*"; return 98; }
 mkfs.ext4() { log_call "mkfs.ext4 $*"; }
 mount() { log_call "mount $*"; }
 umount() { log_call "umount $*"; }
-findmnt() { return 1; }
+findmnt() {
+    [[ -n "${MOCK_FINDMNT_SOURCE:-}" ]] || return 1
+    printf '%s\n' "$MOCK_FINDMNT_SOURCE"
+}
 """
 
 
@@ -83,6 +86,7 @@ def run(
     blkid_rc=0,
     status_rc=0,
     device="/dev/loop7",
+    mounted="",
 ):
     env = dict(os.environ)
     env.update(
@@ -100,6 +104,7 @@ def run(
             "MOCK_BLKID_RC": str(blkid_rc),
             "MOCK_STATUS_RC": str(status_rc),
             "MOCK_DEVICE": device,
+            "MOCK_FINDMNT_SOURCE": mounted,
         }
     )
     r = subprocess.run(
@@ -186,3 +191,10 @@ def test_unresolvable_backing_and_image_are_not_ours(store, tmp_path):
     assert r.returncode != 0
     assert not called(calls, "cryptsetup close")
     assert not called(calls, "umount")
+
+
+def test_foreign_filesystem_on_the_mount_point_is_not_used(store):
+    r, _calls = run(store, exists=True, fstype="ext4", mounted="/dev/sda3")
+    assert r.returncode != 0
+    assert "refusing" in r.stdout
+    assert not (store["dir"] / "mnt" / "README.encrypted-store.txt").exists()
