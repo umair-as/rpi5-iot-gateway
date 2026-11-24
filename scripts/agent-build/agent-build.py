@@ -173,7 +173,11 @@ def start(args):
     # history-limit only applies to panes created after it is set, so a
     # placeholder holds the session open while the options are applied. Both
     # are scoped to this session; global and user tmux settings are untouched.
-    placeholder = tmux("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", session, "sleep", "60")
+    # The first client's command line becomes the tmux server's, so the
+    # placeholder avoids text a cleanup like `pkill -f 'sleep 60'` would match:
+    # that once killed the server and every build on it.
+    placeholder = tmux("new-session", "-d", "-P", "-F", "#{pane_id}", "-s", session,
+                       sys.executable, "-c", "import signal; signal.pause()")
     try:
         tmux("set-option", "-t", session, "mouse", "on")
         tmux("set-option", "-t", session, "history-limit", "50000")
