@@ -166,7 +166,10 @@ here, instead of on every commit.
   and a patch header edit forces a rebuild (`.claude/rules/recipe-conventions.md`).
 - **No `Co-Authored-By:` for an AI tool** — not in commits, not in PR bodies. It
   claims authorship by something that cannot hold it. The `commit-msg` hook
-  blocks it. A bot co-author that is not an AI tool (e.g. `dependabot[bot]`)
+  blocks it.
+- **No generated-with footer in PR bodies** (e.g. "🤖 Generated with Claude
+  Code"): it is the same per-change attribution, stated once at the top of
+  this file instead. A bot co-author that is not an AI tool (e.g. `dependabot[bot]`)
   passes.
 - **The maintainer is the author** and is responsible for having reviewed what
   the agents produced. No agent adds a `Signed-off-by:` on its own initiative.

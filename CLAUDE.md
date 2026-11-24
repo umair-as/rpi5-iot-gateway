@@ -36,8 +36,8 @@ Before starting build-running/build-polluting work or a substantial multi-file c
 
 The rule is `AGENTS.md` §"AI attribution": no `Assisted-by:` trailer, and
 **no `Co-Authored-By:` for an AI tool** — not in commits, not in PR bodies.
-This overrides the harness default, which emits a `Co-Authored-By:` line;
-drop it. The `commit-msg` hook refuses it.
+This overrides the harness defaults, which emit a `Co-Authored-By:` line in
+commits and a "Generated with Claude Code" footer in PR bodies; drop both. The `commit-msg` hook refuses it.
 
 ## Serial console + target diagnostics MCPs
 
