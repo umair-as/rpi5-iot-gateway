@@ -2,7 +2,7 @@ SUMMARY = "Prebuilt Node.js binary for build host (native)"
 DESCRIPTION = "Installs official prebuilt Node.js ${PV} binary for x86_64 build host to provide npm during recipe builds."
 HOMEPAGE = "https://nodejs.org/"
 LICENSE = "MIT & ISC & BSD-2-Clause & BSD-3-Clause & Artistic-2.0 & Apache-2.0"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=9a7fcce64128730251dbc58aa41b4674"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=edc0683b77d2c503217642fa000b5b31"
 
 # native should be inherited last to satisfy QA (native-last)
 inherit bin_package native
@@ -10,7 +10,7 @@ inherit bin_package native
 COMPATIBLE_HOST = "x86_64.*-linux"
 
 SRC_URI = "https://nodejs.org/dist/v${PV}/node-v${PV}-linux-x64.tar.xz"
-SRC_URI[sha256sum] = "595272130310cbe12301430756f23d153f7ab95d00174c02adc11a2e3703d183"
+SRC_URI[sha256sum] = "4f2b175a6d53a5c617a80dba2676238a0688cef28c6da4eba35c7d844e66fcfb"
 
 S = "${UNPACKDIR}/node-v${PV}-linux-x64"
 
