@@ -5,8 +5,9 @@
 VENDOR_SHORT_NAME ?= "igw"
 VENDOR_LONG_NAME ?= "IoT Gateway"
 
-# Propagate vendor into target triplet and SDK names
-TARGET_VENDOR ?= "-${VENDOR_SHORT_NAME}"
+# Target triplet and SDK naming stay the oe-core defaults (TARGET_VENDOR "-oe",
+# SDK_VENDOR, SDK_NAME, SDKPATH): bitbake.conf assigns them before the distro
+# configuration is read, so a weak assignment here would not take effect.
 
 # Distro/versioning policy (override OE-Core default 'nodistro.0')
 # Keep version components explicit so release policy can bump one field at a time.
@@ -56,11 +57,7 @@ RAUC_KEYRING_FILE ?= "dev-cert.pem"
 # Production images can disable this in image recipes.
 IOTGW_BUILDINFO_INCLUDE_BUILD_SYS ?= "1"
 
-# SDK branding
-SDK_VENDOR ?= "-${VENDOR_SHORT_NAME}sdk"
 SDK_VERSION := "${DISTRO_VERSION}"
-SDK_NAME ?= "${VENDOR_SHORT_NAME}-${DISTRO}-${TCLIBC}-${SDK_ARCH}-${IMAGE_BASENAME}-${TUNE_PKGARCH}"
-SDKPATH ?= "/opt/${VENDOR_SHORT_NAME}-${DISTRO}/${SDK_VERSION}"
 
 # Node.js binary provider/version policy: an LTS line in support, prebuilt
 # (no V8 compile). Node 24 is supported until 2028-04-30; move to the next LTS
